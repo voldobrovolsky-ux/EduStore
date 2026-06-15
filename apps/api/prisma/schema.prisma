@@ -1,0 +1,240 @@
+// EduStore — кабинет учителя. Схема БД (PostgreSQL + Prisma).
+// Мультитенантность заложена с v1: organizationId на доменных сущностях (RLS-ready).
+// Границы доменов: связи по id; межмодульных жёстких зависимостей в запросах избегаем.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── enums ───────────────────────────
+enum LessonType {
+  LESSON
+  TEST
+  CONTROL
+}
+
+enum GradeSource {
+  MANUAL
+  VOICE
+}
+
+enum MaterialType {
+  LESSON_PLAN
+  GRAPHIC_NOTES
+  PRESENTATION
+  TEST
+  CONTROL
+  BRIEF_TEST
+}
+
+enum NotificationType {
+  URGENT
+  NORMAL
+  INFO
+}
+
+// ─────────────────────────── identity ───────────────────────────
+// Пользователь принадлежит платформе (florus_user_id), организация приглашает его.
+model User {
+  id          String    @id // = florus_user_id
+  firstName   String
+  lastName    String
+  displayName String
+  email       String?
+  teacher     Teacher?
+  createdAt   DateTime  @default(now())
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  type      String   @default("School") // School | Studio | Specialist | Union
+  classes   Class[]
+  subjects  Subject[]
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────── teacher ───────────────────────────
+model Teacher {
+  id             String               @id // = florus_user_id (FK → User)
+  user           User                 @relation(fields: [id], references: [id], onDelete: Cascade)
+  organizationId String
+  isCurator      Boolean              @default(false)
+  curatorClassId String?
+  assignments    TeachingAssignment[]
+  notes          TeacherNote[]
+  notifications  Notification[]
+
+  @@index([organizationId])
+}
+
+// Один «флажок» верхней панели: учитель ведёт предмет в классе.
+model TeachingAssignment {
+  id        String  @id @default(cuid())
+  teacherId String
+  teacher   Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  classId   String
+  class     Class   @relation(fields: [classId], references: [id])
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id])
+
+  @@unique([teacherId, classId, subjectId])
+  @@index([teacherId])
+}
+
+// ─────────────────────────── academic structure ───────────────────────────
+model Subject {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id])
+  name           String
+  fgosDocUrl     String?
+  textbookUrl    String?
+  color          String               @default("#2563EB")
+  departmentId   String?
+  assignments    TeachingAssignment[]
+  lessons        Lesson[]
+}
+
+model Class {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id])
+  parallel       Int
+  letter         String
+  label          String // "8А"
+  students       Student[]
+  subGroups      SubGroup[]
+  lessons        Lesson[]
+  assignments    TeachingAssignment[]
+
+  @@index([organizationId])
+}
+
+model SubGroup {
+  id      String    @id @default(cuid())
+  classId String
+  class   Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  name    String
+  members Student[]
+}
+
+model Student {
+  id          String          @id @default(cuid())
+  classId     String
+  class       Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subGroupId  String?
+  subGroup    SubGroup?       @relation(fields: [subGroupId], references: [id])
+  number      Int
+  firstName   String
+  lastName    String
+  displayName String // "Иванов Артём"
+  grades      Grade[]
+  profile     StudentProfile?
+  notes       TeacherNote[]
+
+  @@index([classId])
+}
+
+// ─────────────────────────── lesson = станция метро ───────────────────────────
+model Lesson {
+  id           String              @id @default(cuid())
+  organizationId String
+  subjectId    String
+  subject      Subject             @relation(fields: [subjectId], references: [id])
+  classId      String
+  class        Class               @relation(fields: [classId], references: [id], onDelete: Cascade)
+  topic        String
+  shortTitle   String
+  unit         String? // "Глава 3 · Квадратные уравнения"
+  goals        String[]
+  lessonNumber Int
+  date         DateTime
+  type         LessonType          @default(LESSON)
+  bloomLevel   Int?
+  pageStart    Int?
+  pageEnd      Int?
+  homework     String?
+  grades       Grade[]
+  materials    GeneratedMaterial[]
+  notes        TeacherNote[]
+
+  @@index([classId, subjectId, date])
+}
+
+model Grade {
+  id        String      @id @default(cuid())
+  studentId String
+  student   Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lessonId  String
+  lesson    Lesson      @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  value     Int? // 2..5, null если только посещаемость/комментарий
+  absent    Boolean     @default(false)
+  comment   String?
+  createdBy String // teacherId
+  source    GradeSource @default(MANUAL)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([studentId, lessonId])
+  @@index([lessonId])
+}
+
+// ─────────────────────────── materials / profile / notes ───────────────────────────
+model GeneratedMaterial {
+  id          String       @id @default(cuid())
+  lessonId    String
+  lesson      Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  type        MaterialType
+  title       String
+  fileUrl     String
+  format      String // DOCX | PDF | PPTX
+  meta        String? // "6 страниц"
+  generatedAt DateTime     @default(now())
+}
+
+model StudentProfile {
+  studentId    String   @id
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  interests    String[]
+  strengths    String[]
+  weaknesses   String[]
+  inclinations String[]
+  updatedAt    DateTime @updatedAt
+}
+
+model TeacherNote {
+  note_id       String   @id @default(cuid()) @map("id")
+  teacherId     String
+  teacher       Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  studentId     String?
+  student       Student? @relation(fields: [studentId], references: [id])
+  lessonId      String?
+  lesson        Lesson?  @relation(fields: [lessonId], references: [id])
+  audioUrl      String?
+  transcription String
+  processed     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([teacherId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  teacherId String
+  teacher   Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  category  String // journal | ktp | ...
+  title     String
+  message   String
+  icon      String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([teacherId, read])
+}
