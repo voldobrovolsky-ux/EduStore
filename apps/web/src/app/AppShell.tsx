@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import type { NotificationDto, TeacherClass, TeacherProfile } from "@edustore/shared";
 import { api } from "@/lib/api";
+import { Icon } from "@/design/Icon";
 import { usePrefs } from "@/app/prefs";
 import { NAV_SECTIONS } from "@/app/nav";
 import { LeftSidebar } from "@/app/LeftSidebar";
@@ -12,11 +13,15 @@ import { ToastStack, type Toast } from "@/components/Toasts";
 import { NotificationPanel } from "@/components/NotificationPanel";
 import { Personalize } from "@/app/screens/Personalize";
 import { SimplePlaceholder } from "@/app/screens/SimplePlaceholder";
+import { useIsMobile } from "@/mobile/useIsMobile";
+import { MobileApp } from "@/mobile/MobileApp";
 
 let TOAST_SEQ = 0;
 
 export function AppShell() {
   const { autoCollapse } = usePrefs();
+  const isMobileViewport = useIsMobile();
+  const [deviceOverride, setDeviceOverride] = useState<"auto" | "desktop" | "mobile">("auto");
 
   const [nav, setNav] = useState("workspace");
   const [workSection, setWorkSection] = useState(DEFAULT_SECTION);
@@ -30,7 +35,6 @@ export function AppShell() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  // первичная загрузка
   useEffect(() => {
     api.getProfile().then(setProfile).catch(() => {});
     api.getNotifications().then(setNotifications).catch(() => {});
@@ -52,39 +56,34 @@ export function AppShell() {
 
   const ctx: SectionContext = { assignment: activeClass, pushToast, searchQuery };
 
-  // ── левая навигация: персонализация и прочие экраны ──
-  if (nav === "personalize") {
-    return (
-      <Frame>
-        <div className="app">
-          <LeftSidebar active={nav} onSelect={setNav} expanded profile={profile} />
-          <div className="middle"><Personalize /></div>
-        </div>
-        <ToastStack toasts={toasts} remove={removeToast} />
-      </Frame>
-    );
-  }
-  if (nav !== "workspace") {
-    const item = NAV_SECTIONS.find((s) => s.id === nav)!;
-    return (
-      <Frame>
-        <div className="app">
-          <LeftSidebar active={nav} onSelect={setNav} expanded profile={profile} />
-          <div className="middle"><SimplePlaceholder label={item.label} icon={item.icon} /></div>
-        </div>
-        <ToastStack toasts={toasts} remove={removeToast} />
-      </Frame>
-    );
-  }
-
-  // ── рабочее пространство (кабинет) ──
-  const lsExpanded = !autoCollapse;
+  const mobile = deviceOverride === "auto" ? isMobileViewport : deviceOverride === "mobile";
+  const framedMobile = deviceOverride === "mobile" && !isMobileViewport;
   const descriptor = getSection(workSection);
 
-  return (
-    <Frame>
+  let body: ReactNode;
+  let overlays: ReactNode = null;
+
+  if (mobile) {
+    body = <MobileApp framed={framedMobile} />;
+  } else if (nav === "personalize") {
+    body = (
       <div className="app">
-        <LeftSidebar active={nav} onSelect={setNav} expanded={lsExpanded} profile={profile} />
+        <LeftSidebar active={nav} onSelect={setNav} expanded profile={profile} />
+        <div className="middle"><Personalize /></div>
+      </div>
+    );
+  } else if (nav !== "workspace") {
+    const item = NAV_SECTIONS.find((s) => s.id === nav)!;
+    body = (
+      <div className="app">
+        <LeftSidebar active={nav} onSelect={setNav} expanded profile={profile} />
+        <div className="middle"><SimplePlaceholder label={item.label} icon={item.icon} /></div>
+      </div>
+    );
+  } else {
+    body = (
+      <div className="app">
+        <LeftSidebar active={nav} onSelect={setNav} expanded={!autoCollapse} profile={profile} />
         <div className="middle">
           <TopPanel
             classes={classes}
@@ -108,24 +107,37 @@ export function AppShell() {
           </div>
         </div>
       </div>
+    );
+    overlays = notifOpen && (
+      <NotificationPanel items={notifications} onClose={() => setNotifOpen(false)} pushToast={pushToast} />
+    );
+  }
 
-      {notifOpen && (
-        <NotificationPanel items={notifications} onClose={() => setNotifOpen(false)} pushToast={pushToast} />
-      )}
+  return (
+    <div className="viewport">
+      {body}
+      {overlays}
       <ToastStack toasts={toasts} remove={removeToast} />
-    </Frame>
+      <DeviceSwitch mobile={mobile} onChange={(m) => setDeviceOverride(m ? "mobile" : "desktop")} />
+    </div>
   );
 }
 
-function Frame({ children }: { children: ReactNode }) {
-  return <div className="viewport">{children}</div>;
+// Переключатель «десктоп / телефон» — предпросмотр мобильной версии на десктопе.
+function DeviceSwitch({ mobile, onChange }: { mobile: boolean; onChange: (mobile: boolean) => void }) {
+  return (
+    <div className="device-switch">
+      <button className={!mobile ? "on" : ""} onClick={() => onChange(false)} title="Десктоп"><Icon name="monitor" size={17} /></button>
+      <button className={mobile ? "on" : ""} onClick={() => onChange(true)} title="Мобильная версия"><Icon name="phone" size={17} /></button>
+    </div>
+  );
 }
 
 const PassThrough = ({ children }: { ctx: SectionContext; children: ReactNode }) => <>{children}</>;
 
 /**
- * Композирует зоны раздела: общий провайдер раздела оборачивает Nav (зона 2),
- * Work (зона 3) и правый сайдбар (зона 4) — так Nav/Work/RightTools делят состояние.
+ * Композирует зоны раздела: общий провайдер оборачивает Nav (зона 2), Work (зона 3)
+ * и правый сайдбар (зона 4) — так Nav/Work/RightTools делят состояние раздела.
  */
 function SectionShell({
   descriptor,

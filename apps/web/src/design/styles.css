@@ -520,3 +520,9 @@ button{ font-family:inherit; cursor:pointer; border:none; background:none; color
    MOTION              --am multiplier         (data-anim: fast|standard|slow|none)
    THEME               data-theme: light | dark  (full palette swap above)
    ===================================================================== */
+
+/* ===================== MOBILE full-bleed container ===================== */
+/* Реальный телефон: контент во весь экран. Рамка .phone — только десктоп-предпросмотр. */
+.m-app{ position:relative; height:100vh; width:100vw; background:var(--bg); display:flex; flex-direction:column; overflow:hidden; }
+.m-app .m-header{ padding-top:max(18px, env(safe-area-inset-top)); }
+.m-app .m-tabbar{ padding-bottom:max(14px, env(safe-area-inset-bottom)); }
