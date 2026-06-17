@@ -238,3 +238,58 @@ model Notification {
 
   @@index([teacherId, read])
 }
+
+// ═══════════════════════════ EVENT INFRASTRUCTURE (shared kernel) ═══════════════════════════
+// Transactional outbox + idempotent inbox — основа каскадов между параметрами (см. docs/PARAMETERS.md §3).
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED // = DLQ после исчерпания попыток
+}
+
+model OutboxEvent {
+  id             String       @id // = DomainEvent.id (идемпотентный ключ / Nats-Msg-Id)
+  type           String
+  organizationId String
+  correlationId  String // весь каскад
+  causationId    String? // событие-причина
+  depth          Int          @default(0) // защита от петель
+  actor          String?
+  payload        Json
+  status         OutboxStatus @default(PENDING)
+  attempts       Int          @default(0)
+  createdAt      DateTime     @default(now())
+  publishedAt    DateTime?
+
+  @@index([status, createdAt])
+  @@index([correlationId])
+}
+
+model ProcessedEvent {
+  eventId     String
+  consumer    String
+  processedAt DateTime @default(now())
+
+  @@id([eventId, consumer])
+}
+
+// ═══════════════════════════ ПАРАМЕТРЫ (демо-каскад «зачисление ученика») ═══════════════════════════
+model ChannelMembership {
+  // Communitoria
+  id             String   @id @default(cuid())
+  organizationId String
+  classId        String
+  studentId      String
+  createdAt      DateTime @default(now())
+
+  @@unique([classId, studentId])
+}
+
+model MealOrder {
+  // Питательный
+  id             String   @id @default(cuid())
+  organizationId String
+  studentId      String
+  status         String   @default("DEFAULT")
+  createdAt      DateTime @default(now())
+}

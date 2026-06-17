@@ -8,6 +8,7 @@
     "start:dev": "nest start --watch",
     "build": "nest build",
     "seed": "ts-node prisma/seed.ts",
+    "cascade:demo": "ts-node scripts/cascade-demo.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },
