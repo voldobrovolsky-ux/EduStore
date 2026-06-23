@@ -102,10 +102,18 @@ export class FlorService {
       create: { id: sub, firstName: first || fullName, lastName: last, displayName: fullName, email: (c.email as string) ?? undefined },
     });
 
+    // Роль — строго из Флёрус-claims (florus_orgs[].role активной орг; см. ADR-0005).
+    // Фолбэк на orgs[0] делает одношкольного админа устойчивым, даже если верхнеуровневый
+    // org_id не пришёл/не совпал. Дефолт teacher — только когда роли в claims вовсе нет.
     const orgs = (c.florus_orgs as FlorOrg[] | undefined) ?? [];
     const activeFlorOrg = (c.org_id as string) ?? orgs[0]?.org_id ?? null;
-    const role = (c.org_role as string) ?? orgs.find((o) => o.org_id === activeFlorOrg)?.role ?? 'teacher';
-    const orgName = (c.org_name as string) ?? orgs.find((o) => o.org_id === activeFlorOrg)?.org_name ?? 'Школа';
+    const activeOrg = orgs.find((o) => o.org_id === activeFlorOrg) ?? orgs[0];
+    const role = (c.org_role as string) ?? activeOrg?.role ?? 'teacher';
+    const orgName = (c.org_name as string) ?? activeOrg?.org_name ?? 'Школа';
+    // Диагностика входа (виден в `docker compose logs api`): какой кабинет откроется.
+    this.log.log(
+      `provision sub=${sub} role=${role} org=${activeFlorOrg ?? '—'} florus_orgs=${orgs.length}`,
+    );
 
     let orgId: string | null = null;
     let subRole: string | null = null;
