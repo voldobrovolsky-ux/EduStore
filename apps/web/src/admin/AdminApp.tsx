@@ -2,14 +2,15 @@ import { useState } from "react";
 import { Icon } from "./ds/Icon";
 import { Avatar } from "./ds/components";
 import { ADMIN_SECTIONS } from "./registry";
-import { SCHOOL } from "./data";
+import { useCurrentUser } from "@/cabinets/CurrentUser";
 
 /**
- * Кабинет школьного администратора. 3-зонная оболочка дизайн-системы EduStore:
+ * Панель управления школой. 3-зонная оболочка дизайн-системы EduStore:
  * левый сайдбар (15%) — разделы · рабочий экран (65%) · правый сайдбар (20%) — подразделы.
- * Метро-навигации нет (она только у учителя).
+ * Метро-навигации нет (она только у учителя). Школа и админ — из сессии Флёруса, не мок.
  */
 export function AdminApp() {
+  const { user } = useCurrentUser();
   const [sectionId, setSectionId] = useState(ADMIN_SECTIONS[0].id);
   const [subId, setSubId] = useState(ADMIN_SECTIONS[0].subsections[0].id);
 
@@ -31,8 +32,8 @@ export function AdminApp() {
           <div className="adm-brand">
             <span className="adm-brand__logo"><Icon name="graduation-cap" size={20} /></span>
             <div>
-              <div className="adm-brand__name">{SCHOOL.name}</div>
-              <div className="adm-brand__sub">Администратор</div>
+              <div className="adm-brand__name">{user.orgName}</div>
+              <div className="adm-brand__sub">Панель управления</div>
             </div>
           </div>
           <div className="adm-overline">Разделы</div>
@@ -47,10 +48,10 @@ export function AdminApp() {
             ))}
           </nav>
           <div className="adm-foot">
-            <Avatar name="Елена Кравцова" size="sm" />
+            <Avatar name={user.name} size="sm" />
             <div>
-              <div className="adm-foot__name">Елена Кравцова</div>
-              <div className="adm-foot__role">директор</div>
+              <div className="adm-foot__name">{user.name}</div>
+              <div className="adm-foot__role">администратор</div>
             </div>
           </div>
         </aside>

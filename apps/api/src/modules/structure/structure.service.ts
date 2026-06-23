@@ -107,4 +107,29 @@ export class StructureService {
     await this.prisma.teachingAssignment.delete({ where: { id } });
     return { ok: true };
   }
+
+  // ─── привязанные устройства-киоски (реальные, из таблицы Device) ───
+  async listDevices(userOrgId: string | null) {
+    const organizationId = await this.resolveOrg(userOrgId);
+    const devices = await this.prisma.device.findMany({
+      where: { orgId: organizationId },
+      orderBy: { createdAt: 'desc' },
+    });
+    const boundIds = [...new Set(devices.map((d) => d.boundByUserId).filter((x): x is string => !!x))];
+    const users = boundIds.length
+      ? await this.prisma.user.findMany({ where: { id: { in: boundIds } } })
+      : [];
+    const nameById = new Map(users.map((u) => [u.id, u.displayName]));
+    return devices.map((d) => ({
+      id: d.id,
+      name: d.name,
+      boundBy: d.boundByUserId ? (nameById.get(d.boundByUserId) ?? null) : null,
+      boundAt: d.createdAt.toISOString(),
+    }));
+  }
+
+  async deleteDevice(id: string) {
+    await this.prisma.device.delete({ where: { id } });
+    return { ok: true };
+  }
 }

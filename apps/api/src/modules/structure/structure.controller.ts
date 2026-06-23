@@ -61,4 +61,14 @@ export class StructureController {
   unassign(@Param('id') id: string) {
     return this.svc.unassign(id);
   }
+
+  // привязанные устройства (админ → Сеть устройств)
+  @Get('devices')
+  listDevices(@CurrentUser() u?: SessionUser) {
+    return this.svc.listDevices(this.org(u));
+  }
+  @Delete('devices/:id')
+  deleteDevice(@Param('id') id: string) {
+    return this.svc.deleteDevice(id);
+  }
 }

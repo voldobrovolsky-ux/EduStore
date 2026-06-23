@@ -4,6 +4,7 @@ export interface StClass { id: string; label: string; parallel: number; letter: 
 export interface StSubject { id: string; name: string; color: string }
 export interface StAssignment { id: string; classId: string; classLabel: string; subjectId: string; subjectName: string; subGroupId: string | null }
 export interface StTeacher { id: string; name: string; assignments: StAssignment[] }
+export interface StDevice { id: string; name: string; boundBy: string | null; boundAt: string }
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, {
@@ -33,4 +34,7 @@ export const structureApi = {
   assign: (b: { teacherId: string; classId: string; subjectId: string; subGroupId?: string | null }) =>
     j<{ id: string }>("/api/structure/assignments", { method: "POST", body: JSON.stringify(b) }),
   unassign: (id: string) => j<void>(`/api/structure/assignments/${id}`, { method: "DELETE" }),
+
+  devices: () => j<StDevice[]>("/api/structure/devices"),
+  deleteDevice: (id: string) => j<void>(`/api/structure/devices/${id}`, { method: "DELETE" }),
 };
