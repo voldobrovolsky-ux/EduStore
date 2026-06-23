@@ -15,7 +15,9 @@ export interface SessionUser {
 }
 
 interface FlorOrg { org_id: string; org_name?: string; role: string }
-interface AuthTx { code_verifier: string; state: string; nonce: string }
+// tx переживает редирект в Флёрус и обратно (cookie). next/subRole — подсказки онбординга
+// из continue-URL агентского инвайта: куда вернуть и какую staff-подроль назначить.
+interface AuthTx { code_verifier: string; state: string; nonce: string; next?: string; subRole?: string | null }
 
 const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
 
@@ -61,8 +63,8 @@ export class FlorService {
     return this.jwks;
   }
 
-  /** Шаг 1 — URL авторизации + транзакция (PKCE/state/nonce), которую контроллер кладёт в cookie. */
-  async buildAuthUrl(): Promise<{ url: string; tx: AuthTx }> {
+  /** Шаг 1 — URL авторизации + транзакция (PKCE/state/nonce + подсказки онбординга). */
+  async buildAuthUrl(opts?: { next?: string; subRole?: string | null }): Promise<{ url: string; tx: AuthTx }> {
     const client = await this.getClient();
     const code_verifier = generators.codeVerifier();
     const code_challenge = generators.codeChallenge(code_verifier);
@@ -70,11 +72,11 @@ export class FlorService {
     const nonce = generators.nonce();
     const scope = process.env.FLOR_SCOPES ?? 'openid profile phone flor:org flor:roles offline_access';
     const url = client.authorizationUrl({ scope, code_challenge, code_challenge_method: 'S256', state, nonce });
-    return { url, tx: { code_verifier, state, nonce } };
+    return { url, tx: { code_verifier, state, nonce, next: opts?.next, subRole: opts?.subRole ?? null } };
   }
 
   /** Шаг 2 — обмен кода, верификация id_token (openid-client), provision, сессия. */
-  async handleCallback(req: unknown, tx: AuthTx): Promise<{ sid: string }> {
+  async handleCallback(req: unknown, tx: AuthTx): Promise<{ sid: string; next?: string }> {
     const client = await this.getClient();
     const params = client.callbackParams(req as never);
     const tokenSet = await client.callback(process.env.FLOR_REDIRECT_URI!, params, {
@@ -89,10 +91,15 @@ export class FlorService {
     } catch {
       /* userinfo опционален */
     }
-    return this.provision({ ...userinfo, ...claims }, tokenSet);
+    const { sid } = await this.provision({ ...userinfo, ...claims }, tokenSet, tx.subRole);
+    return { sid, next: tx.next };
   }
 
-  private async provision(c: Record<string, unknown>, tokenSet: TokenSet): Promise<{ sid: string }> {
+  private async provision(
+    c: Record<string, unknown>,
+    tokenSet: TokenSet,
+    subRoleHint?: string | null,
+  ): Promise<{ sid: string }> {
     const sub = String(c.sub);
     const fullName = String(c.name ?? c.preferred_username ?? 'Пользователь');
     const [last = '', first = ''] = fullName.split(/\s+/);
@@ -129,7 +136,9 @@ export class FlorService {
         const existing = await this.prisma.membership.findUnique({
           where: { florusUserId_orgId: { florusUserId: sub, orgId: org.id } },
         });
-        subRole = existing?.subRole ?? 'methodist'; // дефолт до назначения админом
+        // приоритет: уже назначенная админом → подсказка онбординга (агент выбрал завуч/методист)
+        // → дефолт. existing впереди, чтобы повторный вход по старой ссылке не перетирал роль.
+        subRole = existing?.subRole ?? subRoleHint ?? 'methodist';
       }
       await this.prisma.membership.upsert({
         where: { florusUserId_orgId: { florusUserId: sub, orgId: org.id } },

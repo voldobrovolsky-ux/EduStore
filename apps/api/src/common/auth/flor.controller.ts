@@ -3,6 +3,13 @@ import type { Request, Response } from 'express';
 import { Public } from './public.decorator';
 import { FlorService, type SessionUser } from './flor.service';
 
+const SUBROLES = new Set(['zavuch', 'methodist', 'psychologist']);
+// next — только относительный путь нашего origin (без открытого редиректа)
+const safeNext = (raw: unknown): string | undefined =>
+  typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\') ? raw : undefined;
+const safeSubRole = (raw: unknown): string | undefined =>
+  typeof raw === 'string' && SUBROLES.has(raw) ? raw : undefined;
+
 // Эндпоинты RP (ADR-0005): /api/auth/flor/login|callback|me|logout|backchannel-logout
 @Controller('auth/flor')
 export class FlorController {
@@ -10,9 +17,12 @@ export class FlorController {
 
   @Public()
   @Get('login')
-  async login(@Res() res: Response): Promise<void> {
-    const { url, tx } = await this.flor.buildAuthUrl();
-    // PKCE/state/nonce — в короткоживущем httpOnly cookie (stateless tx)
+  async login(@Req() req: Request, @Res() res: Response): Promise<void> {
+    // continue-URL агентского инвайта может нести ?next=/&subrole=zavuch (онбординг по QR)
+    const next = safeNext(req.query.next);
+    const subRole = safeSubRole(req.query.subrole);
+    const { url, tx } = await this.flor.buildAuthUrl({ next, subRole });
+    // PKCE/state/nonce + подсказки онбординга — в короткоживущем httpOnly cookie (stateless tx)
     res.cookie('flor_tx', JSON.stringify(tx), { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 600_000, path: '/api/auth/flor' });
     res.redirect(url);
   }
@@ -25,10 +35,13 @@ export class FlorController {
       res.status(400).send('no auth transaction');
       return;
     }
-    const { sid } = await this.flor.handleCallback(req, JSON.parse(txRaw));
+    const { sid, next } = await this.flor.handleCallback(req, JSON.parse(txRaw));
     res.clearCookie('flor_tx', { path: '/api/auth/flor' });
     res.cookie('flor_sid', sid, { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 30 * 24 * 3600 * 1000, path: '/' });
-    res.redirect(process.env.WEB_ORIGIN ?? '/');
+    // куда вернуть: next (тот же origin) поверх WEB_ORIGIN; иначе корень → роутинг по роли
+    const base = process.env.WEB_ORIGIN ?? '';
+    const dest = next ? (base ? new URL(next, base).toString() : next) : base || '/';
+    res.redirect(dest);
   }
 
   @Get('me')

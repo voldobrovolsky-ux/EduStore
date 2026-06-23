@@ -35,3 +35,32 @@
 
 **Нужно от вас для входа:** `FLOR_CLIENT_ID` (=`edustore`?), `FLOR_CLIENT_SECRET`, и точный
 зарегистрированный `redirect_uri` (должен быть `https://edustore-flor-group.ru/api/auth/flor/callback`).
+
+## Онбординг по QR агента — вход сразу в назначенный кабинет
+
+Агент в Флёрусе открывает карточку школы, выбирает роль → QR. Человек сканирует телефоном,
+регистрируется/входит во Флёрусе и **сразу** попадает в нужный кабинет EduStore. Механика —
+front-channel редирект (НЕ device-flow и НЕ поллинг: QR на экране агента, а заходит другой
+человек на своём телефоне → ведём его редиректами в его же вкладке).
+
+**Контракт (сторона Флёруса — агентский инвайт):**
+1. Инвайт несёт **continue-URL** на EduStore:
+   `https://edustore-flor-group.ru/api/auth/flor/login?next=/&subrole=<zavuch|methodist|psychologist>`
+   - `subrole` указывается **только** для staff-ролей (завуч/методист/психолог);
+     для директора (`admin`) и учителя (`teacher`) — без `subrole`.
+2. Флёрус **сначала** привязывает членство `орг+роль` (заносит в `florus_orgs[]`), и **только
+   потом** редиректит на continue-URL.
+   > ⚠️ Если редиректнуть до записи членства — первый токен придёт без новой орг, и EduStore
+   > по дефолту откроет кабинет учителя. Порядок: consume invite → bind membership → redirect.
+3. Scope клиента `edustore` включают `flor:org` и `flor:roles` (иначе роли не придут).
+
+**Что делает EduStore (готово):**
+- `/api/auth/flor/login?next=&subrole=` кладёт подсказки в tx-cookie, уводит на authorize.
+  У пользователя свежая сессия Флёруса → возврат **молча** (first-party, без экрана согласия).
+- `/callback` → `provision`: роль из `florus_orgs[].role`; для staff под-роль =
+  `уже_назначенная_админом ?? subrole_из_инвайта ?? methodist` → редирект на `next` (тот же origin).
+- SPA → `/me` → `resolveCabinet` → кабинет в назначенной роли. Автоматически.
+
+**Маппинг ролей:** `admin`→панель управления · `teacher`→кабинет учителя ·
+`staff`+subrole `zavuch|methodist|psychologist`→соответствующий кабинет · `parent/student`→свои.
+`next` валидируется как относительный путь нашего origin (без открытого редиректа).
