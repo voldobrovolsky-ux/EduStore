@@ -150,6 +150,60 @@ export class FlorService {
     return { sid };
   }
 
+  /**
+   * Device Authorization Flow (RFC 8628), purpose=login — киоск показывает QR,
+   * учитель подтверждает вход с телефона. Возвращает данные для QR; device_code
+   * хранит вызывающий (DeviceService) и опрашивает pollDeviceToken().
+   */
+  async deviceAuthorize(): Promise<{
+    device_code: string;
+    user_code: string;
+    verification_uri: string;
+    verification_uri_complete?: string;
+    expires_in: number;
+    interval: number;
+  }> {
+    const client = await this.getClient();
+    const scope = process.env.FLOR_SCOPES ?? 'openid profile phone flor:org flor:roles offline_access';
+    const handle = await client.deviceAuthorization({ scope });
+    // interval не выведен в публичный тип DeviceFlowHandle; берём из рантайма, дефолт RFC 8628 — 5с
+    const interval = (handle as unknown as { interval?: number }).interval ?? 5;
+    return {
+      device_code: handle.device_code,
+      user_code: handle.user_code,
+      verification_uri: handle.verification_uri,
+      verification_uri_complete: handle.verification_uri_complete,
+      expires_in: handle.expires_in,
+      interval,
+    };
+  }
+
+  /**
+   * Опрос токен-эндпоинта по device_code. null — пока ожидаем подтверждения
+   * (authorization_pending / slow_down). При успехе — provision + sid сессии.
+   */
+  async pollDeviceToken(deviceCode: string): Promise<{ sid: string } | null> {
+    const client = await this.getClient();
+    try {
+      const tokenSet = await client.grant({
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code: deviceCode,
+      });
+      const claims = tokenSet.claims();
+      let userinfo: Record<string, unknown> = {};
+      try {
+        if (tokenSet.access_token) userinfo = await client.userinfo(tokenSet.access_token);
+      } catch {
+        /* userinfo опционален */
+      }
+      return this.provision({ ...userinfo, ...claims }, tokenSet);
+    } catch (e) {
+      const err = (e as { error?: string })?.error;
+      if (err === 'authorization_pending' || err === 'slow_down') return null;
+      throw e;
+    }
+  }
+
   /** Сессия по cookie sid (со скользящим продлением). */
   async getSession(sid: string): Promise<SessionUser | null> {
     const s = await this.prisma.session.findUnique({ where: { sid } });

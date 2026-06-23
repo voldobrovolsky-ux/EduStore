@@ -59,6 +59,7 @@ model Organization {
   classes     Class[]
   subjects    Subject[]
   memberships Membership[]
+  devices     Device[]
   createdAt   DateTime     @default(now())
 }
 
@@ -94,6 +95,22 @@ model Session {
 
   @@index([florusUserId])
   @@index([florusSid])
+}
+
+// Привязанное устройство-киоск (главная страница, режим «вход на школьном компьютере»).
+// Регистрируется по QR через Device Authorization Flow (purpose=kiosk); deviceToken
+// хранится в localStorage киоска и определяет показ экрана входа (режим 3).
+model Device {
+  id            String       @id @default(cuid())
+  orgId         String
+  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name          String
+  deviceToken   String       @unique
+  boundByUserId String? // User.id того, кто подтвердил привязку с телефона
+  lastSeenAt    DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+
+  @@index([orgId])
 }
 
 // ─────────────────────────── teacher ───────────────────────────

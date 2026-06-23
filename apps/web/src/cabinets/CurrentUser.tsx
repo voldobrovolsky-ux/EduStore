@@ -29,41 +29,37 @@ const DEFAULT_USER: CurrentUser = {
 
 interface Ctx {
   user: CurrentUser;
-  // DEV: пока вход через Флёрус не подключён — переключаем роль локально для предпросмотра.
+  // DEV: переключаем роль локально для предпросмотра (RoleSwitch).
   setUser: (u: CurrentUser) => void;
 }
 const C = createContext<Ctx | null>(null);
 const KEY = "edustore-dev-user";
 
-export function CurrentUserProvider({ children }: { children: ReactNode }) {
+/**
+ * Контекст текущего пользователя кабинета. В ПРОДе пользователь приходит из сессии
+ * Флёруса (initialUser — резолвит гейт в main.tsx). В DEV — DEFAULT_USER + RoleSwitch
+ * с запоминанием выбора в localStorage. Редирект на вход и показ лендинга — в гейте.
+ */
+export function CurrentUserProvider({
+  children,
+  initialUser,
+}: {
+  children: ReactNode;
+  initialUser?: CurrentUser;
+}) {
   const [user, setUser] = useState<CurrentUser>(() => {
+    if (initialUser) return initialUser;
     try {
       return { ...DEFAULT_USER, ...JSON.parse(localStorage.getItem(KEY) || "{}") };
     } catch {
       return DEFAULT_USER;
     }
   });
+  // DEV запоминает выбранную роль; в ПРОДе роль из сессии не перетираем.
   useEffect(() => {
+    if (import.meta.env.PROD) return;
     localStorage.setItem(KEY, JSON.stringify(user));
   }, [user]);
-
-  // ПРОД: роль из Флёруса (/api/auth/flor/me); нет сессии → редирект на вход.
-  // DEV: используем переключатель ролей (RoleSwitch).
-  useEffect(() => {
-    if (!import.meta.env.PROD) return;
-    fetch("/api/auth/flor/me", { credentials: "include" })
-      .then((r) => {
-        if (r.status === 401 || r.status === 403) {
-          window.location.href = "/api/auth/flor/login";
-          return null;
-        }
-        return r.ok ? r.json() : null;
-      })
-      .then((m: { name: string; role: FlorRole; subRole: SubRole; orgName?: string } | null) => {
-        if (m) setUser({ name: m.name, florusRole: m.role, subRole: m.subRole, orgName: m.orgName ?? "Школа" });
-      })
-      .catch(() => undefined);
-  }, []);
 
   return <C.Provider value={{ user, setUser }}>{children}</C.Provider>;
 }
