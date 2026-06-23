@@ -1,14 +1,24 @@
+import type { ComponentType } from "react";
 import type { IconName } from "@/admin/ds/Icon";
+import { DisciplinesScreen } from "@/structure/DisciplinesScreen";
+import { DistributionScreen } from "@/structure/DistributionScreen";
 
-// Минимальные кабинеты ролей: только навигация (разделы в сайдбаре) + главная.
+// Минимальные кабинеты ролей: навигация в сайдбаре + главная.
+// Раздел с `Screen` показывает реальный экран; без — заглушку.
 // admin и teacher рендерятся отдельными готовыми кабинетами (см. main.tsx).
 export type MinimalKey = "owner" | "zavuch" | "methodist" | "parent" | "student" | "psychologist";
 
+export interface CabinetSection {
+  id: string;
+  label: string;
+  icon: IconName;
+  Screen?: ComponentType;
+}
 export interface CabinetDef {
   label: string; // название кабинета
   roleLabel: string; // подпись роли
   gradient: [string, string];
-  sections: { id: string; label: string; icon: IconName }[];
+  sections: CabinetSection[];
 }
 
 export const MINIMAL_CABINETS: Record<MinimalKey, CabinetDef> = {
@@ -23,15 +33,16 @@ export const MINIMAL_CABINETS: Record<MinimalKey, CabinetDef> = {
   zavuch: {
     label: "Кабинет завуча", roleLabel: "Завуч", gradient: ["#0EA5A5", "#34C7B5"],
     sections: [
+      { id: "disciplines", label: "Дисциплины", icon: "book", Screen: DisciplinesScreen },
+      { id: "distribution", label: "Учителя", icon: "users", Screen: DistributionScreen },
       { id: "ktp", label: "КТП", icon: "ktp" },
       { id: "schedule", label: "Расписание", icon: "calendar-days" },
-      { id: "teachers", label: "Учителя", icon: "users" },
     ],
   },
   methodist: {
     label: "Кабинет методиста", roleLabel: "Методист", gradient: ["#7C5CFC", "#A98BFF"],
     sections: [
-      { id: "disciplines", label: "Дисциплины", icon: "book" },
+      { id: "disciplines", label: "Дисциплины", icon: "book", Screen: DisciplinesScreen },
       { id: "umk", label: "УМК", icon: "layers" },
       { id: "rp", label: "Рабочая программа", icon: "file-text" },
     ],

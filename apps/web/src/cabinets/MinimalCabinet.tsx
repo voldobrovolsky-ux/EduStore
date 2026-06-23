@@ -17,6 +17,7 @@ export function MinimalCabinet({ def, user }: { def: CabinetDef; user: CurrentUs
   const [active, setActive] = useState("home");
   const firstName = user.name.split(/\s+/)[1] ?? user.name; // "Соколова Анна" → "Анна"
   const section = def.sections.find((s) => s.id === active);
+  const SectionScreen = section?.Screen;
 
   return (
     <div className="eds-admin">
@@ -80,6 +81,8 @@ export function MinimalCabinet({ def, user }: { def: CabinetDef; user: CurrentUs
                 ))}
               </div>
             </div>
+          ) : SectionScreen ? (
+            <SectionScreen />
           ) : (
             <div className="placeholder" style={{ height: "100%", background: "transparent" }}>
               <div className="ph-ico" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }}>

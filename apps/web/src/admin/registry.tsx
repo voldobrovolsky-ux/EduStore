@@ -6,6 +6,7 @@ import { SubscriptionScreen, PaymentScreen, SeatsScreen } from "./screens/licens
 import { ServicesScreen, IntegrationSettingsScreen } from "./screens/integrations";
 import { AutoReportsScreen, ReportJournalScreen } from "./screens/reporting";
 import { BackupsScreen, RestoreScreen } from "./screens/backups";
+import { StructureScreen } from "@/structure/StructureScreen";
 
 export interface AdminSubsection {
   id: string;
@@ -29,6 +30,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   {
     id: "school", label: "Школа", icon: "building-2", gradient: ["#2563EB", "#5B8DEF"],
     subsections: [
+      { id: "structure", label: "Классы и подгруппы", Screen: StructureScreen },
       { id: "devices", label: "Сеть устройств", Screen: DevicesScreen },
       { id: "general", label: "Общие настройки", Screen: GeneralSettingsScreen },
       { id: "security", label: "Безопасность", Screen: SecurityScreen },

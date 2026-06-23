@@ -110,15 +110,17 @@ model Teacher {
   @@index([organizationId])
 }
 
-// Один «флажок» верхней панели: учитель ведёт предмет в классе.
+// Один «флажок»: учитель ведёт предмет в классе (опц. — в конкретной подгруппе).
 model TeachingAssignment {
-  id        String  @id @default(cuid())
-  teacherId String
-  teacher   Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  classId   String
-  class     Class   @relation(fields: [classId], references: [id])
-  subjectId String
-  subject   Subject @relation(fields: [subjectId], references: [id])
+  id         String    @id @default(cuid())
+  teacherId  String
+  teacher    Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  classId    String
+  class      Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId  String
+  subject    Subject   @relation(fields: [subjectId], references: [id])
+  subGroupId String?
+  subGroup   SubGroup? @relation(fields: [subGroupId], references: [id])
 
   @@unique([teacherId, classId, subjectId])
   @@index([teacherId])
@@ -154,11 +156,12 @@ model Class {
 }
 
 model SubGroup {
-  id      String    @id @default(cuid())
-  classId String
-  class   Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
-  name    String
-  members Student[]
+  id          String               @id @default(cuid())
+  classId     String
+  class       Class                @relation(fields: [classId], references: [id], onDelete: Cascade)
+  name        String
+  members     Student[]
+  assignments TeachingAssignment[]
 }
 
 model Student {

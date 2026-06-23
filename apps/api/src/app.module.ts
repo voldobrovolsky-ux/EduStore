@@ -11,6 +11,7 @@ import { VoiceModule } from './modules/voice/voice.module';
 import { MaterialsModule } from './modules/materials/materials.module';
 import { NotesModule } from './modules/notes/notes.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { StructureModule } from './modules/structure/structure.module';
 // Параметры (система параметров EduStore, см. docs/PARAMETERS.md). Новый параметр = одна строка.
 import { ContingentModule } from './parameters/contingent/contingent.module';
 import { CommsModule } from './parameters/comms/comms.module';
@@ -34,6 +35,7 @@ import { UmkParamModule } from './parameters/umk-param/umk-param.module';
     MaterialsModule,
     NotesModule,
     ReportsModule,
+    StructureModule, // ручное создание структуры школы (онбординг 4.2/6)
     // параметры
     ContingentModule,
     CommsModule,
