@@ -5,6 +5,7 @@ import {
   Filter, RotateCcw, Power, Wallet, Package, Calendar, MessageCircle, FileText, Sparkles,
   Printer, HardDrive, Settings, Send, Repeat, CalendarClock, Download, History, ChevronRight,
   ChevronDown, GraduationCap, Pencil, Trash2, Circle, CircleAlert, CircleCheck, Layers,
+  House, BookOpen, ClipboardList, LineChart, HeartPulse, CalendarDays, GalleryVerticalEnd,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,6 +24,8 @@ const MAP: Record<string, LucideIcon> = {
   download: Download, history: History, "chevron-right": ChevronRight, "chevron-down": ChevronDown,
   "graduation-cap": GraduationCap, pencil: Pencil, "trash-2": Trash2, circle: Circle,
   "circle-alert": CircleAlert, "circle-check": CircleCheck, layers: Layers,
+  home: House, book: BookOpen, clipboard: ClipboardList, "line-chart": LineChart,
+  "heart-pulse": HeartPulse, "calendar-days": CalendarDays, ktp: GalleryVerticalEnd,
 };
 
 export type IconName = keyof typeof MAP;
