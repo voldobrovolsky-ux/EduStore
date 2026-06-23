@@ -28,6 +28,10 @@ async function bootstrap(): Promise<void> {
   app.use(express.json({ limit: '25mb' }));
   app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
+  // Cookie (httpOnly-сессия Флёруса flor_sid, транзакция flor_tx).
+  const cookieParser = require('cookie-parser');
+  app.use(cookieParser());
+
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);
   // eslint-disable-next-line no-console

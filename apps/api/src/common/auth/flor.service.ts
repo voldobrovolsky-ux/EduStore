@@ -1,0 +1,203 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
+import { Issuer, generators, type Client, type TokenSet } from 'openid-client';
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { PrismaService } from '../prisma/prisma.service';
+
+export interface SessionUser {
+  florusUserId: string;
+  orgId: string | null;
+  florusOrgId: string | null;
+  role: string;
+  subRole: string | null;
+  name: string;
+  orgName?: string;
+}
+
+interface FlorOrg { org_id: string; org_name?: string; role: string }
+interface AuthTx { code_verifier: string; state: string; nonce: string }
+
+const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
+
+/**
+ * Флёрус OIDC RP (BFF, ADR-0005). Confidential-клиент: api держит секрет/токены,
+ * SPA — httpOnly-сессию. Конфиг — из discovery. Lazy-provision локальной орг
+ * и членства из claims — онбординг НЕ зависит от события покупки (см. docs/ONBOARDING.md).
+ */
+@Injectable()
+export class FlorService {
+  private readonly log = new Logger('Florus');
+  private clientPromise?: Promise<Client>;
+  private jwks?: ReturnType<typeof createRemoteJWKSet>;
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  private get issuer(): string {
+    return process.env.FLOR_ISSUER ?? 'https://accounts.flor-group.ru';
+  }
+
+  // discovery — лениво (чтобы приложение поднималось без доступа к Флёрусу)
+  private getClient(): Promise<Client> {
+    if (!this.clientPromise) {
+      this.clientPromise = Issuer.discover(this.issuer).then(
+        (iss) =>
+          new iss.Client({
+            client_id: process.env.FLOR_CLIENT_ID ?? 'edustore',
+            client_secret: process.env.FLOR_CLIENT_SECRET,
+            redirect_uris: [process.env.FLOR_REDIRECT_URI!],
+            post_logout_redirect_uris: [
+              process.env.FLOR_POST_LOGOUT_REDIRECT_URI ?? 'https://edustore-flor-group.ru',
+            ],
+            response_types: ['code'],
+            token_endpoint_auth_method: 'client_secret_basic',
+          }),
+      );
+    }
+    return this.clientPromise;
+  }
+
+  private getJwks() {
+    if (!this.jwks) this.jwks = createRemoteJWKSet(new URL(`${this.issuer}/.well-known/jwks.json`));
+    return this.jwks;
+  }
+
+  /** Шаг 1 — URL авторизации + транзакция (PKCE/state/nonce), которую контроллер кладёт в cookie. */
+  async buildAuthUrl(): Promise<{ url: string; tx: AuthTx }> {
+    const client = await this.getClient();
+    const code_verifier = generators.codeVerifier();
+    const code_challenge = generators.codeChallenge(code_verifier);
+    const state = generators.state();
+    const nonce = generators.nonce();
+    const scope = process.env.FLOR_SCOPES ?? 'openid profile phone flor:org flor:roles offline_access';
+    const url = client.authorizationUrl({ scope, code_challenge, code_challenge_method: 'S256', state, nonce });
+    return { url, tx: { code_verifier, state, nonce } };
+  }
+
+  /** Шаг 2 — обмен кода, верификация id_token (openid-client), provision, сессия. */
+  async handleCallback(req: unknown, tx: AuthTx): Promise<{ sid: string }> {
+    const client = await this.getClient();
+    const params = client.callbackParams(req as never);
+    const tokenSet = await client.callback(process.env.FLOR_REDIRECT_URI!, params, {
+      code_verifier: tx.code_verifier,
+      state: tx.state,
+      nonce: tx.nonce,
+    });
+    const claims = tokenSet.claims();
+    let userinfo: Record<string, unknown> = {};
+    try {
+      if (tokenSet.access_token) userinfo = await client.userinfo(tokenSet.access_token);
+    } catch {
+      /* userinfo опционален */
+    }
+    return this.provision({ ...userinfo, ...claims }, tokenSet);
+  }
+
+  private async provision(c: Record<string, unknown>, tokenSet: TokenSet): Promise<{ sid: string }> {
+    const sub = String(c.sub);
+    const fullName = String(c.name ?? c.preferred_username ?? 'Пользователь');
+    const [last = '', first = ''] = fullName.split(/\s+/);
+    await this.prisma.user.upsert({
+      where: { id: sub },
+      update: { displayName: fullName, email: (c.email as string) ?? undefined },
+      create: { id: sub, firstName: first || fullName, lastName: last, displayName: fullName, email: (c.email as string) ?? undefined },
+    });
+
+    const orgs = (c.florus_orgs as FlorOrg[] | undefined) ?? [];
+    const activeFlorOrg = (c.org_id as string) ?? orgs[0]?.org_id ?? null;
+    const role = (c.org_role as string) ?? orgs.find((o) => o.org_id === activeFlorOrg)?.role ?? 'teacher';
+    const orgName = (c.org_name as string) ?? orgs.find((o) => o.org_id === activeFlorOrg)?.org_name ?? 'Школа';
+
+    let orgId: string | null = null;
+    let subRole: string | null = null;
+    if (activeFlorOrg) {
+      // lazy-provision локальной орг (зеркало Флёрус-орг) — «активация» без сайтовой покупки
+      const org = await this.prisma.organization.upsert({
+        where: { florusOrgId: activeFlorOrg },
+        update: { name: orgName },
+        create: { florusOrgId: activeFlorOrg, name: orgName, status: 'active' },
+      });
+      orgId = org.id;
+      if (role === 'staff') {
+        const existing = await this.prisma.membership.findUnique({
+          where: { florusUserId_orgId: { florusUserId: sub, orgId: org.id } },
+        });
+        subRole = existing?.subRole ?? 'methodist'; // дефолт до назначения админом
+      }
+      await this.prisma.membership.upsert({
+        where: { florusUserId_orgId: { florusUserId: sub, orgId: org.id } },
+        update: { florusRole: role, subRole },
+        create: { florusUserId: sub, orgId: org.id, florusRole: role, subRole },
+      });
+    }
+
+    const sid = randomBytes(24).toString('base64url');
+    await this.prisma.session.create({
+      data: {
+        sid,
+        florusUserId: sub,
+        florusSid: (c.sid as string) ?? null,
+        orgId,
+        florusOrgId: activeFlorOrg,
+        role,
+        subRole,
+        name: fullName,
+        accessToken: tokenSet.access_token,
+        refreshToken: tokenSet.refresh_token,
+        idToken: tokenSet.id_token,
+        expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+      },
+    });
+    return { sid };
+  }
+
+  /** Сессия по cookie sid (со скользящим продлением). */
+  async getSession(sid: string): Promise<SessionUser | null> {
+    const s = await this.prisma.session.findUnique({ where: { sid } });
+    if (!s || s.expiresAt < new Date()) return null;
+    void this.prisma.session
+      .update({ where: { sid }, data: { expiresAt: new Date(Date.now() + SESSION_TTL_MS) } })
+      .catch(() => undefined);
+    let orgName: string | undefined;
+    if (s.orgId) orgName = (await this.prisma.organization.findUnique({ where: { id: s.orgId } }))?.name;
+    return {
+      florusUserId: s.florusUserId,
+      orgId: s.orgId,
+      florusOrgId: s.florusOrgId,
+      role: s.role,
+      subRole: s.subRole,
+      name: s.name,
+      orgName,
+    };
+  }
+
+  /** RP-initiated logout: URL end-session + удаление локальной сессии. */
+  async buildLogoutUrl(sid: string | undefined): Promise<string> {
+    const fallback = process.env.FLOR_POST_LOGOUT_REDIRECT_URI ?? '/';
+    if (!sid) return fallback;
+    const s = await this.prisma.session.findUnique({ where: { sid } });
+    await this.prisma.session.delete({ where: { sid } }).catch(() => undefined);
+    if (!s?.idToken) return fallback;
+    try {
+      const client = await this.getClient();
+      return client.endSessionUrl({ id_token_hint: s.idToken, post_logout_redirect_uri: fallback });
+    } catch {
+      return fallback;
+    }
+  }
+
+  /** Back-channel logout: верификация logout_token и убийство локальных сессий. */
+  async handleBackchannel(token: string): Promise<void> {
+    const { payload } = await jwtVerify(token, this.getJwks(), {
+      issuer: this.issuer,
+      audience: process.env.FLOR_CLIENT_ID ?? 'edustore',
+    });
+    const events = (payload as JWTPayload & { events?: Record<string, unknown>; nonce?: string }).events;
+    if (!events?.['http://schemas.openid.net/event/backchannel-logout']) throw new Error('not a logout event');
+    if ('nonce' in payload && payload.nonce) throw new Error('logout token must not carry nonce');
+    const sub = payload.sub;
+    const sid = (payload as JWTPayload & { sid?: string }).sid;
+    if (!sub && !sid) throw new Error('no subject');
+    if (sid) await this.prisma.session.deleteMany({ where: { florusSid: sid } });
+    else if (sub) await this.prisma.session.deleteMany({ where: { florusUserId: sub } });
+  }
+}

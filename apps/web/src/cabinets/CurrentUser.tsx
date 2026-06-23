@@ -46,6 +46,25 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     localStorage.setItem(KEY, JSON.stringify(user));
   }, [user]);
+
+  // ПРОД: роль из Флёруса (/api/auth/flor/me); нет сессии → редирект на вход.
+  // DEV: используем переключатель ролей (RoleSwitch).
+  useEffect(() => {
+    if (!import.meta.env.PROD) return;
+    fetch("/api/auth/flor/me", { credentials: "include" })
+      .then((r) => {
+        if (r.status === 401 || r.status === 403) {
+          window.location.href = "/api/auth/flor/login";
+          return null;
+        }
+        return r.ok ? r.json() : null;
+      })
+      .then((m: { name: string; role: FlorRole; subRole: SubRole; orgName?: string } | null) => {
+        if (m) setUser({ name: m.name, florusRole: m.role, subRole: m.subRole, orgName: m.orgName ?? "Школа" });
+      })
+      .catch(() => undefined);
+  }, []);
+
   return <C.Provider value={{ user, setUser }}>{children}</C.Provider>;
 }
 

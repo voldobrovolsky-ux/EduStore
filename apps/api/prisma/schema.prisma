@@ -51,12 +51,49 @@ model User {
 }
 
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  type      String   @default("School") // School | Studio | Specialist | Union
-  classes   Class[]
-  subjects  Subject[]
-  createdAt DateTime @default(now())
+  id          String       @id @default(cuid())
+  florusOrgId String?      @unique // зеркало org_id из Флёруса (lazy-provision при первом входе)
+  status      String       @default("active") // pending | active
+  name        String
+  type        String       @default("School") // School | Studio | Specialist | Union
+  classes     Class[]
+  subjects    Subject[]
+  memberships Membership[]
+  createdAt   DateTime     @default(now())
+}
+
+// Членство пользователя в организации + EduStore-роль. florusRole из Флёруса;
+// subRole (staff → завуч|методист|психолог) назначает школьный админ (ADR-0005).
+model Membership {
+  id           String       @id @default(cuid())
+  florusUserId String // = User.id (sub)
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  florusRole   String // owner | admin | teacher | staff | parent | student
+  subRole      String? // zavuch | methodist | psychologist
+  createdAt    DateTime     @default(now())
+
+  @@unique([florusUserId, orgId])
+}
+
+// Серверная сессия RP (BFF): cookie flor_sid → эта запись. Токены — server-only.
+model Session {
+  sid          String   @id
+  florusUserId String
+  florusSid    String? // sid сессии Флёруса (для back-channel logout)
+  orgId        String?
+  florusOrgId  String?
+  role         String
+  subRole      String?
+  name         String
+  accessToken  String?  @db.Text
+  refreshToken String?  @db.Text
+  idToken      String?  @db.Text
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([florusUserId])
+  @@index([florusSid])
 }
 
 // ─────────────────────────── teacher ───────────────────────────

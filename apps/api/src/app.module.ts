@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './common/prisma/prisma.module';
-import { DevAuthGuard } from './common/auth/dev-auth.guard';
+import { AuthModule } from './common/auth/auth.module';
+import { AuthGuard } from './common/auth/auth.guard';
 import { EventsModule } from './common/events/events.module';
 import { TeacherModule } from './modules/teacher/teacher.module';
 import { PlanningModule } from './modules/planning/planning.module';
@@ -23,6 +24,7 @@ import { UmkParamModule } from './parameters/umk-param/umk-param.module';
 @Module({
   imports: [
     PrismaModule,
+    AuthModule, // Флёрус OIDC RP (ADR-0005)
     EventsModule, // event bus + transactional outbox + idempotent inbox (shared kernel)
     // кабинет учителя (поверхность параметра УМК)
     TeacherModule,
@@ -39,8 +41,8 @@ import { UmkParamModule } from './parameters/umk-param/umk-param.module';
     UmkParamModule,
   ],
   providers: [
-    // DEV-аутентификация (Flōrus SSO заглушка) — проставляет teacherId в request.
-    { provide: APP_GUARD, useClass: DevAuthGuard },
+    // Единый guard: сессия Флёруса или DEV-bypass (AUTH_MODE != production).
+    { provide: APP_GUARD, useClass: AuthGuard },
   ],
 })
 export class AppModule {}

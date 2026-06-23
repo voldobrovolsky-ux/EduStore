@@ -26,7 +26,7 @@ function Root() {
       <PrefsProvider>
         <Shell />
       </PrefsProvider>
-      <RoleSwitch />
+      {!import.meta.env.PROD && <RoleSwitch />}
     </CurrentUserProvider>
   );
 }
