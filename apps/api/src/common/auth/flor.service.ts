@@ -6,12 +6,13 @@ import { PrismaService } from '../prisma/prisma.service';
 
 export interface SessionUser {
   florusUserId: string;
-  orgId: string | null;
-  florusOrgId: string | null;
-  role: string;
+  workspaceId: string | null; // активный тенант = школа (ключ изоляции)
+  florusWorkspaceId: string | null; // claim workspace_id
+  florusOrgId: string | null; // платформенная org (flor:org) — не тенант
+  role: string; // доменная роль: teacher|student|parent|staff
   subRole: string | null;
   name: string;
-  orgName?: string;
+  orgName?: string; // отображаемое имя школы (Workspace.name)
 }
 
 interface FlorOrg { org_id: string; org_name?: string; role: string }
@@ -70,7 +71,7 @@ export class FlorService {
     const code_challenge = generators.codeChallenge(code_verifier);
     const state = generators.state();
     const nonce = generators.nonce();
-    const scope = process.env.FLOR_SCOPES ?? 'openid profile phone flor:org flor:roles offline_access';
+    const scope = process.env.FLOR_SCOPES ?? 'openid profile phone flor:org flor:roles flor:workspace offline_access';
     const url = client.authorizationUrl({ scope, code_challenge, code_challenge_method: 'S256', state, nonce });
     return { url, tx: { code_verifier, state, nonce, next: opts?.next, subRole: opts?.subRole ?? null } };
   }
@@ -109,41 +110,48 @@ export class FlorService {
       create: { id: sub, firstName: first || fullName, lastName: last, displayName: fullName, email: (c.email as string) ?? undefined },
     });
 
-    // Роль — строго из Флёрус-claims (florus_orgs[].role активной орг; см. ADR-0005).
-    // Фолбэк на orgs[0] делает одношкольного админа устойчивым, даже если верхнеуровневый
-    // org_id не пришёл/не совпал. Дефолт teacher — только когда роли в claims вовсе нет.
+    // ДОМЕННАЯ роль (teacher|student|parent|staff) — из florus_orgs[].role/org_role.
+    // admin/owner — tenancy-роли (RoleAssignment Флёра), в токен не приходят (канон §7.4).
     const orgs = (c.florus_orgs as FlorOrg[] | undefined) ?? [];
-    const activeFlorOrg = (c.org_id as string) ?? orgs[0]?.org_id ?? null;
+    const activeFlorOrg = (c.org_id as string) ?? orgs[0]?.org_id ?? null; // платформенная org Флёра
     const activeOrg = orgs.find((o) => o.org_id === activeFlorOrg) ?? orgs[0];
     const role = (c.org_role as string) ?? activeOrg?.role ?? 'teacher';
-    const orgName = (c.org_name as string) ?? activeOrg?.org_name ?? 'Школа';
-    // Диагностика входа (виден в `docker compose logs api`): какой кабинет откроется.
+    // ШКОЛА = workspace из claim workspace_id (flor:workspace). Fallback на org — переходный период.
+    const florusWorkspaceId = (c.workspace_id as string) ?? activeFlorOrg ?? null;
+    const workspaceName =
+      (c.workspace_name as string) ?? (c.org_name as string) ?? activeOrg?.org_name ?? 'Школа';
     this.log.log(
-      `provision sub=${sub} role=${role} org=${activeFlorOrg ?? '—'} florus_orgs=${orgs.length}`,
+      `provision sub=${sub} role=${role} workspace=${florusWorkspaceId ?? '—'} org=${activeFlorOrg ?? '—'}`,
     );
 
-    let orgId: string | null = null;
+    let workspaceId: string | null = null;
     let subRole: string | null = null;
-    if (activeFlorOrg) {
-      // lazy-provision локальной орг (зеркало Флёрус-орг) — «активация» без сайтовой покупки
-      const org = await this.prisma.organization.upsert({
-        where: { florusOrgId: activeFlorOrg },
-        update: { name: orgName },
-        create: { florusOrgId: activeFlorOrg, name: orgName, status: 'active' },
+    if (florusWorkspaceId) {
+      // платформа EduStore — singleton (арендатор у Флёра, org_type=platform)
+      const platform = await this.prisma.organization.upsert({
+        where: { id: 'org-edustore-platform' },
+        update: { florusOrgId: activeFlorOrg ?? undefined },
+        create: { id: 'org-edustore-platform', florusOrgId: activeFlorOrg, name: (c.org_name as string) ?? 'EduStore', type: 'platform', status: 'active' },
       });
-      orgId = org.id;
+      // школа (Workspace) — зеркало Flör workspace; worknet — СТАБ (florus_worknets[] = P1 Флёра)
+      const ws = await this.prisma.workspace.upsert({
+        where: { florusWorkspaceId },
+        update: { name: workspaceName },
+        create: { florusWorkspaceId, orgId: platform.id, name: workspaceName, status: 'active' },
+      });
+      workspaceId = ws.id;
       if (role === 'staff') {
         const existing = await this.prisma.membership.findUnique({
-          where: { florusUserId_orgId: { florusUserId: sub, orgId: org.id } },
+          where: { florusUserId_workspaceId: { florusUserId: sub, workspaceId: ws.id } },
         });
-        // приоритет: уже назначенная админом → подсказка онбординга (агент выбрал завуч/методист)
-        // → дефолт. existing впереди, чтобы повторный вход по старой ссылке не перетирал роль.
+        // приоритет: уже назначенная админом → подсказка онбординга → дефолт (повторный вход
+        // по старой ссылке не перетирает роль).
         subRole = existing?.subRole ?? subRoleHint ?? 'methodist';
       }
       await this.prisma.membership.upsert({
-        where: { florusUserId_orgId: { florusUserId: sub, orgId: org.id } },
+        where: { florusUserId_workspaceId: { florusUserId: sub, workspaceId: ws.id } },
         update: { florusRole: role, subRole },
-        create: { florusUserId: sub, orgId: org.id, florusRole: role, subRole },
+        create: { florusUserId: sub, workspaceId: ws.id, florusRole: role, subRole },
       });
     }
 
@@ -153,7 +161,8 @@ export class FlorService {
         sid,
         florusUserId: sub,
         florusSid: (c.sid as string) ?? null,
-        orgId,
+        workspaceId,
+        florusWorkspaceId,
         florusOrgId: activeFlorOrg,
         role,
         subRole,
@@ -181,7 +190,7 @@ export class FlorService {
     interval: number;
   }> {
     const client = await this.getClient();
-    const scope = process.env.FLOR_SCOPES ?? 'openid profile phone flor:org flor:roles offline_access';
+    const scope = process.env.FLOR_SCOPES ?? 'openid profile phone flor:org flor:roles flor:workspace offline_access';
     const handle = await client.deviceAuthorization({ scope });
     // interval не выведен в публичный тип DeviceFlowHandle; берём из рантайма, дефолт RFC 8628 — 5с
     const interval = (handle as unknown as { interval?: number }).interval ?? 5;
@@ -229,10 +238,11 @@ export class FlorService {
       .update({ where: { sid }, data: { expiresAt: new Date(Date.now() + SESSION_TTL_MS) } })
       .catch(() => undefined);
     let orgName: string | undefined;
-    if (s.orgId) orgName = (await this.prisma.organization.findUnique({ where: { id: s.orgId } }))?.name;
+    if (s.workspaceId) orgName = (await this.prisma.workspace.findUnique({ where: { id: s.workspaceId } }))?.name;
     return {
       florusUserId: s.florusUserId,
-      orgId: s.orgId,
+      workspaceId: s.workspaceId,
+      florusWorkspaceId: s.florusWorkspaceId,
       florusOrgId: s.florusOrgId,
       role: s.role,
       subRole: s.subRole,

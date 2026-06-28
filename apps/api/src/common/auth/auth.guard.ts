@@ -38,7 +38,7 @@ export class AuthGuard implements CanActivate {
       const header = req.headers['x-florus-user-id'];
       const uid = (Array.isArray(header) ? header[0] : header)?.trim() || DEFAULT_TEACHER_ID;
       req.teacherId = uid;
-      req.user = { florusUserId: uid, orgId: null, florusOrgId: null, role: 'teacher', subRole: null, name: 'Анна Соколова' };
+      req.user = { florusUserId: uid, workspaceId: null, florusWorkspaceId: null, florusOrgId: null, role: 'teacher', subRole: null, name: 'Анна Соколова' };
       return true;
     }
 

@@ -28,7 +28,7 @@ export class ContingentService {
       const displayName = `${input.lastName} ${input.firstName}`;
       const student = await tx.student.create({
         data: {
-          organizationId: klass.organizationId, // тенант из класса — корректно и вне request-контекста
+          workspaceId: klass.workspaceId, // тенант = школа (из класса) — корректно и вне request-контекста
           classId: input.classId,
           number: count + 1,
           firstName: input.firstName,
@@ -38,7 +38,7 @@ export class ContingentService {
       });
       const event = newEvent<StudentEnrolledV1>({
         type: CONTINGENT_EVENTS.studentEnrolled,
-        organizationId: klass.organizationId,
+        workspaceId: klass.workspaceId,
         actor: input.actor ?? 'system',
         payload: {
           studentId: student.id,

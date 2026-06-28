@@ -31,7 +31,7 @@ export class OutboxDispatcher {
         id: r.id,
         type: r.type,
         occurredAt: r.createdAt.toISOString(),
-        organizationId: r.organizationId,
+        workspaceId: r.workspaceId,
         correlationId: r.correlationId,
         causationId: r.causationId,
         depth: r.depth,

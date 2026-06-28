@@ -1,25 +1,20 @@
 import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
-import { CurrentUser } from '../../common/auth/current-user.decorator';
-import type { SessionUser } from '../../common/auth/flor.service';
 import { StructureService } from './structure.service';
 import { AddSubGroupDto, AssignDto, CreateClassDto, CreateSubjectDto } from './dto';
 
+// Тенант (школа) берётся из контекста запроса tenant-guard'ом — явная передача org не нужна.
 @Controller('structure')
 export class StructureController {
   constructor(private readonly svc: StructureService) {}
 
-  private org(u?: SessionUser): string | null {
-    return u?.orgId ?? null;
-  }
-
   // классы / подгруппы (админ)
   @Get('classes')
-  listClasses(@CurrentUser() u?: SessionUser) {
-    return this.svc.listClasses(this.org(u));
+  listClasses() {
+    return this.svc.listClasses();
   }
   @Post('classes')
-  createClass(@Body() body: CreateClassDto, @CurrentUser() u?: SessionUser) {
-    return this.svc.createClass(this.org(u), body);
+  createClass(@Body() body: CreateClassDto) {
+    return this.svc.createClass(body);
   }
   @Delete('classes/:id')
   deleteClass(@Param('id') id: string) {
@@ -36,12 +31,12 @@ export class StructureController {
 
   // дисциплины (методист/завуч)
   @Get('subjects')
-  listSubjects(@CurrentUser() u?: SessionUser) {
-    return this.svc.listSubjects(this.org(u));
+  listSubjects() {
+    return this.svc.listSubjects();
   }
   @Post('subjects')
-  createSubject(@Body() body: CreateSubjectDto, @CurrentUser() u?: SessionUser) {
-    return this.svc.createSubject(this.org(u), body);
+  createSubject(@Body() body: CreateSubjectDto) {
+    return this.svc.createSubject(body);
   }
   @Delete('subjects/:id')
   deleteSubject(@Param('id') id: string) {
@@ -50,8 +45,8 @@ export class StructureController {
 
   // распределение учителей (завуч)
   @Get('teachers')
-  listTeachers(@CurrentUser() u?: SessionUser) {
-    return this.svc.listTeachers(this.org(u));
+  listTeachers() {
+    return this.svc.listTeachers();
   }
   @Post('assignments')
   assign(@Body() body: AssignDto) {
@@ -64,8 +59,8 @@ export class StructureController {
 
   // привязанные устройства (админ → Сеть устройств)
   @Get('devices')
-  listDevices(@CurrentUser() u?: SessionUser) {
-    return this.svc.listDevices(this.org(u));
+  listDevices() {
+    return this.svc.listDevices();
   }
   @Delete('devices/:id')
   deleteDevice(@Param('id') id: string) {

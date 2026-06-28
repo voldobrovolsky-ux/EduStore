@@ -11,7 +11,7 @@ import type { SessionUser } from '../auth/flor.service';
  * Глобальный интерсептор (§3.6): кладёт tenant-контекст запроса в ALS, чтобы tenant-guard
  * фильтровал каждый запрос доменных моделей внутри обработчика.
  *
- * Активный тенант: из сессии (req.user.orgId). В DEV/без активного контекста выводится из
+ * Активный тенант: из сессии (req.user.workspaceId = школа). В DEV/без контекста выводится из
  * directory по florus_user_id. Публичные/неаутентифицированные маршруты (login/callback/
  * backchannel) идут без user → системный контекст (там работает OIDC-провижининг).
  */
@@ -40,11 +40,11 @@ export class TenantInterceptor implements NestInterceptor {
   private async resolveStore(req: Request & { user?: SessionUser }): Promise<TenantStore> {
     const user = req.user;
     if (!user) return { tenantId: null, system: true }; // публичный маршрут → система
-    if (user.orgId) return { tenantId: user.orgId, system: false };
-    // сессия без активного org или DEV-bypass: вывести тенант из directory
+    if (user.workspaceId) return { tenantId: user.workspaceId, system: false }; // активная школа
+    // сессия без активной школы или DEV-bypass: вывести тенант (= школу) из directory
     const tenantId = await this.resolveTenantForUser(user.florusUserId);
     if (tenantId) return { tenantId, system: false };
-    return { tenantId: null, system: true }; // не привязан ни к одной орг (owner до выбора)
+    return { tenantId: null, system: true }; // не привязан ни к одной школе (owner до выбора)
   }
 
   // Membership вне изоляции; Teacher — fallback для DEV-учителя (guarded, потому system).
@@ -52,14 +52,14 @@ export class TenantInterceptor implements NestInterceptor {
     return TenantContext.runAsSystem(async () => {
       const m = await this.prisma.membership.findFirst({
         where: { florusUserId },
-        select: { orgId: true },
+        select: { workspaceId: true },
       });
-      if (m) return m.orgId;
+      if (m) return m.workspaceId;
       const t = await this.prisma.teacher.findUnique({
         where: { id: florusUserId },
-        select: { organizationId: true },
+        select: { workspaceId: true },
       });
-      return t?.organizationId ?? null;
+      return t?.workspaceId ?? null;
     });
   }
 }

@@ -8,7 +8,7 @@ export interface DomainEvent<T = unknown> {
   id: string; // идемпотентный ключ (= Nats-Msg-Id в проде)
   type: string; // "<param>.<aggregate>.<verbPast>.v1"
   occurredAt: string; // ISO
-  organizationId: string; // тенант
+  workspaceId: string; // тенант = школа (Workspace)
   correlationId: string; // один на весь каскад
   causationId?: string | null; // событие-причина (предыдущее звено)
   depth: number; // глубина каскада
@@ -18,7 +18,7 @@ export interface DomainEvent<T = unknown> {
 
 export function newEvent<T>(args: {
   type: string;
-  organizationId: string;
+  workspaceId: string;
   payload: T;
   actor?: string;
   correlationId?: string;
@@ -30,7 +30,7 @@ export function newEvent<T>(args: {
     id,
     type: args.type,
     occurredAt: new Date().toISOString(),
-    organizationId: args.organizationId,
+    workspaceId: args.workspaceId,
     correlationId: args.correlationId ?? id,
     causationId: args.causationId ?? null,
     depth: args.depth ?? 0,
@@ -51,7 +51,7 @@ export function continuation<T>(
 ): DomainEvent<T> {
   return newEvent({
     type,
-    organizationId: parent.organizationId,
+    workspaceId: parent.workspaceId,
     payload,
     correlationId: parent.correlationId,
     causationId: parent.id,

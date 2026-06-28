@@ -24,7 +24,7 @@ export class CommsHandlers implements OnModuleInit {
     const p = e.payload as StudentEnrolledV1;
     await this.inbox.handle(e.id, 'comms', async (tx) => {
       await tx.channelMembership.create({
-        data: { organizationId: e.organizationId, classId: p.classId, studentId: p.studentId },
+        data: { workspaceId: e.workspaceId, classId: p.classId, studentId: p.studentId },
       });
       // следующее звено каскада (depth+1)
       await this.outbox.enqueue(

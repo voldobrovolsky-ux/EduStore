@@ -24,7 +24,7 @@ export class NutritionHandlers implements OnModuleInit {
     const p = e.payload as StudentEnrolledV1;
     await this.inbox.handle(e.id, 'nutrition', async (tx) => {
       await tx.mealOrder.create({
-        data: { organizationId: e.organizationId, studentId: p.studentId },
+        data: { workspaceId: e.workspaceId, studentId: p.studentId },
       });
       await this.outbox.enqueue(
         tx,

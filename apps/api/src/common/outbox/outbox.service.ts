@@ -14,7 +14,7 @@ export class OutboxService {
       data: {
         id: event.id,
         type: event.type,
-        organizationId: event.organizationId,
+        workspaceId: event.workspaceId,
         correlationId: event.correlationId,
         causationId: event.causationId ?? undefined,
         depth: event.depth,

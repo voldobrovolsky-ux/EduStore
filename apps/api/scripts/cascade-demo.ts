@@ -60,7 +60,7 @@ async function main() {
     id: enrolled!.id,
     type: enrolled!.type,
     occurredAt: enrolled!.createdAt.toISOString(),
-    organizationId: enrolled!.organizationId,
+    workspaceId: enrolled!.workspaceId,
     correlationId: enrolled!.correlationId,
     causationId: enrolled!.causationId,
     depth: enrolled!.depth,
@@ -78,7 +78,7 @@ async function main() {
   await bus.publish(
     newEvent({
       type: 'contingent.student.enrolled.v1',
-      organizationId: klass.organizationId,
+      workspaceId: klass.workspaceId,
       depth: 13,
       payload: { studentId: 'x', classId: klass.id, displayName: 'Петля', number: 0 },
     }),

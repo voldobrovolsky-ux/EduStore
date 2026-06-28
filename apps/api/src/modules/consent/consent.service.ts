@@ -36,12 +36,12 @@ export class ConsentService {
     if (input.source === ConsentSource.school_admin && !input.evidenceRef) {
       throw new BadRequestException('согласие минора (school_admin) требует evidenceRef — скан бумажного');
     }
-    const organizationId = TenantContext.require();
+    const workspaceId = TenantContext.require();
     // запись согласия + событие (для audit-леджера §4.8) — атомарно
     return this.prisma.$transaction(async (tx) => {
       const consent = await tx.consent.create({
         data: {
-          organizationId,
+          workspaceId,
           subjectUserId: input.subjectUserId,
           purpose: input.purpose,
           granted: input.granted,
@@ -55,7 +55,7 @@ export class ConsentService {
         tx,
         newEvent<ConsentRecordedV1>({
           type: COMPLIANCE_EVENTS.consentRecorded,
-          organizationId,
+          workspaceId,
           payload: {
             subjectUserId: input.subjectUserId,
             purpose: input.purpose,
@@ -94,7 +94,7 @@ export class ConsentService {
         tx,
         newEvent<DeletionRequestedV1>({
           type: COMPLIANCE_EVENTS.deletionRequested,
-          organizationId: TenantContext.require(),
+          workspaceId: TenantContext.require(),
           actor: requestedBy,
           payload: { subjectUserId, requestedBy, reason },
         }),

@@ -42,7 +42,7 @@ export class AuditService implements OnModuleInit {
       await tx.auditLog.create({
         data: {
           eventId: e.id,
-          organizationId: e.organizationId, // из конверта (system-контекст воркера)
+          workspaceId: e.workspaceId, // из конверта (system-контекст воркера)
           actor: e.actor ?? null,
           subjectUserId: spec.subject(e.payload as Record<string, unknown>) ?? null,
           action: e.type,

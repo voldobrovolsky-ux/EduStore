@@ -85,7 +85,7 @@ export class MaterialsService {
     const spec = KIND_MAP[kind];
     const created = await this.prisma.generatedMaterial.create({
       data: {
-        organizationId: TenantContext.require(), // тенант = орг урока (активный контекст)
+        workspaceId: TenantContext.require(), // тенант = школа урока (активный контекст)
         lessonId,
         type: spec.type,
         title: spec.title,

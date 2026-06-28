@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
 import type { AddSubGroupDto, AssignDto, CreateClassDto, CreateSubjectDto } from './dto';
@@ -6,24 +6,16 @@ import type { AddSubGroupDto, AssignDto, CreateClassDto, CreateSubjectDto } from
 /**
  * Ручное создание структуры школы (онбординг шаги 4.2 и 6):
  * классы/подгруппы (админ), дисциплины и распределение учителей (методист/завуч).
- * Тенант — активная орг сессии; в dev (orgId=null) берётся первая (засеянная) орг.
+ * Тенант — школа (Workspace) из контекста запроса: чтения фильтрует tenant-guard,
+ * записи проставляют workspaceId = TenantContext.require(). Ручной org-фильтр не нужен.
  */
 @Injectable()
 export class StructureService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async resolveOrg(userOrgId: string | null): Promise<string> {
-    if (userOrgId) return userOrgId;
-    const first = await this.prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } });
-    if (!first) throw new NotFoundException('Нет организации');
-    return first.id;
-  }
-
   // ─── классы / подгруппы ───
-  async listClasses(userOrgId: string | null) {
-    const organizationId = await this.resolveOrg(userOrgId);
+  async listClasses() {
     const classes = await this.prisma.class.findMany({
-      where: { organizationId },
       orderBy: [{ parallel: 'asc' }, { letter: 'asc' }],
       include: { subGroups: true, _count: { select: { students: true } } },
     });
@@ -34,11 +26,10 @@ export class StructureService {
     }));
   }
 
-  async createClass(userOrgId: string | null, dto: CreateClassDto) {
-    const organizationId = await this.resolveOrg(userOrgId);
+  async createClass(dto: CreateClassDto) {
     const letter = dto.letter.trim().toUpperCase();
     const c = await this.prisma.class.create({
-      data: { organizationId, parallel: dto.parallel, letter, label: `${dto.parallel}${letter}` },
+      data: { workspaceId: TenantContext.require(), parallel: dto.parallel, letter, label: `${dto.parallel}${letter}` },
     });
     return { id: c.id, label: c.label, parallel: c.parallel, letter: c.letter, students: 0, subGroups: [] };
   }
@@ -50,7 +41,7 @@ export class StructureService {
 
   async addSubGroup(classId: string, dto: AddSubGroupDto) {
     const g = await this.prisma.subGroup.create({
-      data: { organizationId: TenantContext.require(), classId, name: dto.name.trim() },
+      data: { workspaceId: TenantContext.require(), classId, name: dto.name.trim() },
     });
     return { id: g.id, name: g.name };
   }
@@ -61,16 +52,14 @@ export class StructureService {
   }
 
   // ─── дисциплины ───
-  async listSubjects(userOrgId: string | null) {
-    const organizationId = await this.resolveOrg(userOrgId);
-    const s = await this.prisma.subject.findMany({ where: { organizationId }, orderBy: { name: 'asc' } });
+  async listSubjects() {
+    const s = await this.prisma.subject.findMany({ orderBy: { name: 'asc' } });
     return s.map((x) => ({ id: x.id, name: x.name, color: x.color }));
   }
 
-  async createSubject(userOrgId: string | null, dto: CreateSubjectDto) {
-    const organizationId = await this.resolveOrg(userOrgId);
+  async createSubject(dto: CreateSubjectDto) {
     const s = await this.prisma.subject.create({
-      data: { organizationId, name: dto.name.trim(), color: dto.color ?? '#2563EB' },
+      data: { workspaceId: TenantContext.require(), name: dto.name.trim(), color: dto.color ?? '#2563EB' },
     });
     return { id: s.id, name: s.name, color: s.color };
   }
@@ -81,10 +70,8 @@ export class StructureService {
   }
 
   // ─── учителя + распределение ───
-  async listTeachers(userOrgId: string | null) {
-    const organizationId = await this.resolveOrg(userOrgId);
+  async listTeachers() {
     const teachers = await this.prisma.teacher.findMany({
-      where: { organizationId },
       include: { user: true, assignments: { include: { class: true, subject: true } } },
     });
     return teachers.map((t) => ({
@@ -101,7 +88,7 @@ export class StructureService {
     const a = await this.prisma.teachingAssignment.upsert({
       where: { teacherId_classId_subjectId: { teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId } },
       update: { subGroupId: dto.subGroupId ?? null },
-      create: { organizationId: TenantContext.require(), teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId, subGroupId: dto.subGroupId ?? null },
+      create: { workspaceId: TenantContext.require(), teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId, subGroupId: dto.subGroupId ?? null },
     });
     return { id: a.id };
   }
@@ -112,12 +99,8 @@ export class StructureService {
   }
 
   // ─── привязанные устройства-киоски (реальные, из таблицы Device) ───
-  async listDevices(userOrgId: string | null) {
-    const organizationId = await this.resolveOrg(userOrgId);
-    const devices = await this.prisma.device.findMany({
-      where: { orgId: organizationId },
-      orderBy: { createdAt: 'desc' },
-    });
+  async listDevices() {
+    const devices = await this.prisma.device.findMany({ orderBy: { createdAt: 'desc' } });
     const boundIds = [...new Set(devices.map((d) => d.boundByUserId).filter((x): x is string => !!x))];
     const users = boundIds.length
       ? await this.prisma.user.findMany({ where: { id: { in: boundIds } } })

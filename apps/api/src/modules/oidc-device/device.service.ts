@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantContext } from '../../common/tenant/tenant-context';
 import { FlorService, type SessionUser } from '../../common/auth/flor.service';
 
 type LoginFlow = {
@@ -144,14 +145,14 @@ export class DeviceService {
     if (!entry) throw new NotFoundException('код привязки не найден или истёк');
     const flow = entry[1] as KioskFlow;
 
-    // организация: из сессии телефона; в DEV (orgId пуст) — первая школа (онбординг одной школы)
-    const orgId = user?.orgId ?? (await this.prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } }))?.id ?? null;
-    if (!orgId) throw new ForbiddenException('нет организации для привязки устройства');
+    // школа: из сессии телефона (workspaceId); в DEV — из tenant-контекста запроса
+    const workspaceId = user?.workspaceId ?? TenantContext.current();
+    if (!workspaceId) throw new ForbiddenException('нет школы для привязки устройства');
 
     const deviceToken = rand(32);
     const name = `Устройство · ${new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}`;
     await this.prisma.device.create({
-      data: { orgId, name, deviceToken, boundByUserId: user?.florusUserId ?? null },
+      data: { workspaceId, name, deviceToken, boundByUserId: user?.florusUserId ?? null },
     });
 
     flow.status = 'confirmed';

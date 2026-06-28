@@ -128,7 +128,7 @@ export class JournalService {
           },
         },
         create: {
-          organizationId: TenantContext.require(), // тенант = орг урока (активный контекст)
+          workspaceId: TenantContext.require(), // тенант = школа урока (активный контекст)
           studentId: dto.studentId,
           lessonId: dto.lessonId,
           value: data.value,

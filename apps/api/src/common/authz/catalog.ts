@@ -51,9 +51,10 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'psych.risk.view', section: 'psych', screen: 'risk', action: 'view', label: 'Risk-карта' },
 ];
 
+// Каталог строится ТОЛЬКО на доменных ролях (teacher|student|parent|staff·завуч/методист/
+// психолог). admin/owner — tenancy-роли Флёра (RoleAssignment), в токен не приходят (канон
+// §7.4) → пакетов на них нет; их кабинеты ведёт панель Флёра/walk-up, не каталог RP.
 export const ROLE_PACKAGES: RolePackageDef[] = [
-  { key: 'owner', cabinet: 'owner', label: 'Кабинет учредителя', permissions: ['owner.metrics.view', 'owner.schools.view', 'owner.license.view'] },
-  { key: 'admin', cabinet: 'admin', label: 'Панель управления', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'structure.devices.manage', 'schedule.view'] },
   { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'notes.teacher.edit', 'schedule.view'] },
   { key: 'zavuch', cabinet: 'zavuch', label: 'Кабинет завуча', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'planning.ktp.view', 'schedule.view'] },
   { key: 'methodist', cabinet: 'methodist', label: 'Кабинет методиста', permissions: ['structure.disciplines.manage', 'methodics.umk.view', 'methodics.rp.view'] },
@@ -87,4 +88,8 @@ export async function syncAuthzCatalog(prisma: PrismaClient): Promise<void> {
       });
     }
   }
+  // прунинг: убрать пакеты, выпавшие из канона (например прежние admin/owner — tenancy-роли,
+  // каталог на них не строим). Связи RolePackagePermission уходят каскадом.
+  const keep = ROLE_PACKAGES.map((p) => p.key);
+  await prisma.rolePackage.deleteMany({ where: { key: { notIn: keep } } });
 }

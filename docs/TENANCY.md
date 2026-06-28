@@ -1,46 +1,43 @@
-# Изоляция тенанта (§3.6) — дизайн и открытый вопрос §3.5
+# Изоляция тенанта (§3.6) — модель и реализация
 
-## Что сделано
-Изоляция тенанта была **только на уровне приложения** (ручная фильтрация по
-`organizationId`, хрупко). Теперь она **принудительна** через tenant-guard.
+## Модель (канон Флёра, §3.5 РЕШЁН)
+**Единица изоляции = ШКОЛА = `Workspace`.** Ключ тенанта — `workspaceId` на каждой
+доменной таблице. Источник ключа — claim `workspace_id` логин-токена (scope `flor:workspace`,
+доступен сейчас).
 
-**Механика (`apps/api/src/common/tenant/`):**
-- `tenant-context.ts` — `AsyncLocalStorage`: тенант запроса (`tenantId`/`system`).
-- `tenant.interceptor.ts` — глобальный интерсептор: на каждый HTTP-запрос кладёт
-  контекст из сессии (`req.user.orgId`); в DEV/без активного контекста выводит из
-  directory; публичные маршруты (login/callback/backchannel) → системный контекст.
-- `tenant-guard.ts` — Prisma `$use` middleware: для каждой доменной модели подмешивает
-  `{ tenantCol: tenantId }` в `where` (чтения/правки/удаления) и в `data` (create).
-  Чужая строка → пустой результат / `P2025`. Системный контекст и не-HTTP код — обход.
-- `tenant-models.ts` — карта `модель → колонка тенанта` (единый источник истины).
+Иерархия (зеркало канона Флёра):
+- **`Organization`** = САМА ПЛАТФОРМА EduStore (одна, `flor_owned`, `org_type=platform`).
+  Арендатор у Флёра. Доменные данные на неё НЕ ключуются.
+- **`Workspace`** = школа/филиал. Единица изоляции. `florusWorkspaceId` ← `workspace_id`.
+- **`Worknet`** = сеть школ. `Workspace.worknetId` — nullable FK (школа максимум в одной сети,
+  контейнер, не many-to-many). Сущность и колонка заведены; **синк членства в сеть — стаб**
+  до Phase 1 Флёра (`florus_worknets[]`).
 
-**Денормализация ключа:** `organizationId` добавлен на КАЖДУЮ доменную таблицу
-(миграция `*_tenant_isolation`, бэкфилл из родителя), чтобы guard был однороден и
-схема была RLS-ready.
+Две оси ролей (канон §4.1): **DOMAIN** (teacher/student/parent/staff — в `Membership`,
+приходят в токен, это наше) vs **TENANCY** (operator/org_admin/workspace_admin — RoleAssignment
+Флёра, в токен НЕ приходят). Каталог прав (§5.1) строится только на доменных ролях; admin/owner
+кабинеты ведёт панель Флёра/walk-up, не RP-каталог.
 
-**Готовность проверена** (`npm run tenant:check`): чтение/запись/`count`/`findUnique`
-не пересекают границу; запрос без тенанта (не system) → отказ (fail-closed).
+## Механика (`apps/api/src/common/tenant/`)
+- `tenant-context.ts` — `AsyncLocalStorage`: тенант запроса (`tenantId` = workspaceId / `system`).
+- `tenant.interceptor.ts` — глобальный: контекст из сессии (`req.user.workspaceId`); в DEV/без
+  активной школы выводит из directory (Membership/Teacher.workspaceId); публичные маршруты → система.
+- `tenant-guard.ts` — Prisma `$use` middleware: подмешивает `{ workspaceId }` в `where`
+  (read/update/delete) и в `data` (create). Чужая строка → пусто / `P2025`. system/не-HTTP → обход,
+  аутентифицирован-без-тенанта → fail-closed.
+- `tenant-models.ts` — карта `модель → workspaceId` (единый источник; `Workspace` по `id`).
 
-> Тонкость реализации: контекст должен быть активен в момент **await** запроса (Prisma
-> `PrismaPromise` ленив). Интерсептор подписывается на обработчик внутри `TenantContext.run`,
-> поэтому все его await'ы внутри контекста. Тот же приём — в проверочном скрипте.
+Провижининг (`flor.service.provision`): из `workspace_id` → upsert `Workspace` (под платформенной
+`Organization`-singleton) + `Membership(florusUserId, workspaceId, доменная-роль)`; worknet — стаб.
 
-## 🔴 ОТКРЫТО (§3.5) — проверить на живом Flör ДО включения RLS
-Ключ тенанта сейчас = `organizationId` (Flör `org_id`). Flör разделяет
-`organization` (юрлицо, ИНН) → `workspace` (школа). **Если одно юрлицо ведёт несколько
-школ**, ключ на org объединит разные школы в один тенант — изоляция не на том уровне.
+**Готовность проверена** (`npm run tenant:check`): чтение/запись/`count`/`findUnique` не
+пересекают границу школы; запрос без тенанта (не system) → отказ. Каскад/гейт/аудит — на workspaceId.
 
-**Что выяснить:** какую грануляцию даёт claim `florus_orgs[]` — org или workspace.
-- workspace-грануляция → ключевать тенант на workspace-id (правка провижининга в
-  `flor.service.ts`, НЕ механики guard — карта `tenant-models.ts` не меняется);
-- org-грануляция → подтвердить инвариант «1 Organization EduStore = 1 школа».
-
-Этот факт нельзя получить из доков — нужен ответ от работающего Flör. До него ключ =
-`organizationId` (для плацдарма «1 школа = 1 орг» это верно).
+> Тонкость: контекст активен в момент **await** запроса (Prisma `PrismaPromise` ленив).
+> Интерсептор подписывается на обработчик внутри `TenantContext.run` — все await'ы в контексте.
 
 ## Дальнейшее усиление (не Фаза 0)
-- **Postgres RLS** поверх guard: `USING (<col> = current_setting('app.tenant')::uuid)` —
-  защита от запроса, где новый код забыл контекст. Карта моделей уже готова.
-- Bypass-политика для `PlatformAdmin`/`UnionAdmin` (агрегация по дочерним тенантам).
-- Валидация родителя на create дочерних (сейчас org берётся из активного тенанта;
-  кросс-тенантный FK в данных не приводит к утечке, но возможна неконсистентность).
+- **Postgres RLS**, ключ — `workspaceId`: `USING ("workspaceId" = current_setting('app.tenant')::uuid)`.
+  Карта моделей готова.
+- Bypass-политика для tenancy-ролей (operator/workspace_admin — агрегации панели).
+- Синк `Worknet` из `florus_worknets[]` (claim Phase 1 Флёра) — сейчас стаб.

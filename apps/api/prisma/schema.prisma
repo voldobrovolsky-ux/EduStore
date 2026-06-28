@@ -1,8 +1,9 @@
 // EduStore — кабинет учителя. Схема БД (PostgreSQL + Prisma).
-// Мультитенантность (§3.6): organizationId на КАЖДОЙ доменной сущности (ключ тенанта).
-// Изоляция принудительна на уровне приложения — tenant-guard (Prisma $use middleware,
-// common/tenant): каждый запрос доменной модели фильтруется текущим тенантом из ALS.
-// RLS на БД — следующий слой усиления (защита от забытого фильтра в новом коде).
+// Мультитенантность (§3.6, канон Флёра): ЕДИНИЦА ИЗОЛЯЦИИ = школа = Workspace.
+// Ключ тенанта — workspaceId на КАЖДОЙ доменной сущности. Organization = платформа
+// EduStore (одна), Worknet = сеть школ. Изоляция принудительна tenant-guard'ом (Prisma
+// $use middleware, common/tenant): каждый запрос доменной модели фильтруется workspaceId
+// из ALS. RLS на БД (ключ — workspaceId) — следующий слой усиления.
 // Границы доменов: связи по id; межмодульных жёстких зависимостей в запросах избегаем.
 
 generator client {
@@ -71,58 +72,93 @@ enum EntitlementStatus {
 // ─────────────────────────── identity ───────────────────────────
 // Пользователь принадлежит платформе (florus_user_id), организация приглашает его.
 model User {
-  id          String    @id // = florus_user_id
+  id          String   @id // = florus_user_id
   firstName   String
   lastName    String
   displayName String
   email       String?
   teacher     Teacher?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime @default(now())
 }
 
+// Организация = САМА ПЛАТФОРМА EduStore (арендатор у Флёра, flor_owned, org_type=platform).
+// Одна на всю инсталляцию. Доменные данные на неё НЕ ключуются — ключ тенанта = Workspace.
 model Organization {
-  id          String       @id @default(cuid())
-  florusOrgId String?      @unique // зеркало org_id из Флёруса (lazy-provision при первом входе)
-  status      String       @default("active") // pending | active
+  id          String      @id @default(cuid())
+  florusOrgId String?     @unique // Flör Organization id (платформа EduStore)
   name        String
-  type        String       @default("School") // School | Studio | Specialist | Union
-  sector      String       @default("private") // §3.7: private | state (источник — admin; ветвление 152-ФЗ §6.5)
-  classes     Class[]
-  subjects    Subject[]
-  memberships Membership[]
-  devices     Device[]
-  createdAt   DateTime     @default(now())
+  type        String      @default("platform")
+  status      String      @default("active")
+  workspaces  Workspace[]
+  worknets    Worknet[]
+  createdAt   DateTime    @default(now())
 }
 
-// Членство пользователя в организации + EduStore-роль. florusRole из Флёруса;
-// subRole (staff → завуч|методист|психолог) назначает школьный админ (ADR-0005).
-model Membership {
-  id           String       @id @default(cuid())
-  florusUserId String // = User.id (sub)
-  orgId        String
-  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  florusRole   String // owner | admin | teacher | staff | parent | student
-  subRole      String? // zavuch | methodist | psychologist
-  createdAt    DateTime     @default(now())
+// Worknet = сеть школ (латеральная группа внутри платформы). Канон Флёра §2.5.
+// Сущность заводим сейчас; синк членства школ в сеть — стаб до Phase 1 Флёра.
+model Worknet {
+  id              String       @id @default(cuid())
+  florusWorknetId String?      @unique // зеркало Flör worknet id (синк — стаб)
+  orgId           String
+  organization    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name            String
+  status          String       @default("active")
+  workspaces      Workspace[]
+  createdAt       DateTime     @default(now())
 
-  @@unique([florusUserId, orgId])
+  @@unique([id, orgId]) // цель композитного FK от Workspace (инвариант канона)
+}
+
+// Workspace = ШКОЛА = ЕДИНИЦА ИЗОЛЯЦИИ ТЕНАНТА. Ключ всех доменных данных = workspaceId.
+// florusWorkspaceId — из claim workspace_id логин-токена (flor:workspace, доступен сейчас).
+model Workspace {
+  id                String       @id @default(cuid())
+  florusWorkspaceId String?      @unique // зеркало Flör workspace_id (источник ключа тенанта)
+  orgId             String // → платформа (immutable)
+  organization      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  worknetId         String? // nullable: школа максимум в одной сети (контейнер, не many-to-many)
+  worknet           Worknet?     @relation(fields: [worknetId], references: [id])
+  name              String
+  sector            String       @default("private") // §3.7 private | state (152-ФЗ §6.5)
+  status            String       @default("active")
+  memberships       Membership[]
+  devices           Device[]
+  createdAt         DateTime     @default(now())
+
+  @@index([orgId])
+  @@index([worknetId])
+}
+
+// Членство пользователя в ШКОЛЕ (Workspace) + доменная EduStore-роль. florusRole из Флёруса
+// (доменная роль: teacher|student|parent|staff); subRole (staff → завуч|методист|психолог).
+model Membership {
+  id           String    @id @default(cuid())
+  florusUserId String // = User.id (sub)
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  florusRole   String // teacher | student | parent | staff (admin/owner — tenancy, не в токене)
+  subRole      String? // zavuch | methodist | psychologist
+  createdAt    DateTime  @default(now())
+
+  @@unique([florusUserId, workspaceId])
 }
 
 // Серверная сессия RP (BFF): cookie flor_sid → эта запись. Токены — server-only.
 model Session {
-  sid          String   @id
-  florusUserId String
-  florusSid    String? // sid сессии Флёруса (для back-channel logout)
-  orgId        String?
-  florusOrgId  String?
-  role         String
-  subRole      String?
-  name         String
-  accessToken  String?  @db.Text
-  refreshToken String?  @db.Text
-  idToken      String?  @db.Text
-  expiresAt    DateTime
-  createdAt    DateTime @default(now())
+  sid               String   @id
+  florusUserId      String
+  florusSid         String? // sid сессии Флёруса (для back-channel logout)
+  workspaceId       String? // активный тенант (= школа) — ключ изоляции запроса
+  florusWorkspaceId String? // claim workspace_id из токена
+  florusOrgId       String? // платформенная org (flor:org) — не тенант
+  role              String
+  subRole           String?
+  name              String
+  accessToken       String?  @db.Text
+  refreshToken      String?  @db.Text
+  idToken           String?  @db.Text
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
 
   @@index([florusUserId])
   @@index([florusSid])
@@ -132,94 +168,96 @@ model Session {
 // Регистрируется по QR через Device Authorization Flow (purpose=kiosk); deviceToken
 // хранится в localStorage киоска и определяет показ экрана входа (режим 3).
 model Device {
-  id            String       @id @default(cuid())
-  orgId         String
-  organization  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id            String    @id @default(cuid())
+  workspaceId   String // тенант = школа (Workspace)
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   name          String
-  deviceToken   String       @unique
+  deviceToken   String    @unique
   boundByUserId String? // User.id того, кто подтвердил привязку с телефона
-  lastSeenAt    DateTime     @default(now())
-  createdAt     DateTime     @default(now())
+  lastSeenAt    DateTime  @default(now())
+  createdAt     DateTime  @default(now())
 
-  @@index([orgId])
+  @@index([workspaceId])
 }
 
 // ─────────────────────────── teacher ───────────────────────────
 model Teacher {
   id             String               @id // = florus_user_id (FK → User)
   user           User                 @relation(fields: [id], references: [id], onDelete: Cascade)
-  organizationId String
+  workspaceId    String // тенант = школа (Workspace)
   isCurator      Boolean              @default(false)
   curatorClassId String?
   assignments    TeachingAssignment[]
   notes          TeacherNote[]
   notifications  Notification[]
 
-  @@index([organizationId])
+  @@index([workspaceId])
 }
 
 // Один «флажок»: учитель ведёт предмет в классе (опц. — в конкретной подгруппе).
 model TeachingAssignment {
-  id         String    @id @default(cuid())
-  organizationId String // тенант (§3.6) = Class.organizationId
-  teacherId  String
-  teacher    Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  classId    String
-  class      Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
-  subjectId  String
-  subject    Subject   @relation(fields: [subjectId], references: [id])
-  subGroupId String?
-  subGroup   SubGroup? @relation(fields: [subGroupId], references: [id])
+  id          String    @id @default(cuid())
+  workspaceId String // тенант = школа (Workspace)
+  teacherId   String
+  teacher     Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  classId     String
+  class       Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId   String
+  subject     Subject   @relation(fields: [subjectId], references: [id])
+  subGroupId  String?
+  subGroup    SubGroup? @relation(fields: [subGroupId], references: [id])
 
   @@unique([teacherId, classId, subjectId])
   @@index([teacherId])
-  @@index([organizationId])
+  @@index([workspaceId])
 }
 
 // ─────────────────────────── academic structure ───────────────────────────
+// Доменные таблицы ключуются на workspaceId (школу). Связи к Organization нет —
+// Organization теперь платформа, изоляция идёт через tenant-guard по workspaceId.
 model Subject {
-  id             String               @id @default(cuid())
-  organizationId String
-  organization   Organization         @relation(fields: [organizationId], references: [id])
-  name           String
-  fgosDocUrl     String?
-  textbookUrl    String?
-  color          String               @default("#2563EB")
-  departmentId   String?
-  assignments    TeachingAssignment[]
-  lessons        Lesson[]
+  id           String               @id @default(cuid())
+  workspaceId  String // тенант = школа (Workspace)
+  name         String
+  fgosDocUrl   String?
+  textbookUrl  String?
+  color        String               @default("#2563EB")
+  departmentId String?
+  assignments  TeachingAssignment[]
+  lessons      Lesson[]
+
+  @@index([workspaceId])
 }
 
 model Class {
-  id             String               @id @default(cuid())
-  organizationId String
-  organization   Organization         @relation(fields: [organizationId], references: [id])
-  parallel       Int
-  letter         String
-  label          String // "8А"
-  students       Student[]
-  subGroups      SubGroup[]
-  lessons        Lesson[]
-  assignments    TeachingAssignment[]
+  id          String               @id @default(cuid())
+  workspaceId String // тенант = школа (Workspace)
+  parallel    Int
+  letter      String
+  label       String // "8А"
+  students    Student[]
+  subGroups   SubGroup[]
+  lessons     Lesson[]
+  assignments TeachingAssignment[]
 
-  @@index([organizationId])
+  @@index([workspaceId])
 }
 
 model SubGroup {
   id          String               @id @default(cuid())
-  organizationId String            // тенант (§3.6) = Class.organizationId
+  workspaceId String // тенант = школа (Workspace)
   classId     String
   class       Class                @relation(fields: [classId], references: [id], onDelete: Cascade)
   name        String
   members     Student[]
   assignments TeachingAssignment[]
 
-  @@index([organizationId])
+  @@index([workspaceId])
 }
 
 model Student {
   id          String          @id @default(cuid())
-  organizationId String       // тенант (§3.6): денормализация ключа на дочерние для guard/RLS = Class.organizationId
+  workspaceId String // тенант = школа (денормализация ключа на дочерние для guard/RLS)
   classId     String
   class       Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
   subGroupId  String?
@@ -233,13 +271,13 @@ model Student {
   notes       TeacherNote[]
 
   @@index([classId])
-  @@index([organizationId])
+  @@index([workspaceId])
 }
 
 // ─────────────────────────── lesson = станция метро ───────────────────────────
 model Lesson {
   id           String              @id @default(cuid())
-  organizationId String
+  workspaceId  String // тенант = школа (Workspace)
   subjectId    String
   subject      Subject             @relation(fields: [subjectId], references: [id])
   classId      String
@@ -263,29 +301,29 @@ model Lesson {
 }
 
 model Grade {
-  id        String      @id @default(cuid())
-  organizationId String  // тенант (§3.6) = Lesson.organizationId
-  studentId String
-  student   Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  lessonId  String
-  lesson    Lesson      @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  value     Int? // 2..5, null если только посещаемость/комментарий
-  absent    Boolean     @default(false)
-  comment   String?
-  createdBy String // teacherId
-  source    GradeSource @default(MANUAL)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id          String      @id @default(cuid())
+  workspaceId String // тенант = школа (Workspace)
+  studentId   String
+  student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lessonId    String
+  lesson      Lesson      @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  value       Int? // 2..5, null если только посещаемость/комментарий
+  absent      Boolean     @default(false)
+  comment     String?
+  createdBy   String // teacherId
+  source      GradeSource @default(MANUAL)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   @@unique([studentId, lessonId])
   @@index([lessonId])
-  @@index([organizationId])
+  @@index([workspaceId])
 }
 
 // ─────────────────────────── materials / profile / notes ───────────────────────────
 model GeneratedMaterial {
   id          String       @id @default(cuid())
-  organizationId String     // тенант (§3.6) = Lesson.organizationId
+  workspaceId String // тенант = школа (Workspace)
   lessonId    String
   lesson      Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   type        MaterialType
@@ -295,12 +333,12 @@ model GeneratedMaterial {
   meta        String? // "6 страниц"
   generatedAt DateTime     @default(now())
 
-  @@index([organizationId])
+  @@index([workspaceId])
 }
 
 model StudentProfile {
   studentId    String   @id
-  organizationId String  // тенант (§3.6) = Student→Class.organizationId; профиль = ПДн ученика
+  workspaceId  String // тенант = школа (профиль = ПДн ученика)
   student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   interests    String[]
   strengths    String[]
@@ -308,12 +346,12 @@ model StudentProfile {
   inclinations String[]
   updatedAt    DateTime @updatedAt
 
-  @@index([organizationId])
+  @@index([workspaceId])
 }
 
 model TeacherNote {
   note_id       String   @id @default(cuid()) @map("id")
-  organizationId String  // тенант (§3.6) = Teacher.organizationId
+  workspaceId   String // тенант = школа (Workspace)
   teacherId     String
   teacher       Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   studentId     String?
@@ -326,24 +364,24 @@ model TeacherNote {
   createdAt     DateTime @default(now())
 
   @@index([teacherId])
-  @@index([organizationId])
+  @@index([workspaceId])
 }
 
 model Notification {
-  id        String           @id @default(cuid())
-  organizationId String       // тенант (§3.6) = Teacher.organizationId
-  teacherId String
-  teacher   Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  type      NotificationType
-  category  String // journal | ktp | ...
-  title     String
-  message   String
-  icon      String?
-  read      Boolean          @default(false)
-  createdAt DateTime         @default(now())
+  id          String           @id @default(cuid())
+  workspaceId String // тенант = школа (Workspace)
+  teacherId   String
+  teacher     Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  category    String // journal | ktp | ...
+  title       String
+  message     String
+  icon        String?
+  read        Boolean          @default(false)
+  createdAt   DateTime         @default(now())
 
   @@index([teacherId, read])
-  @@index([organizationId])
+  @@index([workspaceId])
 }
 
 // ═══════════════════════════ EVENT INFRASTRUCTURE (shared kernel) ═══════════════════════════
@@ -355,18 +393,18 @@ enum OutboxStatus {
 }
 
 model OutboxEvent {
-  id             String       @id // = DomainEvent.id (идемпотентный ключ / Nats-Msg-Id)
-  type           String
-  organizationId String
-  correlationId  String // весь каскад
-  causationId    String? // событие-причина
-  depth          Int          @default(0) // защита от петель
-  actor          String?
-  payload        Json
-  status         OutboxStatus @default(PENDING)
-  attempts       Int          @default(0)
-  createdAt      DateTime     @default(now())
-  publishedAt    DateTime?
+  id            String       @id // = DomainEvent.id (идемпотентный ключ / Nats-Msg-Id)
+  type          String
+  workspaceId   String // тенант события = школа (Workspace)
+  correlationId String // весь каскад
+  causationId   String? // событие-причина
+  depth         Int          @default(0) // защита от петель
+  actor         String?
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attempts      Int          @default(0)
+  createdAt     DateTime     @default(now())
+  publishedAt   DateTime?
 
   @@index([status, createdAt])
   @@index([correlationId])
@@ -383,22 +421,22 @@ model ProcessedEvent {
 // ═══════════════════════════ ПАРАМЕТРЫ (демо-каскад «зачисление ученика») ═══════════════════════════
 model ChannelMembership {
   // Communitoria
-  id             String   @id @default(cuid())
-  organizationId String
-  classId        String
-  studentId      String
-  createdAt      DateTime @default(now())
+  id          String   @id @default(cuid())
+  workspaceId String // тенант = школа (Workspace)
+  classId     String
+  studentId   String
+  createdAt   DateTime @default(now())
 
   @@unique([classId, studentId])
 }
 
 model MealOrder {
   // Питательный
-  id             String   @id @default(cuid())
-  organizationId String
-  studentId      String
-  status         String   @default("DEFAULT")
-  createdAt      DateTime @default(now())
+  id          String   @id @default(cuid())
+  workspaceId String // тенант = школа (Workspace)
+  studentId   String
+  status      String   @default("DEFAULT")
+  createdAt   DateTime @default(now())
 }
 
 // ═══════════════════════════ AUTHZ: ПРАВА КАК ДАННЫЕ (§5.1) ═══════════════════════════
@@ -437,18 +475,18 @@ model RolePackagePermission {
 // новая строка (версия/дата/источник). Актуальное согласие = последняя строка по
 // (subject, purpose). Минор: source=school_admin + дата бумажного + evidenceRef (скан).
 model Consent {
-  id             String         @id @default(cuid())
-  organizationId String // тенант (ПДн в контексте школы)
-  subjectUserId  String // чьи ПДн (User.id или Student.id для минора)
-  purpose        ConsentPurpose
-  granted        Boolean
-  grantedAt      DateTime // дата согласия (для минора — дата бумажного носителя)
-  version        String         @default("1.0")
-  source         ConsentSource
-  evidenceRef    String? // ссылка на скан бумажного согласия (минор)
-  createdAt      DateTime       @default(now())
+  id            String         @id @default(cuid())
+  workspaceId   String // тенант = школа (ПДн в контексте школы)
+  subjectUserId String // чьи ПДн (User.id или Student.id для минора)
+  purpose       ConsentPurpose
+  granted       Boolean
+  grantedAt     DateTime // дата согласия (для минора — дата бумажного носителя)
+  version       String         @default("1.0")
+  source        ConsentSource
+  evidenceRef   String? // ссылка на скан бумажного согласия (минор)
+  createdAt     DateTime       @default(now())
 
-  @@index([organizationId, subjectUserId, purpose])
+  @@index([workspaceId, subjectUserId, purpose])
 }
 
 // ═══════════════════════════ AUDIT-ЛЕДЖЕР (§4.8) ═══════════════════════════
@@ -458,7 +496,7 @@ model Consent {
 model AuditLog {
   id                 String   @id @default(cuid()) // audit_id
   eventId            String // = DomainEvent.id (идемпотентность записи)
-  organizationId     String // тенант
+  workspaceId        String // тенант = школа (Workspace)
   actor              String? // кто инициировал
   subjectUserId      String? // чьи ПДн затронуты
   action             String // = тип события
@@ -467,7 +505,7 @@ model AuditLog {
   createdAt          DateTime @default(now())
 
   @@unique([eventId, action]) // идемпотентность аудита (повторная доставка не дублирует)
-  @@index([organizationId, occurredAt])
+  @@index([workspaceId, occurredAt])
 }
 
 // ═══════════════════════════ ENTITLEMENTS / SKU (§5.2) ═══════════════════════════
@@ -484,18 +522,18 @@ model Sku {
 }
 
 model Entitlement {
-  id             String            @id @default(cuid())
-  organizationId String // тенант
-  skuId          String
-  sku            Sku               @relation(fields: [skuId], references: [id])
-  status         EntitlementStatus @default(active)
-  validFrom      DateTime          @default(now())
-  validTo        DateTime? // null = бессрочно
-  seats          Int? // для kind=seat
-  source         String            @default("manual") // manual | purchase | promo | trial
-  createdAt      DateTime          @default(now())
+  id          String            @id @default(cuid())
+  workspaceId String // тенант = школа (Workspace)
+  skuId       String
+  sku         Sku               @relation(fields: [skuId], references: [id])
+  status      EntitlementStatus @default(active)
+  validFrom   DateTime          @default(now())
+  validTo     DateTime? // null = бессрочно
+  seats       Int? // для kind=seat
+  source      String            @default("manual") // manual | purchase | promo | trial
+  createdAt   DateTime          @default(now())
 
-  @@index([organizationId])
+  @@index([workspaceId])
 }
 
 model PromoCode {

@@ -29,7 +29,7 @@ const WHERE_OPS = new Set<Prisma.PrismaAction>([
  *  - WHERE_OPS: подмешивает `{ [col]: tenant }` в where (чтение/правка/удаление чужой
  *    строки → пустой результат / P2025);
  *  - create/createMany: проставляет тенант в data, если не задан явно (хендлеры каскада
- *    ставят organizationId из конверта события сами — их значение не перетираем);
+ *    ставят workspaceId из конверта события сами — их значение не перетираем);
  *  - upsert: и where, и create.
  *
  * Обход: системный контекст (store.system) и не-HTTP код (store undefined). На request-пути

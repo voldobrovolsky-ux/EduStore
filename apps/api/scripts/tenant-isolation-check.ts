@@ -15,9 +15,9 @@ const B = 'tenant-test-B';
 async function reset(prisma: PrismaService) {
   await TenantContext.runAsSystem(async () => {
     for (const t of [A, B]) {
-      await prisma.student.deleteMany({ where: { organizationId: t } });
-      await prisma.class.deleteMany({ where: { organizationId: t } });
-      await prisma.organization.deleteMany({ where: { id: t } });
+      await prisma.student.deleteMany({ where: { workspaceId: t } });
+      await prisma.class.deleteMany({ where: { workspaceId: t } });
+      await prisma.workspace.deleteMany({ where: { id: t } });
     }
   });
 }
@@ -27,15 +27,20 @@ async function main() {
   const prisma = app.get(PrismaService);
 
   await reset(prisma);
-  // setup в системном контексте: по одному классу+ученику на каждый тенант
+  // setup в системном контексте: два workspace (школы) под платформой, класс+ученик на каждую
   await TenantContext.runAsSystem(async () => {
+    const platform = await prisma.organization.upsert({
+      where: { id: 'org-edustore-platform' },
+      update: {},
+      create: { id: 'org-edustore-platform', name: 'EduStore', type: 'platform' },
+    });
     for (const t of [A, B]) {
-      await prisma.organization.create({ data: { id: t, name: `Test ${t}` } });
+      await prisma.workspace.create({ data: { id: t, orgId: platform.id, name: `Test ${t}` } });
       const c = await prisma.class.create({
-        data: { organizationId: t, parallel: 1, letter: 'A', label: '1A' },
+        data: { workspaceId: t, parallel: 1, letter: 'A', label: '1A' },
       });
       await prisma.student.create({
-        data: { organizationId: t, classId: c.id, number: 1, firstName: 'S', lastName: t, displayName: `S-${t}` },
+        data: { workspaceId: t, classId: c.id, number: 1, firstName: 'S', lastName: t, displayName: `S-${t}` },
       });
     }
   });
@@ -43,7 +48,7 @@ async function main() {
   // Поэтому await ВНУТРИ колбэка контекста, иначе запрос исполнится вне ALS (как и реальный
   // интерсептор подписывается на обработчик внутри TenantContext.run).
   const studentB = (await TenantContext.runAsSystem(async () =>
-    prisma.student.findFirst({ where: { organizationId: B } }),
+    prisma.student.findFirst({ where: { workspaceId: B } }),
   ))!;
 
   let pass = 0;
@@ -56,7 +61,7 @@ async function main() {
   // ── запросы в контексте тенанта A ──
   await TenantContext.run({ tenantId: A, system: false }, async () => {
     const seen = await prisma.student.findMany();
-    check('findMany в A видит только A', seen.length === 1 && seen[0].organizationId === A);
+    check('findMany в A видит только A', seen.length === 1 && seen[0].workspaceId === A);
 
     const leak = await prisma.student.findUnique({ where: { id: studentB.id } });
     check('findUnique(чужой id B) → null', leak === null);

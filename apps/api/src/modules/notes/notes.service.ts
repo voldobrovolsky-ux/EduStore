@@ -50,7 +50,7 @@ export class NotesService {
 
     return this.prisma.teacherNote.create({
       data: {
-        organizationId: TenantContext.require(), // тенант = орг учителя (активный контекст)
+        workspaceId: TenantContext.require(), // тенант = школа учителя (активный контекст)
         teacherId,
         studentId,
         lessonId: dto.lessonId ?? null,
