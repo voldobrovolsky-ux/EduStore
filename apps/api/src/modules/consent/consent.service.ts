@@ -4,7 +4,11 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
 import { newEvent } from '../../common/events/domain-event';
-import { COMPLIANCE_EVENTS, type DeletionRequestedV1 } from '../../parameters/compliance/contract';
+import {
+  COMPLIANCE_EVENTS,
+  type ConsentRecordedV1,
+  type DeletionRequestedV1,
+} from '../../parameters/compliance/contract';
 
 export interface RecordConsentInput {
   subjectUserId: string;
@@ -32,17 +36,35 @@ export class ConsentService {
     if (input.source === ConsentSource.school_admin && !input.evidenceRef) {
       throw new BadRequestException('согласие минора (school_admin) требует evidenceRef — скан бумажного');
     }
-    return this.prisma.consent.create({
-      data: {
-        organizationId: TenantContext.require(),
-        subjectUserId: input.subjectUserId,
-        purpose: input.purpose,
-        granted: input.granted,
-        grantedAt: input.grantedAt ?? new Date(),
-        version: input.version ?? '1.0',
-        source: input.source,
-        evidenceRef: input.evidenceRef ?? null,
-      },
+    const organizationId = TenantContext.require();
+    // запись согласия + событие (для audit-леджера §4.8) — атомарно
+    return this.prisma.$transaction(async (tx) => {
+      const consent = await tx.consent.create({
+        data: {
+          organizationId,
+          subjectUserId: input.subjectUserId,
+          purpose: input.purpose,
+          granted: input.granted,
+          grantedAt: input.grantedAt ?? new Date(),
+          version: input.version ?? '1.0',
+          source: input.source,
+          evidenceRef: input.evidenceRef ?? null,
+        },
+      });
+      await this.outbox.enqueue(
+        tx,
+        newEvent<ConsentRecordedV1>({
+          type: COMPLIANCE_EVENTS.consentRecorded,
+          organizationId,
+          payload: {
+            subjectUserId: input.subjectUserId,
+            purpose: input.purpose,
+            granted: input.granted,
+            source: input.source,
+          },
+        }),
+      );
+      return consent;
     });
   }
 

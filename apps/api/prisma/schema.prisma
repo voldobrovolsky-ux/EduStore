@@ -73,6 +73,7 @@ model Organization {
   status      String       @default("active") // pending | active
   name        String
   type        String       @default("School") // School | Studio | Specialist | Union
+  sector      String       @default("private") // §3.7: private | state (источник — admin; ветвление 152-ФЗ §6.5)
   classes     Class[]
   subjects    Subject[]
   memberships Membership[]
@@ -435,4 +436,23 @@ model Consent {
   createdAt      DateTime       @default(now())
 
   @@index([organizationId, subjectUserId, purpose])
+}
+
+// ═══════════════════════════ AUDIT-ЛЕДЖЕР (§4.8) ═══════════════════════════
+// Append-only иммутабельный журнал «документооборот-как-протоколы» + требование 152-ФЗ.
+// Пишется из событий с касанием ПДн (audit-подписчик). Не правится/не чистится (в отличие
+// от OutboxEvent). Проекции в ClickHouse — слот (не Фаза 0).
+model AuditLog {
+  id                 String   @id @default(cuid()) // audit_id
+  eventId            String // = DomainEvent.id (идемпотентность записи)
+  organizationId     String // тенант
+  actor              String? // кто инициировал
+  subjectUserId      String? // чьи ПДн затронуты
+  action             String // = тип события
+  occurredAt         DateTime
+  persDataCategories String[] // категории затронутых ПДн
+  createdAt          DateTime @default(now())
+
+  @@unique([eventId, action]) // идемпотентность аудита (повторная доставка не дублирует)
+  @@index([organizationId, occurredAt])
 }

@@ -6,6 +6,7 @@ import { AuthModule } from './common/auth/auth.module';
 import { AuthGuard } from './common/auth/auth.guard';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { AuthzModule } from './common/authz/authz.module';
+import { AuditModule } from './common/audit/audit.module';
 import { EventsModule } from './common/events/events.module';
 import { TeacherModule } from './modules/teacher/teacher.module';
 import { PlanningModule } from './modules/planning/planning.module';
@@ -35,6 +36,7 @@ import { ComplianceModule } from './parameters/compliance/compliance.module';
     AuthModule, // Флёрус OIDC RP (ADR-0005)
     AuthzModule, // §5.1: права как данные (каталог + резолвер доступа)
     EventsModule, // event bus + transactional outbox + idempotent inbox + durability-воркер (shared kernel)
+    AuditModule, // §4.8: append-only audit-леджер (пишется из ПДн-событий)
     // кабинет учителя (поверхность параметра УМК)
     TeacherModule,
     PlanningModule,

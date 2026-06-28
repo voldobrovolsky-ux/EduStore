@@ -31,4 +31,5 @@ export const TENANT_COLUMN: Record<string, string> = {
   TeacherNote: 'organizationId',
   Notification: 'organizationId',
   Consent: 'organizationId',
+  AuditLog: 'organizationId',
 };
