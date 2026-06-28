@@ -10,6 +10,7 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import { syncAuthzCatalog } from '../src/common/authz/catalog';
+import { syncSkus } from '../src/common/entitlements/skus';
 
 const prisma = new PrismaClient();
 
@@ -35,11 +36,13 @@ function gradeData(value: string | null): {
 }
 
 async function main(): Promise<void> {
-  console.log('Синхронизация каталога прав (§5.1)…');
+  console.log('Синхронизация каталога прав (§5.1) и SKU (§5.2)…');
   await syncAuthzCatalog(prisma); // reference-data: пакеты ролей × права (идемпотентно)
+  await syncSkus(prisma); // reference-data: каталог SKU
 
   console.log('Очистка демо-данных…');
   // Порядок важен из-за внешних ключей.
+  await prisma.entitlement.deleteMany();
   await prisma.consent.deleteMany();
   await prisma.grade.deleteMany();
   await prisma.generatedMaterial.deleteMany();
@@ -60,6 +63,14 @@ async function main(): Promise<void> {
   const org = await prisma.organization.create({
     data: { id: 'org-school-1', name: 'Школа №1', type: 'School' },
   });
+
+  // ── entitlement демо-школы: активное ядро LMS (§5.2) — гейт материалов пускает ──
+  const lmsCore = await prisma.sku.findUnique({ where: { key: 'lms.core' } });
+  if (lmsCore) {
+    await prisma.entitlement.create({
+      data: { organizationId: org.id, skuId: lmsCore.id, status: 'active', source: 'manual' },
+    });
+  }
 
   // ── пользователь + учитель ──
   await prisma.user.create({

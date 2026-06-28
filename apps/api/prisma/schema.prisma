@@ -55,6 +55,19 @@ enum ConsentSource {
   school_admin // минор: школьный админ грузит бумажное согласие с датой + evidence
 }
 
+// Entitlements (§5.2): гейт загрузки модуля = активный entitlement тенанта.
+enum SkuKind {
+  module
+  seat
+  bundle
+}
+
+enum EntitlementStatus {
+  active
+  trial
+  expired
+}
+
 // ─────────────────────────── identity ───────────────────────────
 // Пользователь принадлежит платформе (florus_user_id), организация приглашает его.
 model User {
@@ -455,4 +468,41 @@ model AuditLog {
 
   @@unique([eventId, action]) // идемпотентность аудита (повторная доставка не дублирует)
   @@index([organizationId, occurredAt])
+}
+
+// ═══════════════════════════ ENTITLEMENTS / SKU (§5.2) ═══════════════════════════
+// Слой авторизации поверх каталога прав: entitlement (модуль на тенант) → пакет роли ×
+// каталог (§5.1) → ABAC [слот]. Гейт загрузки модуля = активный entitlement. Глобальные
+// Sku/PromoCode — reference-data; Entitlement — тенант-scoped.
+model Sku {
+  id           String        @id @default(cuid())
+  key          String        @unique // "lms.core" | "param.nutrition" | ...
+  kind         SkuKind
+  label        String
+  entitlements Entitlement[]
+  promoCodes   PromoCode[]
+}
+
+model Entitlement {
+  id             String            @id @default(cuid())
+  organizationId String // тенант
+  skuId          String
+  sku            Sku               @relation(fields: [skuId], references: [id])
+  status         EntitlementStatus @default(active)
+  validFrom      DateTime          @default(now())
+  validTo        DateTime? // null = бессрочно
+  seats          Int? // для kind=seat
+  source         String            @default("manual") // manual | purchase | promo | trial
+  createdAt      DateTime          @default(now())
+
+  @@index([organizationId])
+}
+
+model PromoCode {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  skuId     String
+  sku       Sku      @relation(fields: [skuId], references: [id])
+  redeemed  Boolean  @default(false)
+  createdAt DateTime @default(now())
 }

@@ -1,12 +1,15 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import type { LessonMaterial } from '@edustore/shared';
-import { GenerateKind, MaterialsService } from './materials.service';
+import { MaterialsService } from './materials.service';
+import { RequireEntitlement } from '../../common/entitlements/require-entitlement.decorator';
 
 /** Тело /generate/* — указываем урок, для которого делаем материал. */
 interface GenerateBody {
   lessonId: string;
 }
 
+// §5.2: модуль материалов/генерации — за активным entitlement lms.core (гейт загрузки).
+@RequireEntitlement('lms.core')
 @Controller()
 export class MaterialsController {
   constructor(private readonly materialsService: MaterialsService) {}

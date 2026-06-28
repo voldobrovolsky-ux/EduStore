@@ -7,6 +7,8 @@ import { AuthGuard } from './common/auth/auth.guard';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { AuthzModule } from './common/authz/authz.module';
 import { AuditModule } from './common/audit/audit.module';
+import { EntitlementsModule } from './common/entitlements/entitlements.module';
+import { EntitlementInterceptor } from './common/entitlements/entitlement.interceptor';
 import { EventsModule } from './common/events/events.module';
 import { TeacherModule } from './modules/teacher/teacher.module';
 import { PlanningModule } from './modules/planning/planning.module';
@@ -35,6 +37,7 @@ import { ComplianceModule } from './parameters/compliance/compliance.module';
     PrismaModule,
     AuthModule, // Флёрус OIDC RP (ADR-0005)
     AuthzModule, // §5.1: права как данные (каталог + резолвер доступа)
+    EntitlementsModule, // §5.2: SKU/entitlement + гейт загрузки модуля
     EventsModule, // event bus + transactional outbox + idempotent inbox + durability-воркер (shared kernel)
     AuditModule, // §4.8: append-only audit-леджер (пишется из ПДн-событий)
     // кабинет учителя (поверхность параметра УМК)
@@ -60,6 +63,8 @@ import { ComplianceModule } from './parameters/compliance/compliance.module';
     { provide: APP_GUARD, useClass: AuthGuard },
     // §3.6: tenant-контекст запроса в ALS (после guard, до обработчика) → изоляция тенанта.
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
+    // §5.2: гейт entitlement — ПОСЛЕ TenantInterceptor (выполняется внутри tenant-контекста).
+    { provide: APP_INTERCEPTOR, useClass: EntitlementInterceptor },
   ],
 })
 export class AppModule {}

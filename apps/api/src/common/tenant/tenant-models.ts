@@ -32,4 +32,5 @@ export const TENANT_COLUMN: Record<string, string> = {
   Notification: 'organizationId',
   Consent: 'organizationId',
   AuditLog: 'organizationId',
+  Entitlement: 'organizationId',
 };
