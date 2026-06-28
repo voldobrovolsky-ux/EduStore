@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './common/auth/auth.module';
 import { AuthGuard } from './common/auth/auth.guard';
@@ -25,9 +26,10 @@ import { UmkParamModule } from './parameters/umk-param/umk-param.module';
  */
 @Module({
   imports: [
+    ScheduleModule.forRoot(), // §4.6: планировщик для фонового диспетчера outbox
     PrismaModule,
     AuthModule, // Флёрус OIDC RP (ADR-0005)
-    EventsModule, // event bus + transactional outbox + idempotent inbox (shared kernel)
+    EventsModule, // event bus + transactional outbox + idempotent inbox + durability-воркер (shared kernel)
     // кабинет учителя (поверхность параметра УМК)
     TeacherModule,
     PlanningModule,
