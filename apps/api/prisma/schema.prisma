@@ -372,3 +372,34 @@ model MealOrder {
   status         String   @default("DEFAULT")
   createdAt      DateTime @default(now())
 }
+
+// ═══════════════════════════ AUTHZ: ПРАВА КАК ДАННЫЕ (§5.1) ═══════════════════════════
+// Каталог прав Раздел→Экран→Действие + пакеты ролей. Резолв доступа = пакет роли × каталог
+// (из БД, не из кода). Глобальная reference-data — НЕ под тенант-изоляцией (см. tenant-models).
+model Permission {
+  id       String                  @id @default(cuid())
+  code     String                  @unique // "journal.grades.edit"
+  section  String // "journal"
+  screen   String // "grades"
+  action   String // "edit" | "view" | "manage" | ...
+  label    String
+  packages RolePackagePermission[]
+}
+
+// Пакет роли: какой кабинет открывается и какие права даёт. key = роль/суб-роль EduStore.
+model RolePackage {
+  id          String                  @id @default(cuid())
+  key         String                  @unique // owner|admin|teacher|parent|student|zavuch|methodist|psychologist
+  cabinet     String // CabinetKey фронта
+  label       String
+  permissions RolePackagePermission[]
+}
+
+model RolePackagePermission {
+  rolePackageId String
+  rolePackage   RolePackage @relation(fields: [rolePackageId], references: [id], onDelete: Cascade)
+  permissionId  String
+  permission    Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([rolePackageId, permissionId])
+}

@@ -12,9 +12,15 @@ export interface CurrentUser {
   florusRole: FlorRole;
   subRole: SubRole;
   orgName: string;
+  cabinet?: CabinetKey; // из каталога прав (бэкенд /me, §5.1) — источник истины
+  permissions?: string[]; // коды доступных действий из каталога
 }
 
-/** Роутинг кабинета по роли (ADR-0005). staff → конкретная sub-роль (назначает админ). */
+/**
+ * Fallback-резолв кабинета по роли (§5.1). Источник истины — КАТАЛОГ на бэкенде
+ * (/me возвращает `cabinet`); этот shim используется в DEV (без бэкенда) и если ответ
+ * без cabinet. Маппинг повторяет packageKey на сервере (staff → sub-роль, дефолт методист).
+ */
 export function resolveCabinet(florusRole: FlorRole, subRole: SubRole): CabinetKey {
   if (florusRole === "staff") return subRole ?? "methodist";
   return florusRole;

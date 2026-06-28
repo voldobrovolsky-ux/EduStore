@@ -10,6 +10,7 @@ import {
   useCurrentUser,
   resolveCabinet,
   type CurrentUser,
+  type CabinetKey,
   type FlorRole,
   type SubRole,
 } from "@/cabinets/CurrentUser";
@@ -23,7 +24,8 @@ import { BindConfirm } from "@/home/BindConfirm";
 // остальные роли — минимальные кабинеты (навигация + главная).
 function Shell() {
   const { user } = useCurrentUser();
-  const cab = resolveCabinet(user.florusRole, user.subRole);
+  // §5.1: кабинет из каталога (бэкенд /me); resolveCabinet — fallback для DEV/без ответа.
+  const cab = user.cabinet ?? resolveCabinet(user.florusRole, user.subRole);
   if (cab === "admin") return <AdminApp />;
   if (cab === "teacher") return <AppShell />;
   return <MinimalCabinet def={MINIMAL_CABINETS[cab as MinimalKey]} user={user} />;
@@ -48,6 +50,8 @@ interface MeResp {
   role: FlorRole;
   subRole: SubRole;
   orgName?: string;
+  cabinet?: CabinetKey; // §5.1: кабинет из каталога прав
+  permissions?: string[];
 }
 
 /**
@@ -68,7 +72,14 @@ function useAuthGate(): Gate {
           m
             ? {
                 status: "authed",
-                user: { name: m.name, florusRole: m.role, subRole: m.subRole, orgName: m.orgName ?? "Школа" },
+                user: {
+                  name: m.name,
+                  florusRole: m.role,
+                  subRole: m.subRole,
+                  orgName: m.orgName ?? "Школа",
+                  cabinet: m.cabinet, // §5.1: из каталога
+                  permissions: m.permissions,
+                },
               }
             : { status: "anon" },
         ),

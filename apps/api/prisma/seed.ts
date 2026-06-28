@@ -9,6 +9,7 @@ import {
   NotificationType,
   PrismaClient,
 } from '@prisma/client';
+import { syncAuthzCatalog } from '../src/common/authz/catalog';
 
 const prisma = new PrismaClient();
 
@@ -34,6 +35,9 @@ function gradeData(value: string | null): {
 }
 
 async function main(): Promise<void> {
+  console.log('Синхронизация каталога прав (§5.1)…');
+  await syncAuthzCatalog(prisma); // reference-data: пакеты ролей × права (идемпотентно)
+
   console.log('Очистка демо-данных…');
   // Порядок важен из-за внешних ключей.
   await prisma.grade.deleteMany();

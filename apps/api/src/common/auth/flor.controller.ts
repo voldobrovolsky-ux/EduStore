@@ -2,6 +2,7 @@ import { Controller, Get, Post, Req, Res, UnauthorizedException } from '@nestjs/
 import type { Request, Response } from 'express';
 import { Public } from './public.decorator';
 import { FlorService, type SessionUser } from './flor.service';
+import { AuthzService, type ResolvedAccess } from '../authz/authz.service';
 
 const SUBROLES = new Set(['zavuch', 'methodist', 'psychologist']);
 // next — только относительный путь нашего origin (без открытого редиректа)
@@ -13,7 +14,10 @@ const safeSubRole = (raw: unknown): string | undefined =>
 // Эндпоинты RP (ADR-0005): /api/auth/flor/login|callback|me|logout|backchannel-logout
 @Controller('auth/flor')
 export class FlorController {
-  constructor(private readonly flor: FlorService) {}
+  constructor(
+    private readonly flor: FlorService,
+    private readonly authz: AuthzService,
+  ) {}
 
   @Public()
   @Get('login')
@@ -45,9 +49,11 @@ export class FlorController {
   }
 
   @Get('me')
-  me(@Req() req: Request & { user?: SessionUser }): SessionUser {
+  async me(@Req() req: Request & { user?: SessionUser }): Promise<SessionUser & ResolvedAccess> {
     if (!req.user) throw new UnauthorizedException();
-    return req.user;
+    // кабинет и права — из каталога (§5.1), не из кода фронта
+    const access = await this.authz.resolveAccess(req.user.role, req.user.subRole);
+    return { ...req.user, ...access };
   }
 
   @Public()
