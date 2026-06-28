@@ -16,11 +16,13 @@ import { NotesModule } from './modules/notes/notes.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { StructureModule } from './modules/structure/structure.module';
 import { DeviceModule } from './modules/oidc-device/device.module';
+import { ConsentModule } from './modules/consent/consent.module';
 // Параметры (система параметров EduStore, см. docs/PARAMETERS.md). Новый параметр = одна строка.
 import { ContingentModule } from './parameters/contingent/contingent.module';
 import { CommsModule } from './parameters/comms/comms.module';
 import { NutritionModule } from './parameters/nutrition/nutrition.module';
 import { UmkParamModule } from './parameters/umk-param/umk-param.module';
+import { ComplianceModule } from './parameters/compliance/compliance.module';
 
 /**
  * Сборка модульного монолита: глобальный доступ к БД + событийный kernel +
@@ -43,11 +45,13 @@ import { UmkParamModule } from './parameters/umk-param/umk-param.module';
     ReportsModule,
     StructureModule, // ручное создание структуры школы (онбординг 4.2/6)
     DeviceModule, // привязка устройств + вход на киоске (главная, режимы 2/3)
+    ConsentModule, // §6: согласие на обработку ПДн (152-ФЗ)
     // параметры
     ContingentModule,
     CommsModule,
     NutritionModule,
     UmkParamModule,
+    ComplianceModule, // §6.4: реакция на запрос удаления ПДн
   ],
   providers: [
     // Единый guard: сессия Флёруса или DEV-bypass (AUTH_MODE != production).

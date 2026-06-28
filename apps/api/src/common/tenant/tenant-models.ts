@@ -30,4 +30,5 @@ export const TENANT_COLUMN: Record<string, string> = {
   StudentProfile: 'organizationId',
   TeacherNote: 'organizationId',
   Notification: 'organizationId',
+  Consent: 'organizationId',
 };

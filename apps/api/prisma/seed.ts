@@ -40,6 +40,7 @@ async function main(): Promise<void> {
 
   console.log('Очистка демо-данных…');
   // Порядок важен из-за внешних ключей.
+  await prisma.consent.deleteMany();
   await prisma.grade.deleteMany();
   await prisma.generatedMaterial.deleteMany();
   await prisma.teacherNote.deleteMany();

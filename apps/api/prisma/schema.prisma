@@ -41,6 +41,20 @@ enum NotificationType {
   INFO
 }
 
+// Согласие 152-ФЗ (§6). Профилирование — ОТДЕЛЬНАЯ цель (не общая галочка).
+enum ConsentPurpose {
+  data_processing
+  predictive_profiling
+  comms
+  media
+}
+
+enum ConsentSource {
+  self
+  guardian
+  school_admin // минор: школьный админ грузит бумажное согласие с датой + evidence
+}
+
 // ─────────────────────────── identity ───────────────────────────
 // Пользователь принадлежит платформе (florus_user_id), организация приглашает его.
 model User {
@@ -402,4 +416,23 @@ model RolePackagePermission {
   permission    Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@id([rolePackageId, permissionId])
+}
+
+// ═══════════════════════════ CONSENT 152-ФЗ (§6) ═══════════════════════════
+// Объект согласия на обработку ПДн (НЕ oidc-scope). Append-only: каждый grant/revoke —
+// новая строка (версия/дата/источник). Актуальное согласие = последняя строка по
+// (subject, purpose). Минор: source=school_admin + дата бумажного + evidenceRef (скан).
+model Consent {
+  id             String         @id @default(cuid())
+  organizationId String // тенант (ПДн в контексте школы)
+  subjectUserId  String // чьи ПДн (User.id или Student.id для минора)
+  purpose        ConsentPurpose
+  granted        Boolean
+  grantedAt      DateTime // дата согласия (для минора — дата бумажного носителя)
+  version        String         @default("1.0")
+  source         ConsentSource
+  evidenceRef    String? // ссылка на скан бумажного согласия (минор)
+  createdAt      DateTime       @default(now())
+
+  @@index([organizationId, subjectUserId, purpose])
 }
