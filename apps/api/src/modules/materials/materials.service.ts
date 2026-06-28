@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { MaterialType } from '@prisma/client';
 import type { LessonMaterial } from '@edustore/shared';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantContext } from '../../common/tenant/tenant-context';
 import { toLessonMaterial } from '../../common/materials.util';
 
 /** Какой материал генерирует каждый эндпоинт /generate/*. */
@@ -84,6 +85,7 @@ export class MaterialsService {
     const spec = KIND_MAP[kind];
     const created = await this.prisma.generatedMaterial.create({
       data: {
+        organizationId: TenantContext.require(), // тенант = орг урока (активный контекст)
         lessonId,
         type: spec.type,
         title: spec.title,

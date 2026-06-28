@@ -119,6 +119,7 @@ async function main(): Promise<void> {
 
     await prisma.teachingAssignment.create({
       data: {
+        organizationId: org.id,
         teacherId: teacher.id,
         classId: klass.id,
         subjectId: spec.subjectId,
@@ -174,6 +175,7 @@ async function main(): Promise<void> {
     const [lastName, firstName] = display.split(' ');
     const s = await prisma.student.create({
       data: {
+        organizationId: org.id,
         classId: class8A.id,
         number: i + 1,
         firstName: firstName ?? '',
@@ -191,6 +193,7 @@ async function main(): Promise<void> {
     for (let i = 0; i < spec.count; i++) {
       await prisma.student.create({
         data: {
+          organizationId: org.id,
           classId: klass.id,
           number: i + 1,
           firstName: 'Ученик',
@@ -278,6 +281,7 @@ async function main(): Promise<void> {
       if (data === null) continue; // нет оценки
       await prisma.grade.create({
         data: {
+          organizationId: org.id,
           studentId: student.id,
           lessonId: lesson.id,
           value: data.value,
@@ -294,6 +298,7 @@ async function main(): Promise<void> {
   await prisma.generatedMaterial.createMany({
     data: [
       {
+        organizationId: org.id,
         lessonId: lesson5.id,
         type: MaterialType.LESSON_PLAN,
         title: 'План-конспект урока',
@@ -302,6 +307,7 @@ async function main(): Promise<void> {
         meta: '6 страниц',
       },
       {
+        organizationId: org.id,
         lessonId: lesson5.id,
         type: MaterialType.GRAPHIC_NOTES,
         title: 'Графический конспект',
@@ -310,6 +316,7 @@ async function main(): Promise<void> {
         meta: '1 страница',
       },
       {
+        organizationId: org.id,
         lessonId: lesson5.id,
         type: MaterialType.PRESENTATION,
         title: 'Презентация к уроку',
@@ -327,6 +334,7 @@ async function main(): Promise<void> {
   await prisma.notification.createMany({
     data: [
       {
+        organizationId: org.id,
         teacherId: teacher.id,
         type: NotificationType.URGENT,
         category: 'journal',
@@ -336,6 +344,7 @@ async function main(): Promise<void> {
         createdAt: new Date(now - 5 * min),
       },
       {
+        organizationId: org.id,
         teacherId: teacher.id,
         type: NotificationType.NORMAL,
         category: 'ktp',
@@ -345,6 +354,7 @@ async function main(): Promise<void> {
         createdAt: new Date(now - 60 * min),
       },
       {
+        organizationId: org.id,
         teacherId: teacher.id,
         type: NotificationType.INFO,
         category: 'journal',
@@ -354,6 +364,7 @@ async function main(): Promise<void> {
         createdAt: new Date(now - 3 * 60 * min),
       },
       {
+        organizationId: org.id,
         teacherId: teacher.id,
         type: NotificationType.NORMAL,
         category: 'ktp',
@@ -363,6 +374,7 @@ async function main(): Promise<void> {
         createdAt: new Date(now - 24 * 60 * min),
       },
       {
+        organizationId: org.id,
         teacherId: teacher.id,
         type: NotificationType.INFO,
         category: 'journal',
@@ -377,6 +389,7 @@ async function main(): Promise<void> {
   // ── профили нескольких учеников 8А (для персонализации заметок/тестов) ──
   await prisma.studentProfile.create({
     data: {
+      organizationId: org.id,
       studentId: students8A[4].id, // Иванов Артём
       interests: ['футбол', 'роботы'],
       strengths: ['логика'],
@@ -386,6 +399,7 @@ async function main(): Promise<void> {
   });
   await prisma.studentProfile.create({
     data: {
+      organizationId: org.id,
       studentId: students8A[8].id, // Морозова София
       interests: ['рисование', 'музыка'],
       strengths: ['внимательность'],
@@ -395,6 +409,7 @@ async function main(): Promise<void> {
   });
   await prisma.studentProfile.create({
     data: {
+      organizationId: org.id,
       studentId: students8A[0].id, // Авдеева Полина
       interests: ['шахматы'],
       strengths: ['усидчивость'],

@@ -28,6 +28,7 @@ export class ContingentService {
       const displayName = `${input.lastName} ${input.firstName}`;
       const student = await tx.student.create({
         data: {
+          organizationId: klass.organizationId, // тенант из класса — корректно и вне request-контекста
           classId: input.classId,
           number: count + 1,
           firstName: input.firstName,

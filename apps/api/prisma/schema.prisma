@@ -1,5 +1,8 @@
 // EduStore — кабинет учителя. Схема БД (PostgreSQL + Prisma).
-// Мультитенантность заложена с v1: organizationId на доменных сущностях (RLS-ready).
+// Мультитенантность (§3.6): organizationId на КАЖДОЙ доменной сущности (ключ тенанта).
+// Изоляция принудительна на уровне приложения — tenant-guard (Prisma $use middleware,
+// common/tenant): каждый запрос доменной модели фильтруется текущим тенантом из ALS.
+// RLS на БД — следующий слой усиления (защита от забытого фильтра в новом коде).
 // Границы доменов: связи по id; межмодульных жёстких зависимостей в запросах избегаем.
 
 generator client {
@@ -130,6 +133,7 @@ model Teacher {
 // Один «флажок»: учитель ведёт предмет в классе (опц. — в конкретной подгруппе).
 model TeachingAssignment {
   id         String    @id @default(cuid())
+  organizationId String // тенант (§3.6) = Class.organizationId
   teacherId  String
   teacher    Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   classId    String
@@ -141,6 +145,7 @@ model TeachingAssignment {
 
   @@unique([teacherId, classId, subjectId])
   @@index([teacherId])
+  @@index([organizationId])
 }
 
 // ─────────────────────────── academic structure ───────────────────────────
@@ -174,15 +179,19 @@ model Class {
 
 model SubGroup {
   id          String               @id @default(cuid())
+  organizationId String            // тенант (§3.6) = Class.organizationId
   classId     String
   class       Class                @relation(fields: [classId], references: [id], onDelete: Cascade)
   name        String
   members     Student[]
   assignments TeachingAssignment[]
+
+  @@index([organizationId])
 }
 
 model Student {
   id          String          @id @default(cuid())
+  organizationId String       // тенант (§3.6): денормализация ключа на дочерние для guard/RLS = Class.organizationId
   classId     String
   class       Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
   subGroupId  String?
@@ -196,6 +205,7 @@ model Student {
   notes       TeacherNote[]
 
   @@index([classId])
+  @@index([organizationId])
 }
 
 // ─────────────────────────── lesson = станция метро ───────────────────────────
@@ -226,6 +236,7 @@ model Lesson {
 
 model Grade {
   id        String      @id @default(cuid())
+  organizationId String  // тенант (§3.6) = Lesson.organizationId
   studentId String
   student   Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   lessonId  String
@@ -240,11 +251,13 @@ model Grade {
 
   @@unique([studentId, lessonId])
   @@index([lessonId])
+  @@index([organizationId])
 }
 
 // ─────────────────────────── materials / profile / notes ───────────────────────────
 model GeneratedMaterial {
   id          String       @id @default(cuid())
+  organizationId String     // тенант (§3.6) = Lesson.organizationId
   lessonId    String
   lesson      Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   type        MaterialType
@@ -253,20 +266,26 @@ model GeneratedMaterial {
   format      String // DOCX | PDF | PPTX
   meta        String? // "6 страниц"
   generatedAt DateTime     @default(now())
+
+  @@index([organizationId])
 }
 
 model StudentProfile {
   studentId    String   @id
+  organizationId String  // тенант (§3.6) = Student→Class.organizationId; профиль = ПДн ученика
   student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   interests    String[]
   strengths    String[]
   weaknesses   String[]
   inclinations String[]
   updatedAt    DateTime @updatedAt
+
+  @@index([organizationId])
 }
 
 model TeacherNote {
   note_id       String   @id @default(cuid()) @map("id")
+  organizationId String  // тенант (§3.6) = Teacher.organizationId
   teacherId     String
   teacher       Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   studentId     String?
@@ -279,10 +298,12 @@ model TeacherNote {
   createdAt     DateTime @default(now())
 
   @@index([teacherId])
+  @@index([organizationId])
 }
 
 model Notification {
   id        String           @id @default(cuid())
+  organizationId String       // тенант (§3.6) = Teacher.organizationId
   teacherId String
   teacher   Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   type      NotificationType
@@ -294,6 +315,7 @@ model Notification {
   createdAt DateTime         @default(now())
 
   @@index([teacherId, read])
+  @@index([organizationId])
 }
 
 // ═══════════════════════════ EVENT INFRASTRUCTURE (shared kernel) ═══════════════════════════

@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './common/auth/auth.module';
 import { AuthGuard } from './common/auth/auth.guard';
+import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { EventsModule } from './common/events/events.module';
 import { TeacherModule } from './modules/teacher/teacher.module';
 import { PlanningModule } from './modules/planning/planning.module';
@@ -49,6 +50,8 @@ import { UmkParamModule } from './parameters/umk-param/umk-param.module';
   providers: [
     // Единый guard: сессия Флёруса или DEV-bypass (AUTH_MODE != production).
     { provide: APP_GUARD, useClass: AuthGuard },
+    // §3.6: tenant-контекст запроса в ALS (после guard, до обработчика) → изоляция тенанта.
+    { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
   ],
 })
 export class AppModule {}

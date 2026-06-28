@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { TeacherNote } from '@prisma/client';
 import type { TeacherNoteRequest } from '@edustore/shared';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantContext } from '../../common/tenant/tenant-context';
 import { AsrClient, AsrUnavailableError } from '../voice/asr.client';
 
 /**
@@ -49,6 +50,7 @@ export class NotesService {
 
     return this.prisma.teacherNote.create({
       data: {
+        organizationId: TenantContext.require(), // тенант = орг учителя (активный контекст)
         teacherId,
         studentId,
         lessonId: dto.lessonId ?? null,

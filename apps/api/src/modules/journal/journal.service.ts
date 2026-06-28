@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { GradeSource } from '@prisma/client';
+import { TenantContext } from '../../common/tenant/tenant-context';
 import type {
   GradeValue,
   JournalColumn,
@@ -127,6 +128,7 @@ export class JournalService {
           },
         },
         create: {
+          organizationId: TenantContext.require(), // тенант = орг урока (активный контекст)
           studentId: dto.studentId,
           lessonId: dto.lessonId,
           value: data.value,

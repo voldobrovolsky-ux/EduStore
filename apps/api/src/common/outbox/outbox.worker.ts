@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { OutboxDispatcher } from './outbox.dispatcher';
+import { TenantContext } from '../tenant/tenant-context';
 
 /**
  * Durability-воркер outbox (§4.6). Inline-`drain()` в запросе — лишь latency-fast-path;
@@ -23,7 +24,8 @@ export class OutboxWorker {
     if (this.running) return;
     this.running = true;
     try {
-      await this.dispatcher.drain();
+      // фон вне HTTP-запроса → системный контекст (хендлеры каскада ставят тенант из конверта)
+      await TenantContext.runAsSystem(() => this.dispatcher.drain());
     } catch (err) {
       // дренаж устойчив к падению отдельного события (FAILED=DLQ внутри dispatchPending);
       // сюда долетает лишь сбой самого цикла (например, потеря соединения с БД) — лог и ждём след. тик.

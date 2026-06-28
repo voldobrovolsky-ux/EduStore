@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantContext } from '../../common/tenant/tenant-context';
 import type { AddSubGroupDto, AssignDto, CreateClassDto, CreateSubjectDto } from './dto';
 
 /**
@@ -48,7 +49,9 @@ export class StructureService {
   }
 
   async addSubGroup(classId: string, dto: AddSubGroupDto) {
-    const g = await this.prisma.subGroup.create({ data: { classId, name: dto.name.trim() } });
+    const g = await this.prisma.subGroup.create({
+      data: { organizationId: TenantContext.require(), classId, name: dto.name.trim() },
+    });
     return { id: g.id, name: g.name };
   }
 
@@ -98,7 +101,7 @@ export class StructureService {
     const a = await this.prisma.teachingAssignment.upsert({
       where: { teacherId_classId_subjectId: { teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId } },
       update: { subGroupId: dto.subGroupId ?? null },
-      create: { teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId, subGroupId: dto.subGroupId ?? null },
+      create: { organizationId: TenantContext.require(), teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId, subGroupId: dto.subGroupId ?? null },
     });
     return { id: a.id };
   }
