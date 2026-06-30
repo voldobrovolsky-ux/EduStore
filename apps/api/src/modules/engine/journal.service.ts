@@ -66,7 +66,10 @@ export class JournalService {
       where: { ...(classId && { classId }), ...(disciplineId && { disciplineId }), ...(period && { period }) },
       orderBy: { postedAt: 'desc' },
     });
-    // policy — из AssessmentPolicy (завуч); контракт §5, ещё не реализован → null
-    return { cells, policy: null };
+    // policy — из AssessmentPolicy (завуч, контракт §5): по специфичности дисциплина → класс → школа
+    let policy = disciplineId ? await this.prisma.assessmentPolicy.findFirst({ where: { disciplineId } }) : null;
+    policy ??= classId ? await this.prisma.assessmentPolicy.findFirst({ where: { classId } }) : null;
+    policy ??= await this.prisma.assessmentPolicy.findFirst({ where: { scope: 'школа' } });
+    return { cells, policy };
   }
 }

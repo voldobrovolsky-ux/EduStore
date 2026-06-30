@@ -791,6 +791,62 @@ model AssessmentResultItem {
   @@index([workspaceId, assessmentResultId])
 }
 
+// ═══ КОНТРАКТЫ ЗАВУЧА/МЕТОДИСТА (Phase 1, Техспека §3) — входные слоты движка/журнала ═══
+// Завуч пишет AssessmentPolicy/OrgStandards/FgosHours; методист — TimingProfile. Движок (Solver)
+// и журнал ЧИТАЮТ. Все workspace-scoped → tenant-guard. События — Архстандарт §6.
+model AssessmentPolicy {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  scope        String // школа | класс | дисциплина
+  classId      String?
+  disciplineId String?
+  items        Json? // что оценивается
+  coefficients Json? // веса
+  scale        Json? // шкала
+  updatedBy    String?
+  updatedAt    DateTime @updatedAt
+
+  @@index([workspaceId, scope])
+}
+
+model TimingProfile {
+  id          String   @id @default(cuid())
+  workspaceId String
+  lessonType  String // тип урока
+  thresholds  Json? // пороги летучки/бриф-теста
+  updatedBy   String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([workspaceId, lessonType])
+}
+
+// Оргстандарты — школьный синглтон (один набор на workspace). Вход Solver: длина/спарки/порядок/физминутки.
+model OrgStandards {
+  id              String   @id @default(cuid())
+  workspaceId     String   @unique
+  lessonLengthMin Int      @default(45)
+  sparki          Json?
+  orderRules      Json?
+  fizminutki      Json?
+  updatedBy       String?
+  updatedAt       DateTime @updatedAt
+}
+
+// ФГОС-часы — утв. завучем, по дисциплине/классу. Вход Solver (Архстандарт §7: fgos-hours.approved).
+model FgosHours {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  disciplineId String
+  classId      String
+  hours        Int
+  approvedBy   String?
+  approvedAt   DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([workspaceId, classId, disciplineId])
+  @@index([workspaceId])
+}
+
 // ═══════════════════════════ ЖУРНАЛ (Phase 1, Техспека §3) ═══════════════════════════
 // Ячейка журнала пишется ТОЛЬКО через grade.posted — явное человеко-авторское действие
 // (реальный studentId). assessment.checked сюда НЕ пишет (Архстандарт §8). Отдельно от

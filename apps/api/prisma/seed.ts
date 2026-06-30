@@ -42,6 +42,15 @@ async function main(): Promise<void> {
 
   console.log('Очистка демо-данных…');
   // Порядок важен из-за внешних ключей.
+  // движок: летучка/ИОМ/журнал/контракты (каскады: BriefTest→коды/результаты, *Node→*Edge)
+  await prisma.briefTest.deleteMany();
+  await prisma.journalCell.deleteMany();
+  await prisma.competencyNode.deleteMany();
+  await prisma.interestNode.deleteMany();
+  await prisma.assessmentPolicy.deleteMany();
+  await prisma.timingProfile.deleteMany();
+  await prisma.orgStandards.deleteMany();
+  await prisma.fgosHours.deleteMany();
   // движок планирования (Lesson.kppLessonId → SetNull, поэтому порядок свободен)
   await prisma.kppMapping.deleteMany();
   await prisma.kppLesson.deleteMany();
@@ -479,7 +488,32 @@ async function main(): Promise<void> {
   }
   await prisma.timetableSlot.createMany({ data: slotData });
 
-  console.log('Готово: посеяны платформа+школа, учитель, 5 классов, уроки 8А, оценки, материалы, КТП+Timetable (движок).');
+  // ── Контракты завуча/методиста (входные слоты движка/журнала) ──
+  await prisma.orgStandards.create({
+    data: {
+      workspaceId: ws.id,
+      lessonLengthMin: 45,
+      sparki: { allowed: true, subjects: [] },
+      orderRules: { maxPerDay: 3 },
+      fizminutki: { afterMin: 20 },
+    },
+  });
+  // утв. ФГОС-часы 9В·Геометрия = 9 (совпадает с суммой fgosHours тем КТП → Solver доволен)
+  await prisma.fgosHours.create({
+    data: { workspaceId: ws.id, classId: class9V.id, disciplineId: geometry.id, hours: 9, approvedBy: 'zavuch', approvedAt: new Date() },
+  });
+  await prisma.assessmentPolicy.create({
+    data: {
+      workspaceId: ws.id,
+      scope: 'школа',
+      items: ['летучка', 'контрольная', 'устный ответ'],
+      coefficients: { 'летучка': 1, 'контрольная': 3, 'устный ответ': 1 },
+      scale: { min: 2, max: 5 },
+      updatedBy: 'zavuch',
+    },
+  });
+
+  console.log('Готово: посеяны платформа+школа, учитель, 5 классов, уроки 8А, оценки, материалы, КТП+Timetable+оргстандарты (движок).');
 }
 
 main()

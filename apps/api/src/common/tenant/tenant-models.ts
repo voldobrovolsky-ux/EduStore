@@ -47,4 +47,8 @@ export const TENANT_COLUMN: Record<string, string> = {
   AssessmentResult: 'workspaceId',
   AssessmentResultItem: 'workspaceId',
   JournalCell: 'workspaceId',
+  AssessmentPolicy: 'workspaceId',
+  TimingProfile: 'workspaceId',
+  OrgStandards: 'workspaceId',
+  FgosHours: 'workspaceId',
 };

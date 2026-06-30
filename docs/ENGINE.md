@@ -18,6 +18,9 @@
 - **Персонализация §6**: `analytics/class` (atRisk низкий score+confidence / topicsReview),
   `ktp.shift.proposed` (предложение, БЕЗ авто-применения) → ждёт `ktp.approved`.
 - **Тезис «предлагает→решает» enforced**: Solver→завуч, летучка→учитель, сдвиг→человек.
+- **Контракты завуча/методиста** (входные слоты): AssessmentPolicy/OrgStandards/FgosHours (завуч),
+  TimingProfile (методист) — GET/PUT с событиями, RBAC-разделение. Solver читает FgosHours+
+  OrgStandards; журнал отдаёт `{cells, policy}`.
 - **События** `edustore.*` на kernel-outbox; `/api/v1/edu/*`; RBAC-гейтинг по каталогу §5.1.
 
 Критерии готовности Движок §9 закрыты (Solver/два ритма/ИОМ/петля-решение/0-ИИ-летучка).
@@ -52,8 +55,11 @@
 ## Известные дыры (закрыть отдельными инкрементами)
 - **REST-версионирование**: движок на `/api/v1/edu` (по спеке §2); legacy Phase-0 кабинеты — на
   `/api/<module>`. Унификация при ребилде кабинетов под `Кабинеты_ТЗ` (edu/-префикс).
-- **Контракты завуча/методиста** (AssessmentPolicy/TimingProfile/OrgStandards/FgosHours,
-  `GET edu/journal` policy) — слоты вычитки Solver/журнала; ещё не реализованы (Кабинеты_ТЗ).
+- **TimingProfile → Lesson FSM** и **полное применение OrgStandards в Solver** (спарки/физминутки/
+  порядок) — слоты заведены и читаются (FgosHours валидируется, lessonLengthMin доступен),
+  но тайминг-пороги/констрейнты в FSM/Solver ещё не применяются.
+- **ContentFilters/Methodics** (методист, `standards.updated` content/template, `GET edu/methodics`) —
+  ещё не реализованы (Кабинеты_ТЗ).
 - **ai-query** (`analytics/ai-query`, гейт id→code на ИИ-границе §3 «граница 2») — отдельный
   слот (нужен LLM); срез ИОМ/analytics сейчас только для UI учителя (реальные имена).
 - `Workspace.sector` (§3.7) заведён, но ветвление 152-ФЗ §6.5 пока не читает.

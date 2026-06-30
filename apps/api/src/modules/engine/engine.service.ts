@@ -89,7 +89,15 @@ export class EngineService {
       throw new ConflictException({ code: 'KPP_IN_USE', message: 'нельзя пересобрать КПП: есть идущие/проведённые уроки' });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    // входные слоты завуча (Архстандарт §7, Solver §3): утв. ФГОС-часы + оргстандарты.
+    // FgosHours (если утв.) — авторитетный total; OrgStandards.lessonLengthMin доступен Solver.
+    // Полное применение OrgStandards (спарки/физминутки/порядок) — стаб (см. docs/ENGINE.md).
+    const fgos = await this.prisma.fgosHours.findFirst({ where: { classId, disciplineId, approvedAt: { not: null } } });
+    const org = await this.prisma.orgStandards.findFirst();
+    const fgosMatch = !fgos || fgos.hours === totalHours;
+    const standards = { fgosHours: fgos?.hours ?? null, lessonLengthMin: org?.lessonLengthMin ?? null, fgosMatch };
+
+    const result = await this.prisma.$transaction(async (tx) => {
       // регенерация идемпотентна: снести прошлый КПП (class,discipline) + его уроки-экземпляры
       const old = await tx.kpp.findMany({
         where: { classId, disciplineId },
@@ -142,6 +150,7 @@ export class EngineService {
       );
       return { id: kpp.id, status: 'scheduled' as const, lessonCount: seq - 1 };
     });
+    return { ...result, standards }; // исход + использованные входные слоты завуча
   }
 
   getKpp(classId?: string, disciplineId?: string) {

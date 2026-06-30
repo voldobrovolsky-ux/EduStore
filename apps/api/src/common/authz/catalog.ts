@@ -37,6 +37,11 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'planning.ktp.approve', section: 'planning', screen: 'ktp', action: 'approve', label: 'Утверждение КТП (завуч)' },
   { code: 'planning.kpp.approve', section: 'planning', screen: 'kpp', action: 'approve', label: 'Утверждение/генерация КПП (завуч)' },
   { code: 'lesson.conduct', section: 'lesson', screen: 'lesson', action: 'conduct', label: 'Проведение урока (учитель)' },
+  // контракты завуча/методиста (Phase 1)
+  { code: 'standards.assessment.manage', section: 'standards', screen: 'assessment', action: 'manage', label: 'Политика оценивания (завуч)' },
+  { code: 'standards.org.manage', section: 'standards', screen: 'org', action: 'manage', label: 'Оргстандарты (завуч)' },
+  { code: 'standards.fgos.approve', section: 'standards', screen: 'fgos', action: 'approve', label: 'Утверждение ФГОС-часов (завуч)' },
+  { code: 'standards.timing.manage', section: 'standards', screen: 'timing', action: 'manage', label: 'Тайминг-профили (методист)' },
   { code: 'materials.lesson.generate', section: 'materials', screen: 'lesson', action: 'generate', label: 'Генерация материалов' },
   { code: 'notes.teacher.edit', section: 'notes', screen: 'teacher', action: 'edit', label: 'Заметки учителя' },
   { code: 'schedule.view', section: 'schedule', screen: 'schedule', action: 'view', label: 'Расписание' },
@@ -59,8 +64,8 @@ export const PERMISSIONS: PermissionDef[] = [
 // §7.4) → пакетов на них нет; их кабинеты ведёт панель Флёра/walk-up, не каталог RP.
 export const ROLE_PACKAGES: RolePackageDef[] = [
   { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'notes.teacher.edit', 'lesson.conduct', 'schedule.view'] },
-  { key: 'zavuch', cabinet: 'zavuch', label: 'Кабинет завуча', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'planning.ktp.view', 'planning.ktp.approve', 'planning.kpp.approve', 'schedule.view'] },
-  { key: 'methodist', cabinet: 'methodist', label: 'Кабинет методиста', permissions: ['structure.disciplines.manage', 'methodics.umk.view', 'methodics.rp.view'] },
+  { key: 'zavuch', cabinet: 'zavuch', label: 'Кабинет завуча', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'planning.ktp.view', 'planning.ktp.approve', 'planning.kpp.approve', 'standards.assessment.manage', 'standards.org.manage', 'standards.fgos.approve', 'schedule.view'] },
+  { key: 'methodist', cabinet: 'methodist', label: 'Кабинет методиста', permissions: ['structure.disciplines.manage', 'methodics.umk.view', 'methodics.rp.view', 'standards.timing.manage'] },
   { key: 'parent', cabinet: 'parent', label: 'Кабинет родителя', permissions: ['diary.child.view', 'grades.child.view', 'schedule.view'] },
   { key: 'student', cabinet: 'student', label: 'Кабинет ученика', permissions: ['tasks.view', 'schedule.view', 'progress.view'] },
   { key: 'psychologist', cabinet: 'psychologist', label: 'Кабинет психолога', permissions: ['psych.cases.view', 'psych.sessions.view', 'psych.risk.view'] },
