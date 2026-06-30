@@ -681,3 +681,56 @@ model KppMapping {
 
   @@index([workspaceId, timetableSlotId])
 }
+
+// ═══════════════════════════ ИОМ-ГРАФ (Phase 1, Техспека §4 / Движок §4) ═══════════════════════
+// Единственный аккумулятор сигналов (Архстандарт §8). Хранит ПО studentId внутри; наружу к ИИ —
+// только studentCode (гейт §3). Read-model: подписан на сигналы, сам ничего не эмитит.
+model CompetencyNode {
+  id           String        @id @default(cuid())
+  workspaceId  String
+  fgosArCode   String // ключ ИОМ (ФГОС АР-код)
+  disciplineId String
+  label        String
+  masteryEdges MasteryEdge[]
+
+  @@unique([workspaceId, fgosArCode, disciplineId])
+  @@index([workspaceId])
+}
+
+model InterestNode {
+  id            String         @id @default(cuid())
+  workspaceId   String
+  label         String
+  interestEdges InterestEdge[]
+
+  @@index([workspaceId])
+}
+
+// score: null = unknown (cold-start); confidence 0..1 = min(1, n_сигналов/3). Формула v1 — Движок §4.
+model MasteryEdge {
+  id               String         @id @default(cuid())
+  workspaceId      String
+  studentId        String // РЕАЛЬНЫЙ id (не уходит на ИИ)
+  competencyNodeId String
+  competencyNode   CompetencyNode @relation(fields: [competencyNodeId], references: [id], onDelete: Cascade)
+  score            Float? // null = unknown
+  confidence       Float          @default(0)
+  signalRefs       Json? // компоненты формулы (летучка/темы/присутствие) + ссылки
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([workspaceId, studentId, competencyNodeId])
+  @@index([workspaceId, studentId])
+  @@index([workspaceId, competencyNodeId])
+}
+
+model InterestEdge {
+  id             String       @id @default(cuid())
+  workspaceId    String
+  studentId      String
+  interestNodeId String
+  interestNode   InterestNode @relation(fields: [interestNodeId], references: [id], onDelete: Cascade)
+  weight         Float
+
+  @@unique([workspaceId, studentId, interestNodeId])
+  @@index([workspaceId, studentId])
+}

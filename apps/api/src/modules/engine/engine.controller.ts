@@ -3,15 +3,20 @@ import type { Request } from 'express';
 import type { SessionUser } from '../../common/auth/flor.service';
 import { OutboxDispatcher } from '../../common/outbox/outbox.dispatcher';
 import { EngineService } from './engine.service';
+import { IomService } from './iom.service';
 
 interface GenerateBody { classId: string; disciplineId: string }
 interface PhaseBody { phase: string }
+interface AttendanceBody { marks: { studentId: string; status: string; arrivalTime?: string }[] }
+interface TopicProgressBody { topicId: string; timeSpent: number }
+interface TopicCompleteBody { topicId: string }
 
 // Движок планирования — /api/v1/edu/* (Архстандарт §2; глобальный префикс api → путь v1/edu).
 @Controller('v1/edu')
 export class EngineController {
   constructor(
     private readonly engine: EngineService,
+    private readonly iom: IomService,
     private readonly dispatcher: OutboxDispatcher,
   ) {}
 
@@ -79,5 +84,33 @@ export class EngineController {
   @Post('lessons/:id/complete')
   complete(@Param('id') id: string) {
     return this.engine.completeLesson(id);
+  }
+
+  // ─── Сигналы урока → ИОМ (inline-дренаж → аккумулятор обновляется сразу) ───
+  @Post('lessons/:id/attendance')
+  async attendance(@Param('id') id: string, @Body() body: AttendanceBody, @Req() req: Request & { user?: SessionUser }) {
+    const res = await this.engine.markAttendance(id, body.marks, this.actor(req));
+    await this.dispatcher.drain();
+    return res;
+  }
+
+  @Post('lessons/:id/topic-progress')
+  async topicProgress(@Param('id') id: string, @Body() body: TopicProgressBody, @Req() req: Request & { user?: SessionUser }) {
+    const res = await this.engine.topicProgress(id, body.topicId, body.timeSpent, this.actor(req));
+    await this.dispatcher.drain();
+    return res;
+  }
+
+  @Post('lessons/:id/topic-complete')
+  async topicComplete(@Param('id') id: string, @Body() body: TopicCompleteBody, @Req() req: Request & { user?: SessionUser }) {
+    const res = await this.engine.topicComplete(id, body.topicId, this.actor(req));
+    await this.dispatcher.drain();
+    return res;
+  }
+
+  // ─── ИОМ-срез (UI учителя — реальные имена) ───
+  @Get('iom/:studentId')
+  getIom(@Param('studentId') studentId: string) {
+    return this.iom.getIom(studentId);
   }
 }

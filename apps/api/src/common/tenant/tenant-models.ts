@@ -38,4 +38,8 @@ export const TENANT_COLUMN: Record<string, string> = {
   Kpp: 'workspaceId',
   KppLesson: 'workspaceId',
   KppMapping: 'workspaceId',
+  CompetencyNode: 'workspaceId',
+  InterestNode: 'workspaceId',
+  MasteryEdge: 'workspaceId',
+  InterestEdge: 'workspaceId',
 };

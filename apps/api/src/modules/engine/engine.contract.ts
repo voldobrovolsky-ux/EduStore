@@ -10,7 +10,25 @@ export const ENGINE_EVENTS = {
   scheduleBuilt: 'edustore.schedule.built',
   lessonStarted: 'edustore.lesson.started',
   lessonPhaseChanged: 'edustore.lesson.phase.changed',
+  // сигналы результата → ИОМ (Архстандарт §6). attendance/topic несут реальный studentId.
+  attendanceMarked: 'edustore.attendance.marked',
+  topicProgressed: 'edustore.topic.progressed', // нетерминальное
+  topicCompleted: 'edustore.topic.completed', // терминальное (mastery)
 } as const;
+
+export interface AttendanceMarkedV1 {
+  lessonId: string;
+  marks: { studentId: string; status: string; arrivalTime?: string }[];
+}
+export interface TopicProgressedV1 {
+  lessonId: string;
+  topicId: string;
+  timeSpent: number;
+}
+export interface TopicCompletedV1 {
+  lessonId: string;
+  topicId: string;
+}
 
 export interface KtpApprovedV1 {
   ktpId: string;

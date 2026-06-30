@@ -5,11 +5,14 @@ import { TenantContext } from '../../common/tenant/tenant-context';
 import { newEvent } from '../../common/events/domain-event';
 import {
   ENGINE_EVENTS,
+  type AttendanceMarkedV1,
   type KppApprovedV1,
   type KppScheduledV1,
   type KtpApprovedV1,
   type LessonPhaseChangedV1,
   type LessonStartedV1,
+  type TopicCompletedV1,
+  type TopicProgressedV1,
 } from './engine.contract';
 
 // База термового календаря для раскладки уроков на даты (упрощение v1; реальный календарь
@@ -213,5 +216,26 @@ export class EngineService {
     if (l.state !== 'running') throw new BadRequestException('урок не идёт (state≠running)');
     await this.prisma.lesson.update({ where: { id }, data: { state: 'done' } });
     return { id, state: 'done' as const };
+  }
+
+  // ─────────────── Сигналы урока → ИОМ (Архстандарт §6). marks несут реальный studentId. ───────────────
+  private async emit(type: string, payload: object, actor: string) {
+    const ws = TenantContext.require();
+    await this.prisma.$transaction((tx) => this.outbox.enqueue(tx, newEvent({ type, workspaceId: ws, actor, payload })));
+  }
+
+  async markAttendance(lessonId: string, marks: AttendanceMarkedV1['marks'], teacherId: string) {
+    await this.emit(ENGINE_EVENTS.attendanceMarked, { lessonId, marks } as AttendanceMarkedV1, teacherId);
+    return { ok: true, marked: marks.length };
+  }
+
+  async topicProgress(lessonId: string, topicId: string, timeSpent: number, teacherId: string) {
+    await this.emit(ENGINE_EVENTS.topicProgressed, { lessonId, topicId, timeSpent } as TopicProgressedV1, teacherId);
+    return { ok: true };
+  }
+
+  async topicComplete(lessonId: string, topicId: string, teacherId: string) {
+    await this.emit(ENGINE_EVENTS.topicCompleted, { lessonId, topicId } as TopicCompletedV1, teacherId);
+    return { ok: true };
   }
 }
