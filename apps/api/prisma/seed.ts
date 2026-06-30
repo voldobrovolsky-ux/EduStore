@@ -42,6 +42,14 @@ async function main(): Promise<void> {
 
   console.log('Очистка демо-данных…');
   // Порядок важен из-за внешних ключей.
+  // движок планирования (Lesson.kppLessonId → SetNull, поэтому порядок свободен)
+  await prisma.kppMapping.deleteMany();
+  await prisma.kppLesson.deleteMany();
+  await prisma.kpp.deleteMany();
+  await prisma.timetableSlot.deleteMany();
+  await prisma.timetable.deleteMany();
+  await prisma.ktpTopic.deleteMany();
+  await prisma.ktp.deleteMany();
   await prisma.entitlement.deleteMany();
   await prisma.consent.deleteMany();
   await prisma.grade.deleteMany();
@@ -441,7 +449,34 @@ async function main(): Promise<void> {
     },
   });
 
-  console.log('Готово: посеяны организация, учитель, 5 классов, уроки 8А, оценки, материалы и уведомления.');
+  // ── Движок планирования: КТП 8А·Алгебра (draft) + Timetable-геометрия ──
+  // КТП утверждает завуч → Solver раскладывает КПП по слотам (демо пайплайна §7).
+  await prisma.ktp.create({
+    data: {
+      workspaceId: ws.id,
+      classId: class8A.id,
+      disciplineId: algebra.id,
+      status: 'draft',
+      topics: {
+        create: [
+          { workspaceId: ws.id, order: 1, fgosHours: 3, arCodes: ['8.АЛ.2.1', '8.АЛ.2.2'], title: 'Квадратные корни' },
+          { workspaceId: ws.id, order: 2, fgosHours: 4, arCodes: ['8.АЛ.3.1', '8.АЛ.3.2'], title: 'Квадратные уравнения' },
+          { workspaceId: ws.id, order: 3, fgosHours: 2, arCodes: ['8.АЛ.4.1'], title: 'Неравенства' },
+        ],
+      },
+    },
+  });
+  // Timetable: 12 слотов (3 урока × 4 дня) — хватает на 9 часов КТП
+  const timetable = await prisma.timetable.create({
+    data: { workspaceId: ws.id, classId: class8A.id, source: 'engine' },
+  });
+  const slotData: { workspaceId: string; timetableId: string; day: number; position: number; durationMin: number }[] = [];
+  for (let i = 0; i < 12; i++) {
+    slotData.push({ workspaceId: ws.id, timetableId: timetable.id, day: Math.floor(i / 3) + 1, position: (i % 3) + 1, durationMin: 45 });
+  }
+  await prisma.timetableSlot.createMany({ data: slotData });
+
+  console.log('Готово: посеяны платформа+школа, учитель, 5 классов, уроки 8А, оценки, материалы, КТП+Timetable (движок).');
 }
 
 main()
