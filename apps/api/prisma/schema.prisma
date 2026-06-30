@@ -69,6 +69,29 @@ enum EntitlementStatus {
   expired
 }
 
+// Движок планирования (Phase 1). КТП/КПП — статусы утверждения; Lesson FSM — состояния.
+enum KtpStatus {
+  draft
+  approved
+}
+
+enum KppStatus {
+  scheduled
+  approved
+}
+
+enum LessonMode {
+  auto
+  hybrid
+  manual
+}
+
+enum LessonState {
+  idle
+  running
+  done
+}
+
 // ─────────────────────────── identity ───────────────────────────
 // Пользователь принадлежит платформе (florus_user_id), организация приглашает его.
 model User {
@@ -274,14 +297,18 @@ model Student {
   @@index([workspaceId])
 }
 
-// ─────────────────────────── lesson = станция метро ───────────────────────────
+// lesson = и «станция метро» (контент), и исполняемый экземпляр (Lesson FSM, Техспека §2).
+// kppLessonId связывает с планом; гейт старта открыт только при kpp.approved (Архстандарт §7).
 model Lesson {
   id           String              @id @default(cuid())
   workspaceId  String // тенант = школа (Workspace)
-  subjectId    String
+  subjectId    String // = disciplineId
   subject      Subject             @relation(fields: [subjectId], references: [id])
   classId      String
   class        Class               @relation(fields: [classId], references: [id], onDelete: Cascade)
+  kppLessonId  String? // → план (KppLesson); null для демо/незапланированных
+  kppLesson    KppLesson?          @relation(fields: [kppLessonId], references: [id])
+  teacherId    String? // identity ведущего
   topic        String
   shortTitle   String
   unit         String? // "Глава 3 · Квадратные уравнения"
@@ -289,6 +316,10 @@ model Lesson {
   lessonNumber Int
   date         DateTime
   type         LessonType          @default(LESSON)
+  mode         LessonMode          @default(manual) // auto | hybrid | manual
+  state        LessonState         @default(idle) // FSM: idle | running | done
+  phase        String? // текущая фаза урока
+  t0           DateTime? // якорь тайминга (старт)
   bloomLevel   Int?
   pageStart    Int?
   pageEnd      Int?
@@ -298,6 +329,8 @@ model Lesson {
   notes        TeacherNote[]
 
   @@index([classId, subjectId, date])
+  @@index([workspaceId, teacherId, date])
+  @@index([kppLessonId])
 }
 
 model Grade {
@@ -543,4 +576,108 @@ model PromoCode {
   sku       Sku      @relation(fields: [skuId], references: [id])
   redeemed  Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+// ═══════════════════════════ ДВИЖОК ПЛАНИРОВАНИЯ (Phase 1, Техспека §2 / Движок §2) ═══════════
+// Движок — ЕДИНСТВЕННЫЙ писатель КТП/Timetable/КПП (Архстандарт §8). Два ритма РАЗДЕЛЬНЫ:
+// Timetable (геометрия, термовый) + Kpp (поурочный план, недельный), мост KppMapping.
+// Пед-правка КПП не дёргает геометрию Timetable. Всё на workspaceId → tenant-guard.
+
+// КТП — тематическое планирование (термовое). Утверждает завуч → ktp.approved (гейт Solver).
+model Ktp {
+  id           String     @id @default(cuid())
+  workspaceId  String
+  classId      String
+  disciplineId String // = Subject.id
+  status       KtpStatus  @default(draft)
+  approvedBy   String? // identity (завуч)
+  topics       KtpTopic[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([workspaceId, classId, disciplineId])
+}
+
+model KtpTopic {
+  id          String      @id @default(cuid())
+  workspaceId String
+  ktpId       String
+  ktp         Ktp         @relation(fields: [ktpId], references: [id], onDelete: Cascade)
+  order       Int
+  fgosHours   Int // часов по теме (ФГОС) — Solver раскладывает столько уроков
+  arCodes     String[] // ФГОС АР-коды темы (ключ ИОМ)
+  title       String
+  lessons     KppLesson[]
+
+  @@index([workspaceId, ktpId, order])
+}
+
+// Timetable — геометрия сетки (термовый ритм). source=engine; утверждает завуч.
+model Timetable {
+  id          String          @id @default(cuid())
+  workspaceId String
+  classId     String
+  source      String          @default("engine")
+  approvedBy  String?
+  slots       TimetableSlot[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([workspaceId, classId])
+}
+
+model TimetableSlot {
+  id          String       @id @default(cuid())
+  workspaceId String
+  timetableId String
+  timetable   Timetable    @relation(fields: [timetableId], references: [id], onDelete: Cascade)
+  day         Int // 1..7
+  position    Int
+  durationMin Int
+  mappings    KppMapping[]
+
+  @@index([workspaceId, timetableId, day, position])
+}
+
+// КПП — поурочный план (недельный ритм). Solver кладёт уроки тем в слоты → kpp.scheduled;
+// завуч утверждает → kpp.approved (разблокировка проведения, Архстандарт §7).
+model Kpp {
+  id           String      @id @default(cuid())
+  workspaceId  String
+  classId      String
+  disciplineId String
+  status       KppStatus   @default(scheduled)
+  approvedBy   String?
+  lessons      KppLesson[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([workspaceId, classId, disciplineId])
+}
+
+model KppLesson {
+  id             String      @id @default(cuid())
+  workspaceId    String
+  kppId          String
+  kpp            Kpp         @relation(fields: [kppId], references: [id], onDelete: Cascade)
+  topicId        String
+  topic          KtpTopic    @relation(fields: [topicId], references: [id])
+  sequenceNo     Int
+  plannedContent Json?
+  mapping        KppMapping?
+  instances      Lesson[] // исполняемые экземпляры (Lesson FSM)
+
+  @@index([workspaceId, kppId, sequenceNo])
+}
+
+// Мост двух ритмов: урок плана (KppLesson) ↔ слот геометрии (TimetableSlot).
+model KppMapping {
+  id              String        @id @default(cuid())
+  workspaceId     String
+  kppLessonId     String        @unique
+  kppLesson       KppLesson     @relation(fields: [kppLessonId], references: [id], onDelete: Cascade)
+  timetableSlotId String
+  timetableSlot   TimetableSlot @relation(fields: [timetableSlotId], references: [id])
+
+  @@index([workspaceId, timetableSlotId])
 }

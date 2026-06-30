@@ -30,4 +30,12 @@ export const TENANT_COLUMN: Record<string, string> = {
   Consent: 'workspaceId',
   AuditLog: 'workspaceId',
   Entitlement: 'workspaceId',
+  // движок планирования (Phase 1)
+  Ktp: 'workspaceId',
+  KtpTopic: 'workspaceId',
+  Timetable: 'workspaceId',
+  TimetableSlot: 'workspaceId',
+  Kpp: 'workspaceId',
+  KppLesson: 'workspaceId',
+  KppMapping: 'workspaceId',
 };
