@@ -33,10 +33,15 @@
 - `topic.completed` обновляет mastery всем ученикам класса (экспозиция темы); индивидуальная
   «темы»-доля по присутствию — уточнение.
 
+## RBAC route-gating (закрыто аудитом)
+Каталог прав (§5.1) теперь **РЕАЛЬНО гейтит**: `PermissionGuard` (APP_GUARD после AuthGuard) +
+`@RequirePermission(code)`. На мутациях движка: `approve` КТП/КПП → `planning.*.approve` (завуч),
+`conduct` (start/phase/complete/attendance/topic-*) → `lesson.conduct` (учитель). Reads открыты
+(tenant-изоляция). DEV: `x-florus-role`/`x-florus-subrole` переопределяют роль для тестов.
+Разделение обязанностей enforced: учитель не утвердит, завуч не проведёт. Legacy `/api/<module>`
+покроется при ребилде кабинетов (паттерн готов).
+
 ## Известные дыры (закрыть отдельными инкрементами)
-- **RBAC route-gating НЕ включён.** Каталог прав (§5.1) вычисляется в `/me`, но НЕ гейтит роуты —
-  любой аутентифицированный может звать `approve`/`conduct`. Закрывается инкрементом «RBAC + срез»
-  (PermissionGuard из каталога + dev role-override). Текущая защита — только tenant-изоляция.
 - **REST-версионирование**: движок на `/api/v1/edu` (по спеке §2); legacy Phase-0 кабинеты — на
   `/api/<module>`. Унификация при ребилде кабинетов под `Кабинеты_ТЗ` (edu/-префикс).
 - **Незавершённый движок**: летучка (FSM + гейт code↔id → assessment→ИОМ), журнал (`grade.posted`),

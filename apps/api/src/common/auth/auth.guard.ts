@@ -37,8 +37,22 @@ export class AuthGuard implements CanActivate {
     if (process.env.AUTH_MODE !== 'production') {
       const header = req.headers['x-florus-user-id'];
       const uid = (Array.isArray(header) ? header[0] : header)?.trim() || DEFAULT_TEACHER_ID;
+      // DEV: x-florus-role / x-florus-subrole переопределяют доменную роль — чтобы тестировать
+      // RBAC-гейтинг под разными ролями (завуч approve, учитель conduct) без живого Флёра.
+      const hdr = (k: string) => {
+        const v = req.headers[k];
+        return (Array.isArray(v) ? v[0] : v)?.trim() || undefined;
+      };
       req.teacherId = uid;
-      req.user = { florusUserId: uid, workspaceId: null, florusWorkspaceId: null, florusOrgId: null, role: 'teacher', subRole: null, name: 'Анна Соколова' };
+      req.user = {
+        florusUserId: uid,
+        workspaceId: null,
+        florusWorkspaceId: null,
+        florusOrgId: null,
+        role: hdr('x-florus-role') ?? 'teacher',
+        subRole: hdr('x-florus-subrole') ?? null,
+        name: 'Анна Соколова',
+      };
       return true;
     }
 

@@ -34,6 +34,9 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'journal.grades.edit', section: 'journal', screen: 'grades', action: 'edit', label: 'Журнал — оценки' },
   { code: 'planning.ktp.view', section: 'planning', screen: 'ktp', action: 'view', label: 'КТП — просмотр' },
   { code: 'planning.ktp.edit', section: 'planning', screen: 'ktp', action: 'edit', label: 'КТП — правка' },
+  { code: 'planning.ktp.approve', section: 'planning', screen: 'ktp', action: 'approve', label: 'Утверждение КТП (завуч)' },
+  { code: 'planning.kpp.approve', section: 'planning', screen: 'kpp', action: 'approve', label: 'Утверждение/генерация КПП (завуч)' },
+  { code: 'lesson.conduct', section: 'lesson', screen: 'lesson', action: 'conduct', label: 'Проведение урока (учитель)' },
   { code: 'materials.lesson.generate', section: 'materials', screen: 'lesson', action: 'generate', label: 'Генерация материалов' },
   { code: 'notes.teacher.edit', section: 'notes', screen: 'teacher', action: 'edit', label: 'Заметки учителя' },
   { code: 'schedule.view', section: 'schedule', screen: 'schedule', action: 'view', label: 'Расписание' },
@@ -55,8 +58,8 @@ export const PERMISSIONS: PermissionDef[] = [
 // психолог). admin/owner — tenancy-роли Флёра (RoleAssignment), в токен не приходят (канон
 // §7.4) → пакетов на них нет; их кабинеты ведёт панель Флёра/walk-up, не каталог RP.
 export const ROLE_PACKAGES: RolePackageDef[] = [
-  { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'notes.teacher.edit', 'schedule.view'] },
-  { key: 'zavuch', cabinet: 'zavuch', label: 'Кабинет завуча', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'planning.ktp.view', 'schedule.view'] },
+  { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'notes.teacher.edit', 'lesson.conduct', 'schedule.view'] },
+  { key: 'zavuch', cabinet: 'zavuch', label: 'Кабинет завуча', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'planning.ktp.view', 'planning.ktp.approve', 'planning.kpp.approve', 'schedule.view'] },
   { key: 'methodist', cabinet: 'methodist', label: 'Кабинет методиста', permissions: ['structure.disciplines.manage', 'methodics.umk.view', 'methodics.rp.view'] },
   { key: 'parent', cabinet: 'parent', label: 'Кабинет родителя', permissions: ['diary.child.view', 'grades.child.view', 'schedule.view'] },
   { key: 'student', cabinet: 'student', label: 'Кабинет ученика', permissions: ['tasks.view', 'schedule.view', 'progress.view'] },

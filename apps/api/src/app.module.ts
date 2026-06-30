@@ -4,6 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './common/auth/auth.module';
 import { AuthGuard } from './common/auth/auth.guard';
+import { PermissionGuard } from './common/authz/permission.guard';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { AuthzModule } from './common/authz/authz.module';
 import { AuditModule } from './common/audit/audit.module';
@@ -63,6 +64,8 @@ import { ComplianceModule } from './parameters/compliance/compliance.module';
   providers: [
     // Единый guard: сессия Флёруса или DEV-bypass (AUTH_MODE != production).
     { provide: APP_GUARD, useClass: AuthGuard },
+    // §5.1: гейтинг роутов по каталогу прав — ПОСЛЕ AuthGuard (req.user установлен).
+    { provide: APP_GUARD, useClass: PermissionGuard },
     // §3.6: tenant-контекст запроса в ALS (после guard, до обработчика) → изоляция тенанта.
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
     // §5.2: гейт entitlement — ПОСЛЕ TenantInterceptor (выполняется внутри tenant-контекста).
