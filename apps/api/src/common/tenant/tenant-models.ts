@@ -46,4 +46,5 @@ export const TENANT_COLUMN: Record<string, string> = {
   BriefTestCode: 'workspaceId',
   AssessmentResult: 'workspaceId',
   AssessmentResultItem: 'workspaceId',
+  JournalCell: 'workspaceId',
 };

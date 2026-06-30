@@ -6,6 +6,8 @@ import { RequirePermission } from '../../common/authz/require-permission.decorat
 import { EngineService } from './engine.service';
 import { IomService } from './iom.service';
 import { AssessmentService } from './assessment.service';
+import { JournalService, type PostGradeInput } from './journal.service';
+import { AnalyticsService } from './analytics.service';
 
 interface GenerateBody { classId: string; disciplineId: string }
 interface PhaseBody { phase: string }
@@ -14,6 +16,7 @@ interface TopicProgressBody { topicId: string; timeSpent: number }
 interface TopicCompleteBody { topicId: string }
 interface PrintBody { type?: string }
 interface CheckBody { results: { studentCode: string; score: number }[] }
+interface KtpAdjustBody { lessonId: string; action: string; reason?: string }
 
 // Движок планирования — /api/v1/edu/* (Архстандарт §2; глобальный префикс api → путь v1/edu).
 @Controller('v1/edu')
@@ -22,6 +25,8 @@ export class EngineController {
     private readonly engine: EngineService,
     private readonly iom: IomService,
     private readonly assessment: AssessmentService,
+    private readonly journal: JournalService,
+    private readonly analytics: AnalyticsService,
     private readonly dispatcher: OutboxDispatcher,
   ) {}
 
@@ -154,5 +159,33 @@ export class EngineController {
   @Get('iom/:studentId')
   getIom(@Param('studentId') studentId: string) {
     return this.iom.getIom(studentId);
+  }
+
+  // ─── Журнал: пишется ТОЛЬКО через grade.posted (явное действие учителя, реальный id) ───
+  @RequirePermission('journal.grades.edit')
+  @Post('journal/grade')
+  async postGrade(@Body() body: PostGradeInput, @Req() req: Request & { user?: SessionUser }) {
+    const res = await this.journal.postGrade(body, this.actor(req));
+    await this.dispatcher.drain();
+    return res;
+  }
+
+  @Get('journal')
+  getJournal(@Query('classId') classId?: string, @Query('disciplineId') disciplineId?: string, @Query('period') period?: string) {
+    return this.journal.getJournal(classId, disciplineId, period);
+  }
+
+  // ─── Персонализация §6: движок ПРЕДЛАГАЕТ, человек РЕШАЕТ (без авто-применения) ───
+  @Get('analytics/class')
+  classAnalytics(@Query('classId') classId: string, @Query('disciplineId') disciplineId: string) {
+    return this.analytics.classAnalytics(classId, disciplineId);
+  }
+
+  @RequirePermission('planning.ktp.edit')
+  @Post('analytics/ktp-adjust')
+  async ktpAdjust(@Body() body: KtpAdjustBody, @Req() req: Request & { user?: SessionUser }) {
+    const res = await this.analytics.proposeKtpAdjust(body.lessonId, body.action, this.actor(req), body.reason);
+    await this.dispatcher.drain();
+    return res;
   }
 }

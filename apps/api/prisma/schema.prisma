@@ -790,3 +790,24 @@ model AssessmentResultItem {
 
   @@index([workspaceId, assessmentResultId])
 }
+
+// ═══════════════════════════ ЖУРНАЛ (Phase 1, Техспека §3) ═══════════════════════════
+// Ячейка журнала пишется ТОЛЬКО через grade.posted — явное человеко-авторское действие
+// (реальный studentId). assessment.checked сюда НЕ пишет (Архстандарт §8). Отдельно от
+// Phase-0 Grade (legacy демо-журнал кабинета).
+model JournalCell {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  classId      String
+  disciplineId String
+  studentId    String // РЕАЛЬНЫЙ (человеко-авторское)
+  lessonId     String
+  grade        String
+  workType     String?
+  period       String?
+  postedBy     String // identity учителя
+  postedAt     DateTime @default(now())
+
+  @@index([workspaceId, classId, disciplineId, period])
+  @@index([workspaceId, studentId])
+}

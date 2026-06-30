@@ -17,6 +17,9 @@ export const ENGINE_EVENTS = {
   // петля летучки. brieftest по присутствующим (КОДЫ); assessment.checked несёт studentCode (§3).
   brieftestGenerated: 'edustore.brieftest.generated',
   assessmentChecked: 'edustore.assessment.checked',
+  // журнал — только grade.posted (реальный studentId); персонализация — ktp.shift.proposed (предложение)
+  gradePosted: 'edustore.grade.posted',
+  ktpShiftProposed: 'edustore.ktp.shift.proposed',
 } as const;
 
 export interface AttendanceMarkedV1 {
@@ -41,6 +44,16 @@ export interface AssessmentCheckedV1 {
   briefTestId: string;
   lessonId: string;
   results: { studentCode: string; score: number }[]; // КОДЫ (не studentId) — гейт §3
+}
+export interface GradePostedV1 {
+  lessonId: string;
+  studentId: string; // реальный (человеко-авторское)
+  grade: string;
+}
+export interface KtpShiftProposedV1 {
+  lessonId: string;
+  action: string;
+  reason?: string;
 }
 
 export interface KtpApprovedV1 {

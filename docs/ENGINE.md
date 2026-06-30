@@ -2,18 +2,26 @@
 
 Реализация по `EduStore_Движок_ТЗ` / `Архстандарт §7-§8` / `Техспека §2,§4` поверх Phase-0 kernel.
 
-## Что сделано
+## Что сделано — движок ЗАКРЫТ (контур замкнут)
 - **Пайплайн §7** (спина): `КТП.approve → Solver → КПП.scheduled → КПП.approve → гейт урока`.
   Два ритма РАЗДЕЛЬНЫ: `Timetable` (геометрия) + `Kpp` (план), мост `KppMapping`.
 - **Solver §3** (детерминированный, 0 ИИ): раскладывает уроки тем КТП по слотам Timetable
-  с учётом `fgosHours`; `409 INSUFFICIENT_SLOTS` при нехватке. Идемпотентен (регенерация),
-  но защищён от деструктива: `409 KPP_IN_USE`, если есть идущие/проведённые уроки (не теряем оценки).
+  с учётом `fgosHours`; `409 INSUFFICIENT_SLOTS` при нехватке; `409 KPP_IN_USE` против деструктива.
 - **Lesson FSM**: гейт `start` только при `kpp.approved` (иначе `409 LESSON_LOCKED`);
   `idle→running(t0)→done`; сигналы `lesson.started/phase.changed`.
-- **ИОМ-аккумулятор §4**: mastery по `arCode`, формула v1 `0.6·летучка+0.25·темы+0.15·присутствие`,
-  `confidence=min(1,n/3)`, cold-start=нет ребра=unknown. Сигналы `attendance.marked`,
-  `topic.completed`. `GET edu/iom/:studentId`. Read-model (не эмитит).
-- **События** `edustore.*` на kernel-outbox; `/api/v1/edu/*`.
+- **ИОМ-аккумулятор §4**: mastery по `arCode`, `0.6·летучка+0.25·темы+0.15·присутствие`,
+  `confidence=min(1,n/3)`, cold-start=unknown. Сигналы `attendance/topic.completed/assessment.checked`.
+- **Петля летучки §5**: `BriefTest` FSM (generated→checked→done), гейт §3 (печать id→code,
+  ингест ИОМ code→id), Tesseract-стаб (0 ИИ), `assessment.checked(code)` → ИОМ. Сканы НЕ в docs/.
+- **Журнал §3**: `JournalCell` пишется ТОЛЬКО через `grade.posted` (явное действие, реальный id);
+  `assessment.checked` в журнал НЕ пишет (§8). Летучка→done при выставлении оценки.
+- **Персонализация §6**: `analytics/class` (atRisk низкий score+confidence / topicsReview),
+  `ktp.shift.proposed` (предложение, БЕЗ авто-применения) → ждёт `ktp.approved`.
+- **Тезис «предлагает→решает» enforced**: Solver→завуч, летучка→учитель, сдвиг→человек.
+- **События** `edustore.*` на kernel-outbox; `/api/v1/edu/*`; RBAC-гейтинг по каталогу §5.1.
+
+Критерии готовности Движок §9 закрыты (Solver/два ритма/ИОМ/петля-решение/0-ИИ-летучка).
+Расширяемость 6 режимов — ModeNode/StateEdge на том же графе (структурно поддержано).
 
 ## Архитектурные решения (исходя из общей концепции кода)
 - **PK = cuid**, не ULID (спека Техспека §0 просит ULID). Консистентно с kernel и всеми Phase-0
@@ -44,6 +52,8 @@
 ## Известные дыры (закрыть отдельными инкрементами)
 - **REST-версионирование**: движок на `/api/v1/edu` (по спеке §2); legacy Phase-0 кабинеты — на
   `/api/<module>`. Унификация при ребилде кабинетов под `Кабинеты_ТЗ` (edu/-префикс).
-- **Незавершённый движок**: летучка (FSM + гейт code↔id → assessment→ИОМ), журнал (`grade.posted`),
-  персонализация (`analytics/class`, `ktp.shift.proposed`) — следующие чанки.
+- **Контракты завуча/методиста** (AssessmentPolicy/TimingProfile/OrgStandards/FgosHours,
+  `GET edu/journal` policy) — слоты вычитки Solver/журнала; ещё не реализованы (Кабинеты_ТЗ).
+- **ai-query** (`analytics/ai-query`, гейт id→code на ИИ-границе §3 «граница 2») — отдельный
+  слот (нужен LLM); срез ИОМ/analytics сейчас только для UI учителя (реальные имена).
 - `Workspace.sector` (§3.7) заведён, но ветвление 152-ФЗ §6.5 пока не читает.
