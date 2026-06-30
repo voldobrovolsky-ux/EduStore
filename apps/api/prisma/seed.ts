@@ -449,26 +449,29 @@ async function main(): Promise<void> {
     },
   });
 
-  // ── Движок планирования: КТП 8А·Алгебра (draft) + Timetable-геометрия ──
-  // КТП утверждает завуч → Solver раскладывает КПП по слотам (демо пайплайна §7).
+  // ── Движок планирования: КТП 9В·Геометрия (draft) + Timetable-геометрия ──
+  // Отдельно от 8А·Алгебра (там — Phase-0 демо журнала с готовыми уроками/оценками):
+  // у 9В·Геометрия НЕТ засеянных standalone-уроков → уроки появляются только из пайплайна
+  // (approve КТП → Solver), без дублей. Демо §7: завуч утверждает → Solver раскладывает КПП.
+  const class9V = classByLabel['9В'];
   await prisma.ktp.create({
     data: {
       workspaceId: ws.id,
-      classId: class8A.id,
-      disciplineId: algebra.id,
+      classId: class9V.id,
+      disciplineId: geometry.id,
       status: 'draft',
       topics: {
         create: [
-          { workspaceId: ws.id, order: 1, fgosHours: 3, arCodes: ['8.АЛ.2.1', '8.АЛ.2.2'], title: 'Квадратные корни' },
-          { workspaceId: ws.id, order: 2, fgosHours: 4, arCodes: ['8.АЛ.3.1', '8.АЛ.3.2'], title: 'Квадратные уравнения' },
-          { workspaceId: ws.id, order: 3, fgosHours: 2, arCodes: ['8.АЛ.4.1'], title: 'Неравенства' },
+          { workspaceId: ws.id, order: 1, fgosHours: 3, arCodes: ['9.ГЕ.1.1', '9.ГЕ.1.2'], title: 'Векторы' },
+          { workspaceId: ws.id, order: 2, fgosHours: 4, arCodes: ['9.ГЕ.2.1', '9.ГЕ.2.2'], title: 'Метод координат' },
+          { workspaceId: ws.id, order: 3, fgosHours: 2, arCodes: ['9.ГЕ.3.1'], title: 'Соотношения в треугольнике' },
         ],
       },
     },
   });
   // Timetable: 12 слотов (3 урока × 4 дня) — хватает на 9 часов КТП
   const timetable = await prisma.timetable.create({
-    data: { workspaceId: ws.id, classId: class8A.id, source: 'engine' },
+    data: { workspaceId: ws.id, classId: class9V.id, source: 'engine' },
   });
   const slotData: { workspaceId: string; timetableId: string; day: number; position: number; durationMin: number }[] = [];
   for (let i = 0; i < 12; i++) {

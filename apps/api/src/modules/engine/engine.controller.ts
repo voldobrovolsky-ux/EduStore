@@ -35,7 +35,15 @@ export class EngineController {
   async approveKtp(@Param('id') id: string, @Req() req: Request & { user?: SessionUser }) {
     const res = await this.engine.approveKtp(id, this.actor(req));
     await this.dispatcher.drain(); // прогнать пайплайн: ktp.approved → генерация КПП
-    return res;
+    // вернуть исход генерации (Solver может упасть на нехватке слотов — ошибка в логах,
+    // здесь видно, собрался ли КПП); kpp=null → генерация не дала плана.
+    const kpps = await this.engine.getKpp(res.classId, res.disciplineId);
+    const kpp = kpps[0];
+    return {
+      id: res.id,
+      status: res.status,
+      kpp: kpp ? { id: kpp.id, status: kpp.status, lessonCount: kpp.lessons.length } : null,
+    };
   }
 
   // ─── КПП ───

@@ -57,7 +57,7 @@ export class EngineService {
         }),
       );
     });
-    return { id: ktpId, status: 'approved' as const };
+    return { id: ktpId, status: 'approved' as const, classId: ktp.classId, disciplineId: ktp.disciplineId };
   }
 
   // ─────────────── Solver (§3): детерминированная раскладка тем КТП по слотам Timetable, 0 ИИ ───────────────
@@ -79,6 +79,14 @@ export class EngineService {
     if (slots.length < totalHours) {
       // §3: часов темы не хватает в сетке
       throw new ConflictException({ code: 'INSUFFICIENT_SLOTS', requiredHours: totalHours, available: slots.length });
+    }
+    // защита от деструктивной регенерации: не пересобирать КПП, если есть проведённые/идущие
+    // уроки (иначе каскад удалил бы их оценки). Регенерация допустима только по idle-плану.
+    const inFlight = await this.prisma.lesson.count({
+      where: { kppLesson: { kpp: { classId, disciplineId } }, state: { not: 'idle' } },
+    });
+    if (inFlight > 0) {
+      throw new ConflictException({ code: 'KPP_IN_USE', message: 'нельзя пересобрать КПП: есть идущие/проведённые уроки' });
     }
 
     return this.prisma.$transaction(async (tx) => {
