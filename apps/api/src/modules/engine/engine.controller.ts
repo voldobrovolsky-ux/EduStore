@@ -5,12 +5,15 @@ import { OutboxDispatcher } from '../../common/outbox/outbox.dispatcher';
 import { RequirePermission } from '../../common/authz/require-permission.decorator';
 import { EngineService } from './engine.service';
 import { IomService } from './iom.service';
+import { AssessmentService } from './assessment.service';
 
 interface GenerateBody { classId: string; disciplineId: string }
 interface PhaseBody { phase: string }
 interface AttendanceBody { marks: { studentId: string; status: string; arrivalTime?: string }[] }
 interface TopicProgressBody { topicId: string; timeSpent: number }
 interface TopicCompleteBody { topicId: string }
+interface PrintBody { type?: string }
+interface CheckBody { results: { studentCode: string; score: number }[] }
 
 // Движок планирования — /api/v1/edu/* (Архстандарт §2; глобальный префикс api → путь v1/edu).
 @Controller('v1/edu')
@@ -18,6 +21,7 @@ export class EngineController {
   constructor(
     private readonly engine: EngineService,
     private readonly iom: IomService,
+    private readonly assessment: AssessmentService,
     private readonly dispatcher: OutboxDispatcher,
   ) {}
 
@@ -124,6 +128,26 @@ export class EngineController {
     const res = await this.engine.topicComplete(id, body.topicId, this.actor(req));
     await this.dispatcher.drain();
     return res;
+  }
+
+  // ─── Петля летучки (Движок §5): печать(коды) → check(Tesseract-стаб) → assessment.checked → ИОМ ───
+  @RequirePermission('lesson.conduct')
+  @Post('lessons/:id/brief-test/print')
+  async printBriefTest(@Param('id') id: string, @Body() body: PrintBody) {
+    return this.assessment.print(id, body.type);
+  }
+
+  @RequirePermission('lesson.conduct')
+  @Post('brief-test/:id/check')
+  async checkBriefTest(@Param('id') id: string, @Body() body: CheckBody) {
+    const res = await this.assessment.check(id, body.results);
+    await this.dispatcher.drain(); // assessment.checked → ИОМ (летучка-компонент mastery)
+    return res;
+  }
+
+  @Get('brief-test/:id')
+  getBriefTest(@Param('id') id: string) {
+    return this.assessment.get(id);
   }
 
   // ─── ИОМ-срез (UI учителя — реальные имена) ───

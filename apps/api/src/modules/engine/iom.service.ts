@@ -96,10 +96,22 @@ export class IomService {
         });
   }
 
-  /** assessment.checked (петля летучки, chunk B): летучка-компонент по arCode. */
-  async onAssessment(studentId: string, arCodes: string[], disciplineId: string, score01: number) {
+  /**
+   * assessment.checked (петля летучки): летучка-компонент по arCode урока. Гейт §3 «граница 1»:
+   * payload несёт studentCode → ИОМ резолвит code→studentId по карте BriefTestCode на ингесте.
+   */
+  async onAssessmentChecked(briefTestId: string, lessonId: string, results: { studentCode: string; score: number }[]) {
     const ws = TenantContext.require();
-    for (const code of arCodes) await this.apply(ws, studentId, code, disciplineId, (r) => (r.brief = score01));
+    const ar = await this.arOfLesson(lessonId);
+    if (!ar) return;
+    for (const r of results) {
+      const map = await this.prisma.briefTestCode.findUnique({
+        where: { briefTestId_studentCode: { briefTestId, studentCode: r.studentCode } },
+      });
+      if (!map) continue; // код не резолвится — пропуск
+      for (const code of ar.arCodes)
+        await this.apply(ws, map.studentId, code, ar.disciplineId, (rf) => (rf.brief = r.score));
+    }
   }
 
   /** Срез ИОМ. UI учителя — реальные имена (авторизован); ИИ-граница — гейт в analytics. */

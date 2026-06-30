@@ -2,7 +2,12 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { EventBus } from '../../common/events/event-bus';
 import { TenantContext } from '../../common/tenant/tenant-context';
 import { type DomainEvent } from '../../common/events/domain-event';
-import { ENGINE_EVENTS, type AttendanceMarkedV1, type TopicCompletedV1 } from './engine.contract';
+import {
+  ENGINE_EVENTS,
+  type AssessmentCheckedV1,
+  type AttendanceMarkedV1,
+  type TopicCompletedV1,
+} from './engine.contract';
 import { IomService } from './iom.service';
 
 /**
@@ -20,6 +25,7 @@ export class IomHandlers implements OnModuleInit {
   onModuleInit() {
     this.bus.subscribe(ENGINE_EVENTS.attendanceMarked, 'iom', (e) => this.onAttendance(e));
     this.bus.subscribe(ENGINE_EVENTS.topicCompleted, 'iom', (e) => this.onTopic(e));
+    this.bus.subscribe(ENGINE_EVENTS.assessmentChecked, 'iom', (e) => this.onAssessment(e));
   }
 
   private run<T>(e: DomainEvent, fn: () => Promise<T>) {
@@ -34,5 +40,10 @@ export class IomHandlers implements OnModuleInit {
   private onTopic(e: DomainEvent) {
     const p = e.payload as TopicCompletedV1;
     return this.run(e, () => this.iom.onTopicCompleted(p.lessonId, p.topicId));
+  }
+
+  private onAssessment(e: DomainEvent) {
+    const p = e.payload as AssessmentCheckedV1;
+    return this.run(e, () => this.iom.onAssessmentChecked(p.briefTestId, p.lessonId, p.results));
   }
 }

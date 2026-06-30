@@ -14,6 +14,9 @@ export const ENGINE_EVENTS = {
   attendanceMarked: 'edustore.attendance.marked',
   topicProgressed: 'edustore.topic.progressed', // нетерминальное
   topicCompleted: 'edustore.topic.completed', // терминальное (mastery)
+  // петля летучки. brieftest по присутствующим (КОДЫ); assessment.checked несёт studentCode (§3).
+  brieftestGenerated: 'edustore.brieftest.generated',
+  assessmentChecked: 'edustore.assessment.checked',
 } as const;
 
 export interface AttendanceMarkedV1 {
@@ -28,6 +31,16 @@ export interface TopicProgressedV1 {
 export interface TopicCompletedV1 {
   lessonId: string;
   topicId: string;
+}
+export interface BrieftestGeneratedV1 {
+  briefTestId: string;
+  lessonId: string;
+  count: number;
+}
+export interface AssessmentCheckedV1 {
+  briefTestId: string;
+  lessonId: string;
+  results: { studentCode: string; score: number }[]; // КОДЫ (не studentId) — гейт §3
 }
 
 export interface KtpApprovedV1 {

@@ -734,3 +734,59 @@ model InterestEdge {
   @@unique([workspaceId, studentId, interestNodeId])
   @@index([workspaceId, studentId])
 }
+
+// ═══════════════════════════ ЛЕТУЧКА / ОЦЕНИВАНИЕ (Phase 1, Движок §5 / Техспека §3) ═══════════
+// Петля летучки: печать по КОДАМ → сбор → Tesseract (0 ИИ, локально) → assessment.checked(code) → ИОМ.
+// Сканы НЕ в docs/ (Кабинеты_ТЗ §2). Журнал НЕ слушает assessment.checked — только grade.posted.
+model BriefTest {
+  id                  String             @id @default(cuid())
+  workspaceId         String
+  lessonId            String
+  type                String // летучка | бриф-тест | контрольная
+  itemMatrix          Json? // матрица заданий
+  presentStudentCodes String[] // КОДЫ присутствующих (НЕ studentId)
+  status              String             @default("generated") // generated|printed|collected|checked|done
+  generatedAt         DateTime           @default(now())
+  codes               BriefTestCode[]
+  results             AssessmentResult[]
+
+  @@index([workspaceId, lessonId])
+}
+
+// Гейт идентичности §3: карта код↔реальный id. Живёт у движка/админ-гейта (НЕ профиль ученика).
+// Заполняется при печати (id→code), резолвится при записи оценки/ингесте ИОМ (code→id).
+model BriefTestCode {
+  id          String    @id @default(cuid())
+  workspaceId String
+  briefTestId String
+  briefTest   BriefTest @relation(fields: [briefTestId], references: [id], onDelete: Cascade)
+  studentCode String
+  studentId   String // РЕАЛЬНЫЙ (не уходит на печать/ИИ)
+
+  @@unique([briefTestId, studentCode])
+  @@index([workspaceId, briefTestId])
+}
+
+model AssessmentResult {
+  id          String                 @id @default(cuid())
+  workspaceId String
+  briefTestId String
+  briefTest   BriefTest              @relation(fields: [briefTestId], references: [id], onDelete: Cascade)
+  checkedAt   DateTime               @default(now())
+  source      String                 @default("tesseract") // локальный OCR, 0 ИИ
+  items       AssessmentResultItem[]
+
+  @@index([workspaceId, briefTestId])
+}
+
+model AssessmentResultItem {
+  id                 String           @id @default(cuid())
+  workspaceId        String
+  assessmentResultId String
+  result             AssessmentResult @relation(fields: [assessmentResultId], references: [id], onDelete: Cascade)
+  studentCode        String // выход OCR; резолвится в studentId при grade.posted (журнал)
+  score              Float // нормализованный 0..1
+  perItem            Json?
+
+  @@index([workspaceId, assessmentResultId])
+}

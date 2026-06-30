@@ -42,4 +42,8 @@ export const TENANT_COLUMN: Record<string, string> = {
   InterestNode: 'workspaceId',
   MasteryEdge: 'workspaceId',
   InterestEdge: 'workspaceId',
+  BriefTest: 'workspaceId',
+  BriefTestCode: 'workspaceId',
+  AssessmentResult: 'workspaceId',
+  AssessmentResultItem: 'workspaceId',
 };

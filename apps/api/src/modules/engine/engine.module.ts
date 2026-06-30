@@ -5,12 +5,13 @@ import { EngineController } from './engine.controller';
 import { EngineHandlers } from './engine.handlers';
 import { IomService } from './iom.service';
 import { IomHandlers } from './iom.handlers';
+import { AssessmentService } from './assessment.service';
 
-// Движок планирования + ИОМ (Phase 1): КТП/Timetable/КПП Solver + Lesson FSM + ИОМ-аккумулятор
-// (Архстандарт §7/§8). OutboxService/EventBus/Dispatcher — из глобального EventsModule.
+// Движок планирования + ИОМ + летучка (Phase 1): КТП/Timetable/КПП Solver + Lesson FSM +
+// ИОМ-аккумулятор + петля летучки (Архстандарт §7/§8). Шина/outbox — из глобального EventsModule.
 @Module({
   imports: [PrismaModule],
   controllers: [EngineController],
-  providers: [EngineService, EngineHandlers, IomService, IomHandlers],
+  providers: [EngineService, EngineHandlers, IomService, IomHandlers, AssessmentService],
 })
 export class EngineModule {}
