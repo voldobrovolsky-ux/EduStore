@@ -13,14 +13,39 @@ import { COMM_ERRORS, type ParticipantRole, type Principal } from './comm.contra
 export class ChannelService {
   constructor(private readonly prisma: PrismaService) {}
 
-  createChannel(input: { kind: string; title?: string; classId?: string }) {
+  /**
+   * Создать канал. creatorUserId (если задан) автоматически становится первым модератором
+   * (resource-level authz: добавление участников гейтится членством в moderators). Валидация kind —
+   * на контроллере; сервис доверяет вызывающему (чанк-1 e2e зовёт напрямую).
+   */
+  createChannel(
+    input: { kind: string; title?: string; scope?: string; classId?: string; moderators?: string[] },
+    creatorUserId?: string,
+  ) {
+    const moderators = Array.from(new Set([...(creatorUserId ? [creatorUserId] : []), ...(input.moderators ?? [])]));
     return this.prisma.channel.create({
       data: {
         workspaceId: TenantContext.require(),
         kind: input.kind,
         title: input.title ?? null,
+        scope: input.scope ?? null,
         classId: input.classId ?? null,
+        moderators,
       },
+    });
+  }
+
+  /** Resource-level authz: пользователь — модератор этого канала? */
+  async isModerator(channelId: string, userId: string): Promise<boolean> {
+    const ch = await this.prisma.channel.findUnique({ where: { id: channelId }, select: { moderators: true } });
+    return ch !== null && ch.moderators.includes(userId);
+  }
+
+  /** Лента каналов; folder ≈ фильтр по kind (class|subject|shmo|school|parents|students|external|dm). */
+  listChannels(filter: { kind?: string } = {}) {
+    return this.prisma.channel.findMany({
+      where: { ...(filter.kind ? { kind: filter.kind } : {}) },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
