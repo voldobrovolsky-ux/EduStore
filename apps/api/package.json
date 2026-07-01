@@ -14,6 +14,7 @@
     "parser:check": "ts-node scripts/parser-check.ts",
     "minor:check": "ts-node scripts/minor-safety-check.ts",
     "comm:check": "ts-node scripts/comm-messages-check.ts",
+    "pilot:check": "ts-node scripts/pilot-check.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },

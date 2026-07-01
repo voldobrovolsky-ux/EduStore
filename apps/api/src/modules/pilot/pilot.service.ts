@@ -1,0 +1,152 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { TenantContext } from '../../common/tenant/tenant-context';
+import { StructureService } from '../structure/structure.service';
+import {
+  ARCHIMED_FLOR_WS_ID,
+  ARCHIMED_NAME,
+  toSessionRole,
+  type CabinetState,
+  type PilotRole,
+} from './pilot.contract';
+
+const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // как у OIDC-сессии
+
+/**
+ * Пилотный auth (AUTH_MODE=pilot-qr, ВРЕМЕННЫЙ). Owner-экран: добавить сотрудника → QR, создать
+ * дисциплину/класс (переиспользует StructureService), назначить (существующая TeachingAssignment).
+ * QR-вход резолвится по инвайт-токену (НЕ по телефону) и выдаёт сессию ТОЙ ЖЕ формы, что Флёр OIDC.
+ */
+@Injectable()
+export class PilotService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly structure: StructureService,
+  ) {}
+
+  /** Школа «Архимед» с ПОСТОЯННЫМ florusWorkspaceId (Флёр позже прикрутится к нему же). Идемпотентно. */
+  private ensureArchimed(): Promise<string> {
+    return TenantContext.runAsSystem(async () => {
+      const platform = await this.prisma.organization.upsert({
+        where: { id: 'org-edustore-platform' },
+        update: {},
+        create: { id: 'org-edustore-platform', name: 'EduStore', type: 'platform', status: 'active' },
+      });
+      const ws = await this.prisma.workspace.upsert({
+        where: { florusWorkspaceId: ARCHIMED_FLOR_WS_ID },
+        update: {},
+        create: { florusWorkspaceId: ARCHIMED_FLOR_WS_ID, orgId: platform.id, name: ARCHIMED_NAME, status: 'active' },
+      });
+      return ws.id;
+    });
+  }
+
+  // ─── Owner-экран ───
+  async createInvite(input: { role: PilotRole; displayName?: string }) {
+    const workspaceId = await this.ensureArchimed();
+    const token = randomBytes(9).toString('base64url'); // одноразовый инвайт из QR
+    const invite = await TenantContext.runAsSystem(() =>
+      this.prisma.pilotInvite.create({
+        data: { workspaceId, role: input.role, displayName: input.displayName ?? null, token },
+      }),
+    );
+    return { inviteId: invite.id, token, role: invite.role, displayName: invite.displayName };
+  }
+
+  /** Список сотрудников: видны сразу; отмечаем вход и назначен ли (иначе «подготавливаем»). */
+  async listStaff() {
+    const workspaceId = await this.ensureArchimed();
+    return TenantContext.runAsSystem(async () => {
+      const invites = await this.prisma.pilotInvite.findMany({ where: { workspaceId }, orderBy: { createdAt: 'asc' } });
+      const userIds = invites.flatMap((i) => (i.userId ? [i.userId] : []));
+      const assigns = userIds.length
+        ? await this.prisma.teachingAssignment.findMany({ where: { workspaceId, teacherId: { in: userIds } }, select: { teacherId: true } })
+        : [];
+      const assigned = new Set(assigns.map((a) => a.teacherId));
+      return invites.map((i) => ({
+        inviteId: i.id,
+        role: i.role,
+        displayName: i.displayName,
+        phone: i.phone,
+        status: i.status,
+        userId: i.userId,
+        loggedIn: !!i.userId,
+        assigned: !!(i.userId && assigned.has(i.userId)),
+      }));
+    });
+  }
+
+  createClass(dto: { parallel: number; letter: string }) {
+    return this.inArchimed((ws) => this.structure.createClass(dto));
+  }
+  listClasses() {
+    return this.inArchimed(() => this.structure.listClasses());
+  }
+  createSubject(dto: { name: string; color?: string }) {
+    return this.inArchimed(() => this.structure.createSubject(dto));
+  }
+  listSubjects() {
+    return this.inArchimed(() => this.structure.listSubjects());
+  }
+
+  /** Назначение сотрудника → дисциплина/класс: существующая TeachingAssignment (не изобретаем). */
+  assign(input: { userId: string; classId: string; subjectId: string; subGroupId?: string }) {
+    return this.inArchimed(() =>
+      this.structure.assign({ teacherId: input.userId, classId: input.classId, subjectId: input.subjectId, subGroupId: input.subGroupId }),
+    );
+  }
+
+  // ─── QR-вход ───
+  /**
+   * Резолв входа ПО ТОКЕНУ (не по телефону — номер только ярлык/подпись). Первый вход создаёт
+   * User/Membership/Teacher; выдаёт Session ТОЙ ЖЕ формы, что Флёр OIDC (role/workspace_id).
+   */
+  async resolveInvite(input: { token: string; phone?: string }): Promise<{ sid: string; userId: string }> {
+    const invite = await TenantContext.runAsSystem(() => this.prisma.pilotInvite.findUnique({ where: { token: input.token } }));
+    if (!invite) throw new NotFoundException('приглашение не найдено или истекло');
+    const { florusRole, subRole } = toSessionRole(invite.role as PilotRole);
+    const name = invite.displayName ?? (input.phone ? `Сотрудник ${input.phone}` : 'Сотрудник');
+
+    return TenantContext.runAsSystem(async () => {
+      let userId = invite.userId;
+      if (!userId) {
+        // первый вход — генерируем florus_user_id (реальный Флёр-sub позже = отдельная сверка идентичности)
+        userId = `pilot-${randomBytes(12).toString('hex')}`;
+        await this.prisma.user.create({ data: { id: userId, firstName: name, lastName: '', displayName: name } });
+        await this.prisma.membership.create({ data: { florusUserId: userId, workspaceId: invite.workspaceId, florusRole, subRole } });
+        await this.prisma.teacher.create({ data: { id: userId, workspaceId: invite.workspaceId } });
+        await this.prisma.pilotInvite.update({ where: { id: invite.id }, data: { userId, phone: input.phone ?? invite.phone, status: 'active' } });
+      }
+      const sid = randomBytes(24).toString('base64url');
+      await this.prisma.session.create({
+        data: {
+          sid,
+          florusUserId: userId,
+          workspaceId: invite.workspaceId,
+          florusWorkspaceId: ARCHIMED_FLOR_WS_ID,
+          florusOrgId: null,
+          role: florusRole,
+          subRole,
+          name,
+          expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+        },
+      });
+      return { sid, userId };
+    });
+  }
+
+  /** Состояние кабинета: назначены ли дисциплина/класс. «preparing» — спокойный статус, не ошибка. */
+  async cabinetState(userId: string): Promise<CabinetState> {
+    const count = await this.inArchimed(() => this.prisma.teachingAssignment.count({ where: { teacherId: userId } }));
+    return count === 0
+      ? { state: 'preparing', message: 'Мы подготавливаем вам рабочее место, это может занять несколько минут.' }
+      : { state: 'ready' };
+  }
+
+  /** Выполнить операцию в tenant-контексте «Архимеда» (StructureService пишет по TenantContext.require()). */
+  private async inArchimed<T>(fn: (ws: string) => Promise<T> | T): Promise<T> {
+    const ws = await this.ensureArchimed();
+    return TenantContext.run({ tenantId: ws, system: false }, () => fn(ws));
+  }
+}

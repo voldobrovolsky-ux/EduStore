@@ -7,5 +7,6 @@ import { StructureController } from './structure.controller';
   imports: [PrismaModule],
   controllers: [StructureController],
   providers: [StructureService],
+  exports: [StructureService], // переиспользуется пилотным auth (owner-экран: дисциплины/классы/назначение)
 })
 export class StructureModule {}

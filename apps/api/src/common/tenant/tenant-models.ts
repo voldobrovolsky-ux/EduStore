@@ -74,4 +74,6 @@ export const TENANT_COLUMN: Record<string, string> = {
   Message: 'workspaceId',
   MessageReaction: 'workspaceId',
   Ack: 'workspaceId',
+  // Пилотный auth (временный)
+  PilotInvite: 'workspaceId',
 };
