@@ -28,6 +28,7 @@ import { CabinetsModule } from './modules/cabinets/cabinets.module';
 import { DocModule } from './modules/doc/doc.module';
 import { TextbookModule } from './modules/textbook/textbook.module';
 import { CommModule } from './modules/comm/comm.module';
+import { PilotModule } from './modules/pilot/pilot.module';
 // Параметры (система параметров EduStore, см. docs/PARAMETERS.md). Новый параметр = одна строка.
 import { ContingentModule } from './parameters/contingent/contingent.module';
 import { CommsModule } from './parameters/comms/comms.module';
@@ -66,6 +67,7 @@ import { ComplianceModule } from './parameters/compliance/compliance.module';
     DocModule, // Phase 1: документохранилище (файлы/версии/теги/статус) на S3-абстракции
     TextbookModule, // Phase 1: учебники + парсер (doc.file.enriched → textbook.parsed → КТП)
     CommModule, // Phase 1: Communitoria — граф контактов + инварианты безопасности миноров
+    PilotModule, // ВРЕМЕННЫЙ: пилотный auth (AUTH_MODE=pilot-qr) — owner-QR-онбординг для запуска
     // параметры
     ContingentModule,
     CommsModule,

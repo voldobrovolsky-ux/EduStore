@@ -34,7 +34,9 @@ export class AuthGuard implements CanActivate {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [ctx.getHandler(), ctx.getClass()]);
     if (isPublic) return true;
 
-    if (process.env.AUTH_MODE !== 'production') {
+    // DEV-bypass по x-florus-* — ТОЛЬКО для CI/e2e. В pilot-qr (и production) он ВЫКЛЮЧЕН: там доступ
+    // только по реальной сессии (пилотный QR-вход выдаёт её), чтобы два режима не смешивались.
+    if (process.env.AUTH_MODE !== 'production' && process.env.AUTH_MODE !== 'pilot-qr') {
       const header = req.headers['x-florus-user-id'];
       const uid = (Array.isArray(header) ? header[0] : header)?.trim() || DEFAULT_TEACHER_ID;
       // DEV: x-florus-role / x-florus-subrole переопределяют доменную роль — чтобы тестировать

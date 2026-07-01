@@ -1169,3 +1169,22 @@ model Ack {
   @@unique([announcementId, userId])
   @@index([workspaceId, announcementId])
 }
+
+// ─── ВРЕМЕННЫЙ пилотный auth (AUTH_MODE=pilot-qr) ───
+// Разовый инструмент для контролируемого запуска: НЕ Флёр OIDC и НЕ dev-bypass x-florus-* заголовки.
+// PilotInvite = «Staff-запись» ДО входа сотрудника: Teacher/Membership требуют florus_user_id, которого
+// до входа ещё нет, поэтому нужна отдельная запись с одноразовым инвайт-токеном из QR. Резолв входа —
+// по token (НЕ по телефону: номер — только ярлык/подпись, без SMS — осознанный трейдофф пилота).
+model PilotInvite {
+  id          String   @id @default(cuid())
+  workspaceId String // = Workspace «Архимед» (постоянный florusWorkspaceId)
+  role        String // teacher | zavuch (домен-выбор владельца)
+  displayName String? // ярлык сотрудника (может быть пусто до входа)
+  token       String   @unique // одноразовый инвайт из QR
+  phone       String? // введён при входе — идентификация/подпись, НЕ идентификатор
+  userId      String? // сгенерированный florus_user_id при первом входе (= User/Teacher/Membership/Session)
+  status      String   @default("invited") // invited | active
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId])
+}
