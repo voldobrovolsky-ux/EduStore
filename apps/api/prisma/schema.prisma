@@ -791,6 +791,46 @@ model AssessmentResultItem {
   @@index([workspaceId, assessmentResultId])
 }
 
+// ═══ КАБИНЕТЫ: методики/курсы (Phase 1, Кабинеты_ТЗ §2-3) — методист пишет, учитель читает ═══
+model Methodic {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  title        String
+  body         String? // текст методики / вики-конспект
+  disciplineId String?
+  authorId     String // identity методиста
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([workspaceId, disciplineId])
+}
+
+model Course {
+  id           String             @id @default(cuid())
+  workspaceId  String
+  title        String
+  description  String?
+  disciplineId String?
+  authorId     String
+  assignments  CourseAssignment[]
+  createdAt    DateTime           @default(now())
+
+  @@index([workspaceId])
+}
+
+model CourseAssignment {
+  id          String   @id @default(cuid())
+  workspaceId String
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  teacherId   String // identity учителя
+  assignedBy  String
+  assignedAt  DateTime @default(now())
+
+  @@unique([courseId, teacherId])
+  @@index([workspaceId, teacherId])
+}
+
 // ═══ КОНТРАКТЫ ЗАВУЧА/МЕТОДИСТА (Phase 1, Техспека §3) — входные слоты движка/журнала ═══
 // Завуч пишет AssessmentPolicy/OrgStandards/FgosHours; методист — TimingProfile. Движок (Solver)
 // и журнал ЧИТАЮТ. Все workspace-scoped → tenant-guard. События — Архстандарт §6.

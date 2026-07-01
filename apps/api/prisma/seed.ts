@@ -51,6 +51,9 @@ async function main(): Promise<void> {
   await prisma.timingProfile.deleteMany();
   await prisma.orgStandards.deleteMany();
   await prisma.fgosHours.deleteMany();
+  await prisma.courseAssignment.deleteMany();
+  await prisma.course.deleteMany();
+  await prisma.methodic.deleteMany();
   // движок планирования (Lesson.kppLessonId → SetNull, поэтому порядок свободен)
   await prisma.kppMapping.deleteMany();
   await prisma.kppLesson.deleteMany();
@@ -513,7 +516,15 @@ async function main(): Promise<void> {
     },
   });
 
-  console.log('Готово: посеяны платформа+школа, учитель, 5 классов, уроки 8А, оценки, материалы, КТП+Timetable+оргстандарты (движок).');
+  // ── Кабинеты: демо-методика + курс (методист) ──
+  await prisma.methodic.create({
+    data: { workspaceId: ws.id, title: 'Приёмы устного счёта', body: 'Методика формирования вычислительных навыков…', disciplineId: math.id, authorId: 'methodist' },
+  });
+  await prisma.course.create({
+    data: { workspaceId: ws.id, title: 'ФГОС: геометрия 9 класс', description: 'Курс повышения квалификации', disciplineId: geometry.id, authorId: 'methodist' },
+  });
+
+  console.log('Готово: посеяны платформа+школа, учитель, 5 классов, уроки 8А, оценки, КТП+Timetable+оргстандарты, методики/курсы.');
 }
 
 main()

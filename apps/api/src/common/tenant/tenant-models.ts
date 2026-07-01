@@ -51,4 +51,7 @@ export const TENANT_COLUMN: Record<string, string> = {
   TimingProfile: 'workspaceId',
   OrgStandards: 'workspaceId',
   FgosHours: 'workspaceId',
+  Methodic: 'workspaceId',
+  Course: 'workspaceId',
+  CourseAssignment: 'workspaceId',
 };
