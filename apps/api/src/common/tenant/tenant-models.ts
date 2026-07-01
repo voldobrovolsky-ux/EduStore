@@ -70,4 +70,8 @@ export const TENANT_COLUMN: Record<string, string> = {
   Parenthood: 'workspaceId',
   Channel: 'workspaceId',
   ChannelParticipant: 'workspaceId',
+  // Communitoria (каналы/сообщения/объявления)
+  Message: 'workspaceId',
+  MessageReaction: 'workspaceId',
+  Ack: 'workspaceId',
 };

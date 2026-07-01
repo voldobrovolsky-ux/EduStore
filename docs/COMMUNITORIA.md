@@ -5,9 +5,38 @@
 отдельной осью от `tenant:check`.
 
 ## Порядок сборки (по ТЗ, не менять)
-1. **Граф контактов + инварианты миноров** — ✅ этот чанк.
-2. Каналы/сообщения (`mode` явный; ИИ — только `aiSuggestedMode` advisory) — следующий чанк.
-3. Звонки (continuous call-инвариант, пересчёт на каждый join/leave) — последними.
+1. **Граф контактов + инварианты миноров** — ✅ чанк 1.
+2. **Каналы/сообщения/объявления** (`mode` явный; ИИ — только `aiSuggestedMode` advisory) — ✅ чанк 2.
+3. Звонки (continuous call-инвариант, пересчёт на каждый join/leave) — следующий чанк (последними).
+
+## Чанк 2 — каналы / сообщения / объявления
+- **Переиспользование инварианта миноров:** создание канала и добавление участника идут через тот же
+  `ChannelService.createChannel` / `addParticipant` из чанка 1 — `minorPresent`-rejects-`external`
+  НЕ продублирован; e2e доказывает, что инвариант срабатывает и на chunk-2 пути (REST `POST members`).
+- **Channel:** `kind ∈ {class|subject|shmo|school|parents|students|external|dm}`, `scope` (RBAC-ref),
+  `moderators[]`. Создатель → первый модератор. Добавление участника — resource-level (модератор канала).
+- **Message:** `{mode(chat|announcement), kind(text|voice|sticker|call|file), body, replyToId?, edited,
+  attachmentIds[]}`. Лента — keyset-пагинация (`?cursor`), самодостаточна по REST (реалтайм отложен).
+- **КЛЮЧЕВОЙ ИНВАРИАНТ — `mode` ЯВНЫЙ (не угадывается):** `mode` обязателен в POST; отсутствует →
+  `400 MODE_REQUIRED`; модель режим НЕ решает и НЕ дефолтит. `POST messages/suggest-mode` возвращает
+  `aiSuggestedMode` как **advisory-метаданные** — не создаёт сообщение и НЕ применяет режим (0 ИИ,
+  детерминированный стаб; TODO — реальный классификатор, тоже advisory). Прямая аналогия
+  «предлагает-решает», только human-in-the-loop на входе (отправитель).
+- **Объявления** = `Message` `mode=announcement` + `audience ∈ {parents|staff|all}` + `ackDeadline`.
+  `audience` резолвится в required-set userId по scope канала (parents → родители учеников класса через
+  `parenthood`; staff → сотрудники-участники; all → все взрослые участники). Ack FSM
+  `sent→delivered→read→acknowledged`, `→overdue` вычисляется по `ackDeadline` при чтении реестра.
+  Уход адресата из школы (нет `Membership`) → строка вычищается из required-set (не вечный overdue).
+- **Секретность:** все сообщения персистятся; `PATCH` помечает `edited=true`, историю НЕ стирает; нет
+  TTL/исчезновений/секретных чатов. Контур `comm/` изолирован от Документохранилища.
+- **Гейты (§5.1 + resource-level):** `comm.channel.manage` (создание каналов; teacher/zavuch/methodist),
+  `comm.announcement.post` (объявления; ТОЛЬКО завуч — admin/owner не в токене §7.4, действует через
+  панель Флёра); добавление участника — модератор канала (`moderators[]`).
+- **События:** `edustore.comm.message.sent` / `.announcement.posted` / `.ack.recorded`.
+- **Отложено (не блокирует):** вложения — `attachmentIds[]` держит ссылки на будущую сущность
+  `Attachment` (контур S3 `comm/`, отдельный чанк); реалтайм/WS — REST-путь `?cursor` самодостаточен.
+- Проверка: `npm --workspace apps/api run comm:check` (20/20 — mode-инвариант, переиспользование
+  минор-инварианта, пагинация, правка=edited, объявление/ack/overdue/reconcile) + `tenant:check` 6/6.
 
 ## Чанк 1 — что сделано
 - **Граф** структурный, read-only: из RBAC (членства) + рёбер `parenthood`. Никакого «поиска и DM

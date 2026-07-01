@@ -1086,12 +1086,15 @@ model Parenthood {
 model Channel {
   id           String               @id @default(cuid())
   workspaceId  String
-  kind         String // class | group | dm
+  kind         String // class | subject | shmo | school | parents | students | external | dm
   title        String?
-  classId      String? // если kind=class
+  scope        String? // RBAC-ref: class:{id} | subject:{id} | school | role:{role}
+  classId      String? // если kind=class (быстрый доступ к контингенту для audience)
+  moderators   String[]             @default([]) // florus_user_id модераторов (resource-level authz)
   minorPresent Boolean              @default(false) // есть участник-минор → external запрещён
   createdAt    DateTime             @default(now())
   participants ChannelParticipant[]
+  messages     Message[]
 
   @@index([workspaceId, kind])
 }
@@ -1110,4 +1113,59 @@ model ChannelParticipant {
   createdAt   DateTime @default(now())
 
   @@index([workspaceId, channelId])
+}
+
+// Сообщение канала. СЕКРЕТНОСТЬ (несущий принцип): нет исчезающих сообщений / TTL — всё персистится
+// и видно по scope канала; PATCH правки помечают edited=true, историю НЕ стирают. mode ЯВНЫЙ
+// (задаётся отправителем; модель режим не решает). Для mode=announcement — audience + ackDeadline.
+model Message {
+  id            String          @id @default(cuid())
+  workspaceId   String
+  channelId     String
+  channel       Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  authorId      String // florus_user_id отправителя
+  mode          String // chat | announcement (ЯВНЫЙ — без угадывания)
+  kind          String // text | voice | sticker | call | file
+  body          String?
+  replyToId     String?
+  replyTo       Message?        @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies       Message[]       @relation("MessageReplies")
+  edited        Boolean         @default(false)
+  attachmentIds String[]        @default([]) // ссылки на будущую сущность Attachment (contour comm/, чанк вложений)
+  audience      String? // только announcement: parents | staff | all (required-set акков)
+  ackDeadline   DateTime? // только announcement
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt // аудит правок: когда изменено (edited=true не стирает историю)
+  reactions     MessageReaction[]
+  acks          Ack[]
+
+  @@index([workspaceId, channelId, createdAt, id]) // keyset-пагинация ленты
+}
+
+model MessageReaction {
+  id          String   @id @default(cuid())
+  workspaceId String
+  messageId   String
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId      String
+  emoji       String
+  createdAt   DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@index([workspaceId, messageId])
+}
+
+// Реестр подтверждений объявления (required-set). FSM: sent→delivered→read→acknowledged; →overdue по
+// ackDeadline (вычисляется при чтении). Уход адресата из школы (нет Membership) → строка вычищается.
+model Ack {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  announcementId String // = Message.id (mode=announcement)
+  announcement   Message  @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  userId         String // florus_user_id адресата
+  state          String   @default("sent") // sent | delivered | read | acknowledged
+  updatedAt      DateTime @updatedAt
+
+  @@unique([announcementId, userId])
+  @@index([workspaceId, announcementId])
 }
