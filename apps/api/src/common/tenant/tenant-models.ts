@@ -66,4 +66,8 @@ export const TENANT_COLUMN: Record<string, string> = {
   Material: 'workspaceId',
   TextbookTopic: 'workspaceId',
   TextbookCard: 'workspaceId',
+  // Communitoria (граф контактов + инварианты миноров)
+  Parenthood: 'workspaceId',
+  Channel: 'workspaceId',
+  ChannelParticipant: 'workspaceId',
 };
