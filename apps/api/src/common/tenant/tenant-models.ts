@@ -62,4 +62,8 @@ export const TENANT_COLUMN: Record<string, string> = {
   Collection: 'workspaceId',
   CollectionFile: 'workspaceId',
   ShareGrant: 'workspaceId',
+  // учебники / парсер (doc.file.enriched → textbook.parsed)
+  Material: 'workspaceId',
+  TextbookTopic: 'workspaceId',
+  TextbookCard: 'workspaceId',
 };

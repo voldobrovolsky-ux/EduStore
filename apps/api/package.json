@@ -11,6 +11,7 @@
     "cascade:demo": "ts-node scripts/cascade-demo.ts",
     "tenant:check": "ts-node scripts/tenant-isolation-check.ts",
     "storage:check": "ts-node scripts/storage-check.ts",
+    "parser:check": "ts-node scripts/parser-check.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },

@@ -1010,3 +1010,52 @@ model ShareGrant {
 
   @@index([workspaceId, fileId])
 }
+
+// ─── Учебники (парсер: doc.file.enriched → textbook.parsed → КТП) ───
+// Material — загруженный учебник: ссылка на управляемый doc File (по fileId, без FK — модули
+// развязаны) + дисциплина. Производится edu/materials/commit → textbook.uploaded.
+model Material {
+  id           String          @id @default(cuid())
+  workspaceId  String
+  fileId       String          @unique // → doc File (namespace docs/), ссылка по fileId
+  disciplineId String // = Subject.id
+  uploadedBy   String? // identity (учитель)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  topics       TextbookTopic[]
+  cards        TextbookCard[]
+
+  @@index([workspaceId, disciplineId])
+}
+
+// Педагогический разбор учебника (кабинетная сущность, НЕ файловая). Источник тем для наполнения
+// КТП (KtpTopic) при формировании — связка отложена (человек выбирает, не автопривязка).
+model TextbookTopic {
+  id          String         @id @default(cuid())
+  workspaceId String
+  materialId  String
+  material    Material       @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  fileId      String // ссылка на учебник (по fileId, как договорено)
+  order       Int
+  title       String
+  cards       TextbookCard[]
+  createdAt   DateTime       @default(now())
+
+  @@index([workspaceId, materialId, order])
+}
+
+model TextbookCard {
+  id          String         @id @default(cuid())
+  workspaceId String
+  materialId  String
+  material    Material       @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  topicId     String?
+  topic       TextbookTopic? @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  fileId      String
+  order       Int
+  title       String
+  content     String? // фрагмент textExtract под картой (стаб-разбор)
+  createdAt   DateTime       @default(now())
+
+  @@index([workspaceId, materialId, order])
+}
