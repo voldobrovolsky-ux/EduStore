@@ -1059,3 +1059,55 @@ model TextbookCard {
 
   @@index([workspaceId, materialId, order])
 }
+
+// ─── Communitoria (comm/) — граф контактов + инварианты безопасности миноров ───
+// Контур comm/ изолирован от Документохранилища по умолчанию (вложения НЕ через doc-модуль).
+
+// Ребро родительства: взрослый ↔ КОНКРЕТНЫЙ ребёнок. Источник истины — директория Флёруса;
+// EduStore держит СИНХРОНИЗИРОВАННОЕ ЗЕРКАЛО (пишет provisioning/sync-стаб, домен только читает).
+// Разрешение приватного DM/звонка взрослый↔минор проверяется по НАЛИЧИЮ этого ребра — не по роли
+// 'parent' вообще, и не по «строжайшей» роли двойного лица (учитель-он-же-родитель).
+model Parenthood {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  parentUserId String // = User.id (florus_user_id) взрослого
+  studentId    String // = Student.id (конкретный ребёнок)
+  source       String   @default("florus") // зеркало директории Флёруса (не EduStore-authored)
+  createdAt    DateTime @default(now())
+
+  @@unique([parentUserId, studentId])
+  @@index([workspaceId, studentId])
+  @@index([workspaceId, parentUserId])
+}
+
+// Канал Communitoria. Инвариант: minorPresent=true (есть участник-минор) ⇒ участник role=external
+// не принимается (constraint на уровне добавления участника, ниже в ChannelService). Полная
+// аудируемость: нет исчезающих сообщений / секретных чатов (сообщения — следующий чанк).
+model Channel {
+  id           String               @id @default(cuid())
+  workspaceId  String
+  kind         String // class | group | dm
+  title        String?
+  classId      String? // если kind=class
+  minorPresent Boolean              @default(false) // есть участник-минор → external запрещён
+  createdAt    DateTime             @default(now())
+  participants ChannelParticipant[]
+
+  @@index([workspaceId, kind])
+}
+
+// Участник канала: ЛИБО взрослый (userId), ЛИБО минор (studentId). role несёт «строжайшую»
+// применимую роль (external — внешний без membership; observer — назначенный наблюдатель-сотрудник).
+model ChannelParticipant {
+  id          String   @id @default(cuid())
+  workspaceId String
+  channelId   String
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  userId      String? // взрослый (florus_user_id)
+  studentId   String? // минор (Student.id)
+  role        String // teacher | parent | staff | observer | external | student
+  isMinor     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, channelId])
+}
