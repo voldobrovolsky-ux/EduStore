@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { StorageModule } from './common/storage/storage.module';
 import { AuthModule } from './common/auth/auth.module';
 import { AuthGuard } from './common/auth/auth.guard';
 import { PermissionGuard } from './common/authz/permission.guard';
@@ -39,6 +40,7 @@ import { ComplianceModule } from './parameters/compliance/compliance.module';
   imports: [
     ScheduleModule.forRoot(), // §4.6: планировщик для фонового диспетчера outbox
     PrismaModule,
+    StorageModule, // объектное хранилище (S3-абстракция, ленивый клиент)
     AuthModule, // Флёрус OIDC RP (ADR-0005)
     AuthzModule, // §5.1: права как данные (каталог + резолвер доступа)
     EntitlementsModule, // §5.2: SKU/entitlement + гейт загрузки модуля
