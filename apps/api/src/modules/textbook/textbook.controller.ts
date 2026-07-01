@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import type { SessionUser } from '../../common/auth/flor.service';
 import { OutboxDispatcher } from '../../common/outbox/outbox.dispatcher';
+import { RequirePermission } from '../../common/authz/require-permission.decorator';
 import { MaterialService } from './material.service';
 import { ParserService } from './parser.service';
 
@@ -20,13 +21,15 @@ export class TextbookController {
     return req.user?.florusUserId ?? 'system';
   }
 
-  /** Инициировать загрузку учебника → pre-signed PUT (docs/). */
+  /** Инициировать загрузку учебника → pre-signed PUT (docs/). Гейт: право учителя (§5.1). */
+  @RequirePermission('materials.textbook.upload')
   @Post('upload-init')
   uploadInit(@Body() body: UploadInitBody, @Req() req: Request & { user?: SessionUser }) {
     return this.material.uploadInit(body, this.actor(req));
   }
 
   /** Подтвердить загрузку → Material + textbook.uploaded; прогнать каскад (enrich → parsed). */
+  @RequirePermission('materials.textbook.upload')
   @Post(':fileId/commit')
   async commit(@Param('fileId') fileId: string, @Req() req: Request & { user?: SessionUser }) {
     const res = await this.material.commit(fileId, this.actor(req));
