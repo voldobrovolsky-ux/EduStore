@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { Request } from 'express';
 import type { SessionUser } from '../../common/auth/flor.service';
 import { DocService } from './doc.service';
@@ -8,7 +9,7 @@ interface TagsBody { add?: { dim: string; value: string }[]; remove?: string[] }
 interface AccessBody { scope?: string; audience?: string }
 interface StatusBody { to: string }
 interface ShareBody { granteeId?: string; linkToken?: string; level: string; expiresAt?: string }
-interface LensBody { name: string; filter: Record<string, unknown>; shared?: boolean }
+interface LensBody { name: string; filter: Prisma.InputJsonValue; shared?: boolean }
 interface CollectionBody { name: string }
 
 // Документохранилище — /api/v1/doc/*. Загрузка ТОЛЬКО upload-url → commit (прямого multipart нет).

@@ -181,9 +181,9 @@ export class DocService {
   listLenses() {
     return this.prisma.lens.findMany({ orderBy: { name: 'asc' } });
   }
-  createLens(input: { name: string; filter: unknown; shared?: boolean }, ownerId: string) {
+  createLens(input: { name: string; filter: Prisma.InputJsonValue; shared?: boolean }, ownerId: string) {
     return this.prisma.lens.create({
-      data: { workspaceId: TenantContext.require(), name: input.name, filter: input.filter as Prisma.InputJsonValue, shared: input.shared ?? false, ownerId },
+      data: { workspaceId: TenantContext.require(), name: input.name, filter: input.filter, shared: input.shared ?? false, ownerId },
     });
   }
   listCollections() {
