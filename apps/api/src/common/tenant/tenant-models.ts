@@ -54,4 +54,12 @@ export const TENANT_COLUMN: Record<string, string> = {
   Methodic: 'workspaceId',
   Course: 'workspaceId',
   CourseAssignment: 'workspaceId',
+  // документохранилище
+  File: 'workspaceId',
+  DocVersion: 'workspaceId',
+  Tag: 'workspaceId',
+  Lens: 'workspaceId',
+  Collection: 'workspaceId',
+  CollectionFile: 'workspaceId',
+  ShareGrant: 'workspaceId',
 };

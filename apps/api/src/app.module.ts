@@ -25,6 +25,7 @@ import { ConsentModule } from './modules/consent/consent.module';
 import { EngineModule } from './modules/engine/engine.module';
 import { StandardsModule } from './modules/standards/standards.module';
 import { CabinetsModule } from './modules/cabinets/cabinets.module';
+import { DocModule } from './modules/doc/doc.module';
 // Параметры (система параметров EduStore, см. docs/PARAMETERS.md). Новый параметр = одна строка.
 import { ContingentModule } from './parameters/contingent/contingent.module';
 import { CommsModule } from './parameters/comms/comms.module';
@@ -60,6 +61,7 @@ import { ComplianceModule } from './parameters/compliance/compliance.module';
     EngineModule, // Phase 1: движок планирования (КТП/КПП Solver + Lesson FSM)
     StandardsModule, // Phase 1: контракты завуча/методиста (AssessmentPolicy/TimingProfile/OrgStandards/FgosHours)
     CabinetsModule, // Phase 1: кабинеты (методики/курсы/курирование + надзор завуча)
+    DocModule, // Phase 1: документохранилище (файлы/версии/теги/статус) на S3-абстракции
     // параметры
     ContingentModule,
     CommsModule,

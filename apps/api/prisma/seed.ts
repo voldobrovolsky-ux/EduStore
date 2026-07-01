@@ -54,6 +54,10 @@ async function main(): Promise<void> {
   await prisma.courseAssignment.deleteMany();
   await prisma.course.deleteMany();
   await prisma.methodic.deleteMany();
+  // документохранилище (File каскадит DocVersion/Tag/ShareGrant; Collection → CollectionFile)
+  await prisma.file.deleteMany();
+  await prisma.collection.deleteMany();
+  await prisma.lens.deleteMany();
   // движок планирования (Lesson.kppLessonId → SetNull, поэтому порядок свободен)
   await prisma.kppMapping.deleteMany();
   await prisma.kppLesson.deleteMany();
@@ -524,7 +528,24 @@ async function main(): Promise<void> {
     data: { workspaceId: ws.id, title: 'ФГОС: геометрия 9 класс', description: 'Курс повышения квалификации', disciplineId: geometry.id, authorId: 'methodist' },
   });
 
-  console.log('Готово: посеяны платформа+школа, учитель, 5 классов, уроки 8А, оценки, КТП+Timetable+оргстандарты, методики/курсы.');
+  // ── Документохранилище: демо-файлы (enriched, чтобы метаданные читались без живого S3) ──
+  await prisma.file.create({
+    data: {
+      workspaceId: ws.id, s3Key: `docs/${ws.id}/demo-methodbank.pdf`, ownerId: 'methodist',
+      scope: 'кафедра:math', audience: 'staff', mime: 'application/pdf', size: 245000,
+      state: 'enriched', disciplineId: math.id, textExtract: 'Методические рекомендации по алгебре…',
+      tags: { create: [{ workspaceId: ws.id, dim: 'предмет', value: 'Математика' }, { workspaceId: ws.id, dim: 'тип', value: 'методичка' }] },
+    },
+  });
+  await prisma.file.create({
+    data: {
+      workspaceId: ws.id, s3Key: `docs/${ws.id}/demo-official.docx`, ownerId: 'zavuch',
+      scope: 'школа', audience: 'staff', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      size: 51200, state: 'enriched', status: 'draft', textExtract: 'Положение о промежуточной аттестации…',
+    },
+  });
+
+  console.log('Готово: посеяны платформа+школа, учитель, 5 классов, уроки, оргстандарты, методики/курсы, файлы (docs/).');
 }
 
 main()
