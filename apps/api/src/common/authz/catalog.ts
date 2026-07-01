@@ -48,6 +48,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'curation.assign', section: 'curation', screen: 'teachers', action: 'assign', label: 'Курирование/назначение (методист)' },
   { code: 'schedule.build', section: 'schedule', screen: 'builder', action: 'build', label: 'Сборка расписания (завуч)' },
   { code: 'materials.lesson.generate', section: 'materials', screen: 'lesson', action: 'generate', label: 'Генерация материалов' },
+  { code: 'materials.textbook.upload', section: 'materials', screen: 'textbook', action: 'upload', label: 'Загрузка учебника (учитель)' },
   { code: 'notes.teacher.edit', section: 'notes', screen: 'teacher', action: 'edit', label: 'Заметки учителя' },
   { code: 'schedule.view', section: 'schedule', screen: 'schedule', action: 'view', label: 'Расписание' },
   // методист
@@ -68,7 +69,7 @@ export const PERMISSIONS: PermissionDef[] = [
 // психолог). admin/owner — tenancy-роли Флёра (RoleAssignment), в токен не приходят (канон
 // §7.4) → пакетов на них нет; их кабинеты ведёт панель Флёра/walk-up, не каталог RP.
 export const ROLE_PACKAGES: RolePackageDef[] = [
-  { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'notes.teacher.edit', 'lesson.conduct', 'schedule.view'] },
+  { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'materials.textbook.upload', 'notes.teacher.edit', 'lesson.conduct', 'schedule.view'] },
   { key: 'zavuch', cabinet: 'zavuch', label: 'Кабинет завуча', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'planning.ktp.view', 'planning.ktp.approve', 'planning.kpp.approve', 'standards.assessment.manage', 'standards.org.manage', 'standards.fgos.approve', 'schedule.build', 'schedule.view'] },
   { key: 'methodist', cabinet: 'methodist', label: 'Кабинет методиста', permissions: ['structure.disciplines.manage', 'methodics.umk.view', 'methodics.rp.view', 'standards.timing.manage', 'methodics.manage', 'courses.manage', 'curation.assign'] },
   { key: 'parent', cabinet: 'parent', label: 'Кабинет родителя', permissions: ['diary.child.view', 'grades.child.view', 'schedule.view'] },
