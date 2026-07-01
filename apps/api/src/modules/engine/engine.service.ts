@@ -255,4 +255,25 @@ export class EngineService {
     await this.emit(ENGINE_EVENTS.topicCompleted, { lessonId, topicId } as TopicCompletedV1, teacherId);
     return { ok: true };
   }
+
+  // ─────────────── Расписание (Кабинеты_ТЗ; schedule.built публикует ТОЛЬКО движок, §8) ───────────────
+  async scheduleMe(teacherId: string) {
+    const assignments = await this.prisma.teachingAssignment.findMany({ where: { teacherId }, select: { classId: true } });
+    const classIds = [...new Set(assignments.map((a) => a.classId))];
+    return this.prisma.lesson.findMany({
+      where: { classId: { in: classIds } },
+      orderBy: { date: 'asc' },
+      select: { id: true, date: true, topic: true, classId: true, subjectId: true, state: true },
+    });
+  }
+
+  scheduleBuilder() {
+    return this.prisma.timetable.findMany({ include: { slots: { orderBy: [{ day: 'asc' }, { position: 'asc' }] } } });
+  }
+
+  /** Завуч POST schedule/build ДЕЛЕГИРУЕТ движку; событие schedule.built публикует движок (§8). */
+  async buildSchedule(actor: string) {
+    await this.emit(ENGINE_EVENTS.scheduleBuilt, { note: 'schedule rebuilt' }, actor);
+    return { ok: true, event: ENGINE_EVENTS.scheduleBuilt };
+  }
 }

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { StorageModule } from './common/storage/storage.module';
 import { AuthModule } from './common/auth/auth.module';
 import { AuthGuard } from './common/auth/auth.guard';
 import { PermissionGuard } from './common/authz/permission.guard';
@@ -23,6 +24,8 @@ import { DeviceModule } from './modules/oidc-device/device.module';
 import { ConsentModule } from './modules/consent/consent.module';
 import { EngineModule } from './modules/engine/engine.module';
 import { StandardsModule } from './modules/standards/standards.module';
+import { CabinetsModule } from './modules/cabinets/cabinets.module';
+import { DocModule } from './modules/doc/doc.module';
 // Параметры (система параметров EduStore, см. docs/PARAMETERS.md). Новый параметр = одна строка.
 import { ContingentModule } from './parameters/contingent/contingent.module';
 import { CommsModule } from './parameters/comms/comms.module';
@@ -38,6 +41,7 @@ import { ComplianceModule } from './parameters/compliance/compliance.module';
   imports: [
     ScheduleModule.forRoot(), // §4.6: планировщик для фонового диспетчера outbox
     PrismaModule,
+    StorageModule, // объектное хранилище (S3-абстракция, ленивый клиент)
     AuthModule, // Флёрус OIDC RP (ADR-0005)
     AuthzModule, // §5.1: права как данные (каталог + резолвер доступа)
     EntitlementsModule, // §5.2: SKU/entitlement + гейт загрузки модуля
@@ -56,6 +60,8 @@ import { ComplianceModule } from './parameters/compliance/compliance.module';
     ConsentModule, // §6: согласие на обработку ПДн (152-ФЗ)
     EngineModule, // Phase 1: движок планирования (КТП/КПП Solver + Lesson FSM)
     StandardsModule, // Phase 1: контракты завуча/методиста (AssessmentPolicy/TimingProfile/OrgStandards/FgosHours)
+    CabinetsModule, // Phase 1: кабинеты (методики/курсы/курирование + надзор завуча)
+    DocModule, // Phase 1: документохранилище (файлы/версии/теги/статус) на S3-абстракции
     // параметры
     ContingentModule,
     CommsModule,

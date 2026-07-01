@@ -791,6 +791,46 @@ model AssessmentResultItem {
   @@index([workspaceId, assessmentResultId])
 }
 
+// ═══ КАБИНЕТЫ: методики/курсы (Phase 1, Кабинеты_ТЗ §2-3) — методист пишет, учитель читает ═══
+model Methodic {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  title        String
+  body         String? // текст методики / вики-конспект
+  disciplineId String?
+  authorId     String // identity методиста
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([workspaceId, disciplineId])
+}
+
+model Course {
+  id           String             @id @default(cuid())
+  workspaceId  String
+  title        String
+  description  String?
+  disciplineId String?
+  authorId     String
+  assignments  CourseAssignment[]
+  createdAt    DateTime           @default(now())
+
+  @@index([workspaceId])
+}
+
+model CourseAssignment {
+  id          String   @id @default(cuid())
+  workspaceId String
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  teacherId   String // identity учителя
+  assignedBy  String
+  assignedAt  DateTime @default(now())
+
+  @@unique([courseId, teacherId])
+  @@index([workspaceId, teacherId])
+}
+
 // ═══ КОНТРАКТЫ ЗАВУЧА/МЕТОДИСТА (Phase 1, Техспека §3) — входные слоты движка/журнала ═══
 // Завуч пишет AssessmentPolicy/OrgStandards/FgosHours; методист — TimingProfile. Движок (Solver)
 // и журнал ЧИТАЮТ. Все workspace-scoped → tenant-guard. События — Архстандарт §6.
@@ -866,4 +906,107 @@ model JournalCell {
 
   @@index([workspaceId, classId, disciplineId, period])
   @@index([workspaceId, studentId])
+}
+
+// ═══════════════════════════ ДОКУМЕНТОХРАНИЛИЩЕ (Phase 1, Техспека §5) ═══════════════════════════
+// Единственный писатель файловых объектов. Namespace docs/ — управляемый контур (152-ФЗ: аудит,
+// retention). Кабинеты ссылаются по fileId, байты не дублируют. Летучка-сканы сюда НЕ попадают.
+// embedding (pgvector) — слот семантики; сейчас FTS по textExtract/имени.
+model File {
+  id           String       @id @default(cuid())
+  workspaceId  String
+  s3Key        String // docs/...
+  ownerId      String
+  scope        String       @default("личное") // личное | класс:id | кафедра:id | школа
+  audience     String       @default("staff") // staff | parents | students
+  kind         String       @default("file") // file | doc (EditorDoc)
+  mime         String?
+  size         Int?
+  textExtract  String? // OCR (обогащение)
+  state        String       @default("pending") // pending(до commit) | raw | enriched
+  status       String? // только school-scope: draft | review | official | archived
+  crdtState    Bytes? // если kind=doc
+  disciplineId String? // methodbank-линза
+  classId      String?
+  deletedAt    DateTime? // trash → purge
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  versions     DocVersion[]
+  tags         Tag[]
+  shares       ShareGrant[]
+
+  @@index([workspaceId, scope, audience])
+  @@index([workspaceId, disciplineId])
+}
+
+model DocVersion {
+  id          String   @id @default(cuid())
+  workspaceId String
+  fileId      String
+  file        File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  no          Int
+  s3Key       String
+  authorId    String
+  createdAt   DateTime @default(now())
+
+  @@unique([fileId, no])
+  @@index([workspaceId, fileId])
+}
+
+model Tag {
+  id          String @id @default(cuid())
+  workspaceId String
+  fileId      String
+  file        File   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  dim         String // scope|audience|тип|предмет|класс|год|тема|free
+  value       String
+
+  @@index([workspaceId, fileId])
+  @@index([workspaceId, dim, value])
+}
+
+model Lens {
+  id          String  @id @default(cuid())
+  workspaceId String
+  ownerId     String?
+  shared      Boolean @default(false)
+  name        String
+  filter      Json
+
+  @@index([workspaceId])
+}
+
+model Collection {
+  id          String           @id @default(cuid())
+  workspaceId String
+  ownerId     String
+  name        String
+  files       CollectionFile[]
+  createdAt   DateTime         @default(now())
+
+  @@index([workspaceId, ownerId])
+}
+
+model CollectionFile {
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  fileId       String
+  workspaceId  String
+
+  @@id([collectionId, fileId])
+  @@index([workspaceId])
+}
+
+model ShareGrant {
+  id          String    @id @default(cuid())
+  workspaceId String
+  fileId      String
+  file        File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  granteeId   String? // userId
+  linkToken   String? // публичная ссылка
+  level       String // view | comment | edit
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId, fileId])
 }

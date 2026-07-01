@@ -78,10 +78,28 @@ export class EngineController {
     return res;
   }
 
-  // ─── Timetable ───
+  // ─── Timetable / Расписание ───
   @Get('timetable')
   getTimetable(@Query('classId') classId?: string) {
     return this.engine.getTimetable(classId);
+  }
+
+  @Get('schedule/me')
+  scheduleMe(@Req() req: Request & { user?: SessionUser }) {
+    return this.engine.scheduleMe(this.actor(req));
+  }
+
+  @Get('schedule/builder')
+  scheduleBuilder() {
+    return this.engine.scheduleBuilder();
+  }
+
+  @RequirePermission('schedule.build')
+  @Post('schedule/build')
+  async buildSchedule(@Req() req: Request & { user?: SessionUser }) {
+    const res = await this.engine.buildSchedule(this.actor(req));
+    await this.dispatcher.drain();
+    return res;
   }
 
   // ─── Lesson FSM ───
