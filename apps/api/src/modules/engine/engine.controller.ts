@@ -50,10 +50,24 @@ export class EngineController {
     // здесь видно, собрался ли КПП); kpp=null → генерация не дала плана.
     const kpps = await this.engine.getKpp(res.classId, res.disciplineId);
     const kpp = kpps[0];
+    // если событийная генерация не дала КПП — воспроизводим её синхронно, чтобы вернуть ПРИЧИНУ завучу
+    // (код ConflictException: INSUFFICIENT_SLOTS / NO_TIMETABLE / KPP_IN_USE), а не молчаливый null.
+    let reason: string | null = null;
+    if (!kpp) {
+      try {
+        await this.engine.generateKpp(res.classId, res.disciplineId);
+        // успех со второй попытки (редко) — перечитываем
+        const again = (await this.engine.getKpp(res.classId, res.disciplineId))[0];
+        return { id: res.id, status: res.status, kpp: again ? { id: again.id, status: again.status, lessonCount: again.lessons.length } : null, reason: null };
+      } catch (e) {
+        reason = (e as { response?: { code?: string } })?.response?.code ?? (e as Error).message ?? null;
+      }
+    }
     return {
       id: res.id,
       status: res.status,
       kpp: kpp ? { id: kpp.id, status: kpp.status, lessonCount: kpp.lessons.length } : null,
+      reason,
     };
   }
 

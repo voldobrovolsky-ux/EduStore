@@ -10,6 +10,8 @@ export interface PilotStaff {
   userId: string | null;
   loggedIn: boolean;
   assigned: boolean;
+  assignments: string[]; // ярлыки «5А · Математика»
+  token: string | null; // для повторного QR (только пока не вошёл)
 }
 export interface PilotInvite { inviteId: string; token: string; role: string; displayName: string | null }
 export interface PilotClass { id: string; label: string; parallel: number; letter: string }
@@ -48,6 +50,8 @@ export const pilotApi = {
     ownerReq<PilotSubject>("/api/pilot/owner/subjects", key, { method: "POST", body: JSON.stringify({ name, color }) }),
   assign: (key: string, userId: string, classId: string, subjectId: string) =>
     ownerReq<{ id: string }>("/api/pilot/owner/assign", key, { method: "POST", body: JSON.stringify({ userId, classId, subjectId }) }),
+  revokeStaff: (key: string, inviteId: string) =>
+    ownerReq<{ ok: boolean }>(`/api/pilot/owner/staff/${inviteId}`, key, { method: "DELETE" }),
 
   // ─── вход по QR (публичный, ставит cookie) ───
   login: async (token: string, phone: string): Promise<{ ok: boolean; userId: string }> => {

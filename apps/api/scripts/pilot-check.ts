@@ -93,6 +93,23 @@ async function main() {
   const accessZ = await authz.resolveAccess(zSession!.role, zSession!.subRole);
   check('RBAC: завуч имеет comm.announcement.post (пакет zavuch)', accessZ.permissions.includes('comm.announcement.post'));
 
+  // ── A5: повторный QR + отзыв приглашения ──
+  const invR = await pilot.createInvite({ role: 'teacher', displayName: 'Отзываемый' });
+  const staffR = await pilot.listStaff();
+  const rowR = staffR.find((x) => x.inviteId === invR.inviteId);
+  check('listStaff отдаёт token не-вошедшему (повторный QR)', rowR?.token === invR.token);
+  const rowT = staffR.find((x) => x.inviteId === invT.inviteId);
+  check('после входа token скрыт, назначения с ярлыками', rowT?.token === null && (rowT?.assignments[0] ?? '').includes('5А'));
+  await pilot.revokeInvite(invR.inviteId);
+  check('отзыв не-вошедшего: приглашение удалено', !(await pilot.listStaff()).some((x) => x.inviteId === invR.inviteId));
+  let revokeBlocked = false;
+  try {
+    await pilot.revokeInvite(invT.inviteId);
+  } catch {
+    revokeBlocked = true;
+  }
+  check('отзыв ВОШЕДШЕГО заблокирован (INVITE_ACTIVE)', revokeBlocked);
+
   // ── постоянство workspace: повторный ensureArchimed не плодит школу ──
   await pilot.createInvite({ role: 'teacher' });
   const wsCount = await TenantContext.runAsSystem(() => prisma.workspace.count({ where: { florusWorkspaceId: ARCHIMED_FLOR_WS_ID } }));

@@ -171,6 +171,15 @@
 .pilot-chip.ok { color: var(--green); background: color-mix(in srgb, var(--green) 13%, transparent); }
 .pilot-chip.role { color: var(--accent); background: var(--accent-soft); }
 
+.pilot-mini {
+  width: 34px; height: 30px; border-radius: 8px; font-size: 11.5px; font-weight: 700;
+  color: var(--accent); border: 1px solid var(--line-strong); background: var(--panel);
+  flex-shrink: 0; transition: background calc(120ms * var(--am)) ease, color calc(120ms * var(--am)) ease;
+}
+.pilot-mini:hover { background: var(--accent-soft); }
+.pilot-mini.danger { color: var(--red); }
+.pilot-mini.danger:hover { background: color-mix(in srgb, var(--red) 10%, transparent); }
+
 .pilot-inline { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
 .pilot-inline .pilot-field { flex: 1; min-width: 120px; margin-bottom: 0; }
 

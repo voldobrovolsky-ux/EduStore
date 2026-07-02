@@ -12,6 +12,7 @@ import type { SectionContext, SectionDescriptor, ToastInput } from "@/sections/t
 import { ToastStack, type Toast } from "@/components/Toasts";
 import { NotificationPanel } from "@/components/NotificationPanel";
 import { Personalize } from "@/app/screens/Personalize";
+import { ScheduleScreen } from "@/app/screens/ScheduleScreen";
 import { SimplePlaceholder } from "@/app/screens/SimplePlaceholder";
 import { useIsMobile } from "@/mobile/useIsMobile";
 import { MobileApp } from "@/mobile/MobileApp";
@@ -72,6 +73,13 @@ export function AppShell() {
         <div className="middle"><Personalize /></div>
       </div>
     );
+  } else if (nav === "schedule") {
+    body = (
+      <div className="app">
+        <LeftSidebar active={nav} onSelect={setNav} expanded profile={profile} />
+        <div className="middle"><ScheduleScreen /></div>
+      </div>
+    );
   } else if (nav !== "workspace") {
     const item = NAV_SECTIONS.find((s) => s.id === nav)!;
     body = (
@@ -98,7 +106,7 @@ export function AppShell() {
           />
           <div className="middle-row">
             <SectionShell
-              key={workSection + ":" + (activeClass?.classId ?? "")}
+              key={workSection + ":" + (activeClass?.id ?? "")}
               descriptor={descriptor}
               ctx={ctx}
               active={workSection}

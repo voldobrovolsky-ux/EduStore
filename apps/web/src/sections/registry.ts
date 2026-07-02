@@ -1,6 +1,8 @@
 import type { SectionDescriptor } from "./types";
 import { journalSection } from "./journal";
 import { planningSection } from "./planning";
+import { brieftestSection } from "./brieftest";
+import { materialsSection } from "./materials";
 import { placeholderSection } from "./_placeholder/Placeholder";
 
 /**
@@ -11,8 +13,9 @@ import { placeholderSection } from "./_placeholder/Placeholder";
 export const SECTIONS: SectionDescriptor[] = [
   journalSection,
   planningSection,
+  brieftestSection,
+  materialsSection,
   placeholderSection("ktp", "КТП", "ktp"),
-  placeholderSection("materials", "Материалы", "materials"),
   placeholderSection("mm", "ММ", "mm"),
   placeholderSection("analytics", "Аналитика", "analytics"),
 ];

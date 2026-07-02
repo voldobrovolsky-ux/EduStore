@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Param, Post, Req, Res, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Public } from '../../common/auth/public.decorator';
 import type { SessionUser } from '../../common/auth/flor.service';
@@ -19,8 +19,9 @@ export class PilotController {
   constructor(private readonly pilot: PilotService) {}
 
   private assertPilotMode() {
+    // 503 (а не 403) — чтобы фронт отличал «режим выключен» от «неверный ключ owner» (тоже 403)
     if (process.env.AUTH_MODE !== AUTH_MODE_PILOT) {
-      throw new ForbiddenException('пилотный auth выключен (AUTH_MODE ≠ pilot-qr)');
+      throw new ServiceUnavailableException('пилотный auth выключен (AUTH_MODE ≠ pilot-qr)');
     }
   }
 
@@ -52,6 +53,15 @@ export class PilotController {
     this.assertPilotMode();
     this.assertOwner(req);
     return this.pilot.listStaff();
+  }
+
+  /** Отозвать приглашение (только не вошедшего) — owner. */
+  @Public()
+  @Delete('owner/staff/:inviteId')
+  revokeStaff(@Param('inviteId') inviteId: string, @Req() req: Request) {
+    this.assertPilotMode();
+    this.assertOwner(req);
+    return this.pilot.revokeInvite(inviteId);
   }
 
   @Public()
