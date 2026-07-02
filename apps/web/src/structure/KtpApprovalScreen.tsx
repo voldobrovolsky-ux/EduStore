@@ -3,7 +3,7 @@ import { Icon } from "@/admin/ds/Icon";
 import { Button, Badge } from "@/admin/ds/components";
 import { WorkHead, Panel } from "@/admin/screens/_shared";
 import { structureApi, type StClass, type StSubject } from "@/lib/structureApi";
-import { eduApi, type KtpDto, type KppDto } from "@/lib/eduApi";
+import { eduApi, type KtpDto, type KtpTopicDto, type KppDto } from "@/lib/eduApi";
 import { HttpError } from "@/lib/http";
 
 /**
@@ -17,6 +17,7 @@ export function KtpApprovalScreen() {
   const [subjects, setSubjects] = useState<StSubject[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [note, setNote] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [openKtpId, setOpenKtpId] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     eduApi.ktpList().then(setKtps).catch(() => setKtps([]));
@@ -93,27 +94,48 @@ export function KtpApprovalScreen() {
       {ktps !== null && ktps.length === 0 && <Panel style={{ padding: 18, color: "var(--text-muted)" }}>КТП пока нет.</Panel>}
       {(ktps ?? []).map((k) => {
         const hours = k.topics.reduce((s, t) => s + t.fgosHours, 0);
+        const estimated = k.topics.filter((t) => t.hoursSource === "estimated").length;
+        const isOpen = openKtpId === k.id;
         return (
-          <Panel key={k.id} style={{ padding: 16, marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
-            <span style={{ width: 42, height: 42, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "color-mix(in oklch, #0EA5A5 14%, transparent)", color: "#0EA5A5", flexShrink: 0 }}>
-              <Icon name="file-text" size={20} />
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, color: "var(--text-strong)" }}>{title(k.classId, k.disciplineId)}</div>
-              <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginTop: 2 }}>
-                {k.topics.length} тем · {hours} часов ФГОС
-                {k.approvedBy ? ` · утвердил: ${k.approvedBy}` : ""}
+          <Panel key={k.id} style={{ padding: 16, marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }} onClick={() => setOpenKtpId(isOpen ? null : k.id)}>
+              <span style={{ width: 42, height: 42, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "color-mix(in oklch, #0EA5A5 14%, transparent)", color: "#0EA5A5", flexShrink: 0 }}>
+                <Icon name="file-text" size={20} />
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, color: "var(--text-strong)" }}>{title(k.classId, k.disciplineId)}</div>
+                <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginTop: 2 }}>
+                  {k.topics.length} тем · {hours} часов ФГОС
+                  {estimated > 0 ? ` · ${estimated} — оценка парсера` : ""}
+                  {k.approvedBy ? ` · утвердил: ${k.approvedBy}` : ""}
+                </div>
               </div>
+              {k.status === "approved" ? (
+                <Badge tone="create">утверждён</Badge>
+              ) : (
+                <>
+                  <Badge>черновик</Badge>
+                  <Button
+                    variant="create"
+                    icon={<Icon name="circle-check" size={15} />}
+                    onClick={(e) => { e.stopPropagation(); void approveKtp(k); }}
+                    disabled={busyId === k.id}
+                  >
+                    {busyId === k.id ? "Утверждаем…" : "Утвердить"}
+                  </Button>
+                </>
+              )}
             </div>
-            {k.status === "approved" ? (
-              <Badge tone="create">утверждён</Badge>
-            ) : (
-              <>
-                <Badge>черновик</Badge>
-                <Button variant="create" icon={<Icon name="circle-check" size={15} />} onClick={() => void approveKtp(k)} disabled={busyId === k.id}>
-                  {busyId === k.id ? "Утверждаем…" : "Утвердить"}
-                </Button>
-              </>
+            {isOpen && (
+              <div style={{ marginTop: 12, borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: 10 }} data-testid="ktp-topics">
+                {k.topics
+                  .slice()
+                  .sort((a, b) => a.order - b.order)
+                  .map((t) => (
+                    <TopicRow key={t.id} topic={t} editable={k.status === "draft"} onSaved={refresh} />
+                  ))}
+                {k.topics.length === 0 && <div style={{ color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>Тем пока нет.</div>}
+              </div>
             )}
           </Panel>
         );
@@ -147,6 +169,55 @@ export function KtpApprovalScreen() {
           )}
         </Panel>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Строка темы черновика: часы с пометкой «оценка парсера» (hoursSource=estimated) и inline-правкой.
+ * Ручная правка часов снимает флаг на сервере — завуч видит, чему верить, до утверждения.
+ */
+function TopicRow({ topic, editable, onSaved }: { topic: KtpTopicDto; editable: boolean; onSaved: () => void }) {
+  const [hours, setHours] = useState(String(topic.fgosHours));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setHours(String(topic.fgosHours)), [topic.fgosHours]);
+
+  const save = async () => {
+    const n = Number(hours);
+    if (!Number.isInteger(n) || n < 1 || n === topic.fgosHours) {
+      setHours(String(topic.fgosHours));
+      return;
+    }
+    setSaving(true);
+    try {
+      await eduApi.updateKtpTopic(topic.id, { fgosHours: n });
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 2px", fontSize: "var(--text-sm)" }} data-testid="ktp-topic-row">
+      <span style={{ color: "var(--text-muted)", width: 22, textAlign: "right", flexShrink: 0 }}>{topic.order}.</span>
+      <span style={{ flex: 1, minWidth: 0, color: "var(--text-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{topic.title}</span>
+      {topic.hoursSource === "estimated" && <Badge tone="accent">оценка парсера</Badge>}
+      {editable ? (
+        <input
+          type="number"
+          min={1}
+          value={hours}
+          disabled={saving}
+          onChange={(e) => setHours(e.target.value)}
+          onBlur={() => void save()}
+          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+          style={{ width: 58, padding: "3px 6px", border: "1px solid var(--border, #d1d5db)", borderRadius: 8, textAlign: "center" }}
+          aria-label={`Часы темы «${topic.title}»`}
+        />
+      ) : (
+        <span style={{ width: 58, textAlign: "center" }}>{topic.fgosHours}</span>
+      )}
+      <span style={{ color: "var(--text-muted)" }}>ч</span>
     </div>
   );
 }

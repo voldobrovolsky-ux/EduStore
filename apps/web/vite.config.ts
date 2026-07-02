@@ -20,4 +20,11 @@ export default defineConfig({
       "/api": { target: "http://localhost:3000", changeOrigin: true },
     },
   },
+  preview: {
+    port: 5173,
+    // preview (PROD-сборка в e2e-смоке) ходит на тот же относительный /api
+    proxy: {
+      "/api": { target: "http://localhost:3000", changeOrigin: true },
+    },
+  },
 });

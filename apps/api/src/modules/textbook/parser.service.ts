@@ -1,60 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OutboxService } from '../../common/outbox/outbox.service';
+import { TenantContext } from '../../common/tenant/tenant-context';
 import { newEvent } from '../../common/events/domain-event';
 import { TEXTBOOK_EVENTS, type ParsedCard, type ParsedTopic, type TextbookParsedV1 } from './textbook.contract';
-
-// Структурные маркеры учебника (реально встречаются в textExtract): темы и параграфы-карты.
-const TOPIC_RE = /^(глава|тема|раздел)\s+\d+/i; // «Глава 1. Векторы», «Тема 3 …», «Раздел 2»
-const CARD_RE = /^§\s*\d+/; // «§ 1. Понятие вектора»
-
-interface ParsedInternal {
-  topics: ParsedTopic[];
-  cards: (ParsedCard & { content?: string })[];
-}
-
-/**
- * Детерминированный разбор textExtract на темы/карты по структурным маркерам.
- *
- * TODO(parser): здесь позже встанет РЕАЛЬНЫЙ классификатор (DeepSeek/YandexGPT) — семантическая
- * сегментация на темы/карты + сопоставление с ФГОС АР-кодами. Сейчас 0 ИИ (как договорено для всех
- * парсинг-стабов на этом этапе): чистое правило по заголовкам, без вызова моделей. OCR НЕ повторяется —
- * textExtract переиспользуется из doc.file.enriched (единственный OCR — в хранилище).
- */
-export function parseTextExtract(text: string): ParsedInternal {
-  const topics: ParsedTopic[] = [];
-  const cards: (ParsedCard & { content?: string })[] = [];
-  let curTopicOrder: number | undefined;
-  let curCard: (ParsedCard & { content?: string }) | null = null;
-  const flush = () => {
-    if (curCard) {
-      cards.push(curCard);
-      curCard = null;
-    }
-  };
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (TOPIC_RE.test(line)) {
-      flush();
-      const order = topics.length + 1;
-      topics.push({ order, title: line });
-      curTopicOrder = order;
-    } else if (CARD_RE.test(line)) {
-      flush();
-      curCard = { order: cards.length + 1, title: line, topicOrder: curTopicOrder };
-    } else if (curCard) {
-      curCard.content = curCard.content ? `${curCard.content}\n${line}` : line;
-    }
-  }
-  flush();
-  return { topics, cards };
-}
+import type { ParserContext, ParserProviderResult } from './parser-provider';
+import { RegexpParserProvider } from './regexp-parser.provider';
+import { LlmParserProvider } from './llm-parser.provider';
+import { ParserSettingsService } from './parser-settings.service';
 
 /**
  * Парсер учебников. Подписан на doc.file.enriched (см. parser.handlers) — по приходу резолвит
- * Material по fileId, переиспользует textExtract, детерминированно разбирает на темы/карты
- * (кабинетная сущность), эмитит textbook.parsed{materialId, fileId, cards, topics}. Идемпотентен.
+ * Material по fileId, переиспользует textExtract и разбирает его на темы/карты выбранным
+ * ParserProvider (настройка воркспейса: regexp — стаб по «Глава/§», дефолт; llm — внешний
+ * эндпоинт из админки). Падение llm (нет ключа/сеть/невалидный JSON) → fallback на regexp
+ * с логом, загрузка НЕ роняется. Эмитит textbook.parsed{materialId, fileId, cards, topics}.
+ * Идемпотентен (повторный разбор = no-op).
  */
 @Injectable()
 export class ParserService {
@@ -63,7 +24,32 @@ export class ParserService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
+    private readonly regexp: RegexpParserProvider,
+    private readonly llm: LlmParserProvider,
+    private readonly settings: ParserSettingsService,
   ) {}
+
+  /** Контекст для провайдера: класс/предмет из Material (LLM видит их, не наши id). */
+  private async resolveContext(material: { classId: string | null; disciplineId: string }): Promise<ParserContext> {
+    const [cls, subj] = await Promise.all([
+      material.classId ? this.prisma.class.findUnique({ where: { id: material.classId }, select: { label: true } }) : null,
+      this.prisma.subject.findUnique({ where: { id: material.disciplineId }, select: { name: true } }),
+    ]);
+    return { className: cls?.label ?? null, subject: subj?.name ?? null };
+  }
+
+  /** Разбор выбранным провайдером; llm упал → fallback regexp (факт логируется). */
+  private async runProvider(workspaceId: string, text: string, ctx: ParserContext): Promise<ParserProviderResult> {
+    const s = await this.settings.getForWorkspace(workspaceId);
+    if (s.provider === 'llm') {
+      try {
+        return await this.llm.withSettings(s).parse(text, ctx);
+      } catch (e) {
+        this.log.warn(`llm-провайдер упал → fallback на regexp: ${(e as Error).message}`);
+      }
+    }
+    return this.regexp.parse(text, ctx);
+  }
 
   /**
    * Разбор по событию обогащения. Событие не про учебник (нет Material с этим fileId) → тихо
@@ -90,25 +76,38 @@ export class ParserService {
       return; // не гадаем по пустому тексту
     }
 
-    const parsed = parseTextExtract(text);
+    const ctx = await this.resolveContext(material);
+    const parsed = await this.runProvider(material.workspaceId, text, ctx);
     if (parsed.topics.length === 0 && parsed.cards.length === 0) {
       this.log.debug(`fileId=${fileId}: структура не распознана — тем/карт нет`);
       return;
     }
 
-    const topics: ParsedTopic[] = parsed.topics.map((t) => ({ order: t.order, title: t.title }));
-    const cards: ParsedCard[] = parsed.cards.map((c) => ({ order: c.order, title: c.title, topicOrder: c.topicOrder }));
+    // нормализуем порядок тем к 1..n и готовим контракт события (связь карт по topicOrder)
+    const topicOrderByTitle = new Map<string, number>();
+    const topics: ParsedTopic[] = parsed.topics.map((t, i) => {
+      const order = i + 1;
+      if (!topicOrderByTitle.has(t.title)) topicOrderByTitle.set(t.title, order);
+      return { order, title: t.title };
+    });
+    const cards: ParsedCard[] = parsed.cards.map((c, i) => ({
+      order: i + 1,
+      title: c.title,
+      topicOrder: c.topicTitle ? topicOrderByTitle.get(c.topicTitle) : undefined,
+    }));
 
     // темы+карты и событие — атомарно (transactional outbox): либо всё, либо ничего
     await this.prisma.$transaction(async (tx) => {
       const topicIdByOrder = new Map<number, string>();
-      for (const t of parsed.topics) {
+      for (const t of topics) {
         const row = await tx.textbookTopic.create({
           data: { workspaceId: material.workspaceId, materialId: material.id, fileId, order: t.order, title: t.title },
         });
         topicIdByOrder.set(t.order, row.id);
       }
-      for (const c of parsed.cards) {
+      for (let i = 0; i < parsed.cards.length; i++) {
+        const src = parsed.cards[i];
+        const c = cards[i];
         await tx.textbookCard.create({
           data: {
             workspaceId: material.workspaceId,
@@ -117,7 +116,7 @@ export class ParserService {
             topicId: c.topicOrder ? topicIdByOrder.get(c.topicOrder) ?? null : null,
             order: c.order,
             title: c.title,
-            content: c.content ?? null,
+            content: src.content || null,
           },
         });
       }
@@ -143,4 +142,23 @@ export class ParserService {
     ]);
     return { materialId: material.id, fileId, topics, cards };
   }
+
+  /**
+   * «Проверить соединение» (админка): короткий тестовый текст в НАСТРОЕННЫЙ llm-эндпоинт.
+   * Возвращает исход, не бросает (результат показывается админу как есть).
+   */
+  async testLlmConnection(): Promise<{ ok: boolean; topics?: number; cards?: number; error?: string }> {
+    const ws = TenantContext.require();
+    const s = await this.settings.getForWorkspace(ws);
+    const sample = 'Глава 1. Проверка соединения\n§ 1. Тестовый параграф\nКороткий текст для проверки llm-парсера.';
+    try {
+      const res = await this.llm.withSettings(s).parse(sample, { className: '6А', subject: 'Проверка' });
+      return { ok: true, topics: res.topics.length, cards: res.cards.length };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  }
 }
+
+// Экспорт для обратной совместимости тестов/скриптов, ссылавшихся на стаб-разбор напрямую.
+export { RegexpParserProvider } from './regexp-parser.provider';

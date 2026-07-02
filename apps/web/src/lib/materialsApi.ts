@@ -6,12 +6,23 @@ export interface UploadInitResp {
   fileId: string;
   uploadUrl: string;
   expiresIn: number;
+  classId: string;
+  disciplineId: string;
 }
 export interface CommitResp {
   materialId: string;
   fileId: string;
   disciplineId: string;
+  classId: string | null;
   state: string;
+}
+/** Назначение учителя (его собственный «флажок» класс+дисциплина) — контекст загрузки. */
+export interface MyAssignmentDto {
+  id: string; // assignmentId
+  classId: string;
+  label: string; // «6А»
+  subject: string; // «Математика»
+  subjectId: string;
 }
 export interface ParsedTopicDto {
   id: string;
@@ -44,8 +55,12 @@ const EDU = "/api/v1/edu/materials";
 const DOC = "/api/v1/doc";
 
 export const materialsApi = {
-  uploadInit: (mime: string, disciplineId: string) =>
-    http<UploadInitResp>(`${EDU}/upload-init`, { method: "POST", body: JSON.stringify({ mime, disciplineId }) }),
+  /** Собственные назначения учителя — контекст загрузки (класс+дисциплина берутся из них). */
+  myAssignments: () => http<MyAssignmentDto[]>("/api/teacher/classes"),
+
+  /** Класс+дисциплина НЕ передаются: сервер берёт их из назначения учителя (assignmentId — если их несколько). */
+  uploadInit: (mime: string, assignmentId?: string) =>
+    http<UploadInitResp>(`${EDU}/upload-init`, { method: "POST", body: JSON.stringify({ mime, assignmentId }) }),
 
   /**
    * PUT файла напрямую в S3 по presigned URL, с прогрессом (XHR — fetch не отдаёт onprogress).

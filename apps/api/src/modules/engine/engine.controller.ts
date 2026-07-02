@@ -40,6 +40,13 @@ export class EngineController {
     return this.engine.getKtp(classId, disciplineId);
   }
 
+  /** Правка темы черновика КТП (завуч перед утверждением): часы/название; снимает hoursSource. */
+  @RequirePermission('planning.ktp.edit')
+  @Post('ktp/topics/:id')
+  updateKtpTopic(@Param('id') id: string, @Body() body: { title?: string; fgosHours?: number }, @Req() req: Request & { user?: SessionUser }) {
+    return this.engine.updateKtpTopic(id, body, this.actor(req));
+  }
+
   /** Завуч утверждает КТП → ktp.approved → (inline) Solver раскладывает КПП (§7). */
   @RequirePermission('planning.ktp.approve')
   @Post('ktp/:id/approve')

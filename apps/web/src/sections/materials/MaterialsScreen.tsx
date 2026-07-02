@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/design/Icon";
 import type { SectionProps } from "@/sections/types";
-import { materialsApi, type DocFileDto, type ParsedResp } from "@/lib/materialsApi";
+import { materialsApi, type DocFileDto, type MyAssignmentDto, type ParsedResp } from "@/lib/materialsApi";
 import { HttpError } from "@/lib/http";
 import "./materials.css";
 
@@ -10,11 +10,14 @@ type UploadStage = { pct: number; label: string } | null;
 const STATE_LABEL: Record<string, string> = { pending: "ожидает файла", raw: "загружен", enriched: "разобран" };
 
 /**
- * Материалы: загрузка учебника (docs/-контур: upload-init → PUT presigned → commit) → обогащение →
- * разбор парсера (темы/карты). S3 не настроен → мягкая деградация (баннер), не ошибка интерфейса.
+ * Материалы (методкопилка): загрузка учебника (docs/-контур: upload-init → PUT presigned → commit) →
+ * обогащение → разбор парсера (темы/карты) → черновик КТП. Класс и дисциплина НЕ выбираются из всех
+ * классов школы — берутся из собственных TeachingAssignment учителя: одно назначение — автоматически,
+ * несколько — компактный селектор своих назначений. S3 не настроен → мягкая деградация (баннер).
  */
 export function MaterialsScreen({ ctx }: SectionProps) {
-  const a = ctx.assignment;
+  const [assignments, setAssignments] = useState<MyAssignmentDto[] | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [files, setFiles] = useState<DocFileDto[] | null>(null);
   const [upload, setUpload] = useState<UploadStage>(null);
   const [openFileId, setOpenFileId] = useState<string | null>(null);
@@ -24,13 +27,26 @@ export function MaterialsScreen({ ctx }: SectionProps) {
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // свои назначения (не все классы школы): одно — контекст сразу, несколько — селектор
+  useEffect(() => {
+    materialsApi
+      .myAssignments()
+      .then((list) => {
+        setAssignments(list);
+        setActiveId((cur) => cur ?? list[0]?.id ?? null);
+      })
+      .catch(() => setAssignments([]));
+  }, []);
+
+  const a = assignments?.find((x) => x.id === activeId) ?? null;
+
   const refresh = useCallback(() => {
     if (!a) return;
     materialsApi
       .listByDiscipline(a.subjectId)
       .then(setFiles)
       .catch(() => setFiles([]));
-  }, [a]);
+  }, [a?.subjectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setFiles(null);
@@ -46,11 +62,12 @@ export function MaterialsScreen({ ctx }: SectionProps) {
     try {
       const mime = file.type || "application/pdf"; // единый mime: presign подписан под него
       setUpload({ pct: 0, label: "Готовим загрузку…" });
-      const init = await materialsApi.uploadInit(mime, a.subjectId);
+      // класс+дисциплину сервер берёт из назначения учителя; id нужен только при нескольких
+      const init = await materialsApi.uploadInit(mime, assignments && assignments.length > 1 ? a.id : undefined);
       setUpload({ pct: 0, label: "Загружаем в хранилище…" });
       await materialsApi.putFile(init.uploadUrl, file, mime, (pct) => setUpload({ pct, label: "Загружаем в хранилище…" }));
       setUpload({ pct: 100, label: "Подтверждаем и разбираем…" });
-      await materialsApi.commit(init.fileId); // inline-каскад: enrich → parser → textbook.parsed
+      await materialsApi.commit(init.fileId); // inline-каскад: enrich → parser → textbook.parsed → черновик КТП
       setUpload(null);
       ctx.pushToast({ type: "normal", title: "Учебник загружен", msg: file.name });
       refresh();
@@ -91,10 +108,17 @@ export function MaterialsScreen({ ctx }: SectionProps) {
     if (f) void doUpload(f);
   };
 
+  if (assignments === null) {
+    return (
+      <div className="mt-wrap">
+        <div className="mt-card mt-sub">Загружаем ваши назначения…</div>
+      </div>
+    );
+  }
   if (!a) {
     return (
       <div className="mt-wrap">
-        <div className="mt-card mt-sub">Выберите класс и предмет в верхней панели — учебники привязаны к дисциплине.</div>
+        <div className="mt-card mt-sub">У вас пока нет назначений (класс + дисциплина) — обратитесь к завучу.</div>
       </div>
     );
   }
@@ -103,7 +127,25 @@ export function MaterialsScreen({ ctx }: SectionProps) {
     <div className="mt-wrap">
       <div className="mt-card">
         <h3 className="mt-h"><Icon name="materials" size={17} /> Учебники · {a.subject}</h3>
-        <div className="mt-sub">Загрузите учебник — система разберёт его на темы и карты для наполнения КТП.</div>
+        {/* контекст загрузки — из назначения учителя, без ручного выбора из всех классов школы */}
+        <div className="mt-sub" data-testid="upload-context">
+          Загрузка учебника для <b>{a.label}</b>, {a.subject.toLowerCase()}.
+        </div>
+        {assignments.length > 1 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }} data-testid="assignment-picker">
+            {assignments.map((x) => (
+              <button
+                key={x.id}
+                className={`mt-file${x.id === a.id ? " is-open" : ""}`}
+                style={{ width: "auto", padding: "5px 12px", fontSize: 12.5 }}
+                onClick={() => setActiveId(x.id)}
+              >
+                {x.label} · {x.subject}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="mt-sub" style={{ marginTop: 6 }}>Система разберёт учебник на темы и карты и подготовит черновик КТП для завуча.</div>
 
         {storageDown && (
           <div className="mt-warn" style={{ marginTop: 12 }}>

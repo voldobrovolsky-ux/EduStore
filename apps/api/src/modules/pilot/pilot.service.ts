@@ -116,9 +116,36 @@ export class PilotService {
 
   /** Назначение сотрудника → дисциплина/класс: существующая TeachingAssignment (не изобретаем). */
   assign(input: { userId: string; classId: string; subjectId: string; subGroupId?: string }) {
-    return this.inArchimed(() =>
-      this.structure.assign({ teacherId: input.userId, classId: input.classId, subjectId: input.subjectId, subGroupId: input.subGroupId }),
-    );
+    return this.inArchimed(async (ws) => {
+      const res = await this.structure.assign({ teacherId: input.userId, classId: input.classId, subjectId: input.subjectId, subGroupId: input.subGroupId });
+      await this.ensureTimetable(ws, input.classId);
+      return res;
+    });
+  }
+
+  /**
+   * Пилотный стаб геометрии: у свежесозданного класса нет Timetable → Solver не смог бы разложить
+   * КПП (NO_TIMETABLE). Первое назначение на класс заводит дефолтную сетку 5 дней × 4 слота
+   * (идемпотентно). Реальная сборка геометрии — у завуча/движка, вне пилотного онбординга.
+   */
+  private async ensureTimetable(workspaceId: string, classId: string): Promise<void> {
+    const exists = await this.prisma.timetable.findFirst({ where: { classId } });
+    if (exists) return;
+    await this.prisma.timetable.create({
+      data: {
+        workspaceId,
+        classId,
+        source: 'pilot-default',
+        slots: {
+          create: Array.from({ length: 20 }, (_, i) => ({
+            workspaceId,
+            day: Math.floor(i / 4) + 1,
+            position: (i % 4) + 1,
+            durationMin: 45,
+          })),
+        },
+      },
+    });
   }
 
   // ─── QR-вход ───

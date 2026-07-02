@@ -61,6 +61,15 @@ export interface KtpApprovedV1 {
   classId: string;
   disciplineId: string;
 }
+/** Черновик КТП создан/дополнен генератором из разбора учебника (textbook.parsed). */
+export interface KtpGeneratedV1 {
+  ktpId: string;
+  classId: string;
+  disciplineId: string;
+  materialId: string;
+  topicsAdded: number;
+  cardsAttached: number;
+}
 export interface KppScheduledV1 {
   kppId: string;
   classId: string;
