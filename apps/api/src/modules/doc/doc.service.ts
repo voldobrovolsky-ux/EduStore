@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -7,6 +7,7 @@ import { TenantContext } from '../../common/tenant/tenant-context';
 import { newEvent } from '../../common/events/domain-event';
 import { STORAGE_PROVIDER, type StorageProvider } from '../../common/storage/storage.types';
 import { DOC_EVENTS, type FileCreatedV1 } from './doc.contract';
+import { extractText } from './text-extract';
 
 // Статус-FSM (только school-scope). Форк official→draft — не переход, а новый файл (§5, отложено).
 const STATUS_NEXT: Record<string, string[]> = {
@@ -24,6 +25,8 @@ const DESCRIPTIVE_DIMS = ['тип', 'предмет', 'класс', 'год', '�
  */
 @Injectable()
 export class DocService {
+  private readonly log = new Logger('DocService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
@@ -208,15 +211,28 @@ export class DocService {
     return { id, deleted: true };
   }
 
-  // ─── Обогащение raw→enriched (вызывается хендлером; реальный OCR/Vision — внешний, стаб) ───
+  // ─── Обогащение raw→enriched (вызывается хендлером) ───
+  /**
+   * Лёгкая экстракция текстового слоя (PDF/text) — здесь, один раз (парсер переиспользует
+   * textExtract, повторного разбора файла нет). Тяжёлый пайплайн OCR(Vision)→классификация
+   * (DeepSeek)→эмбеддинг — внешний (стаб). Экстракция упала/пусто → state=enriched с
+   * textExtract=null (деградация: файл доступен, парсер не запускается).
+   */
   async enrich(fileId: string) {
     const ws = TenantContext.require();
     const f = await this.prisma.file.findUnique({ where: { id: fileId } });
     if (!f || f.state !== 'raw') return;
-    // СТАБ: реальный пайплайн OCR(Vision)→классификация(DeepSeek)→эмбеддинг — внешний.
-    await this.prisma.file.update({ where: { id: fileId }, data: { state: 'enriched' } });
+    let textExtract: string | null = null;
+    try {
+      const body = await this.storage.getObject(f.s3Key);
+      if (body) textExtract = await extractText(body, f.mime);
+    } catch (e) {
+      // не роняем обогащение: без текста файл всё равно enriched (ищется по имени/scope, §9)
+      this.log.warn(`enrich ${fileId}: экстракция текста не удалась — ${(e as Error).message}`);
+    }
+    await this.prisma.file.update({ where: { id: fileId }, data: { state: 'enriched', textExtract } });
     await this.prisma.$transaction((tx) =>
-      this.outbox.enqueue(tx, newEvent({ type: DOC_EVENTS.fileEnriched, workspaceId: ws, payload: { fileId, textExtract: null, tags: [] } })),
+      this.outbox.enqueue(tx, newEvent({ type: DOC_EVENTS.fileEnriched, workspaceId: ws, payload: { fileId, textExtract, tags: [] } })),
     );
   }
 }

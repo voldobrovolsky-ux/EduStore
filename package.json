@@ -11,5 +11,8 @@
     "dev:web": "npm --workspace apps/web run dev",
     "dev:api": "npm --workspace apps/api run start:dev",
     "build": "npm --workspace apps/web run build && npm --workspace apps/api run build"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
   }
 }

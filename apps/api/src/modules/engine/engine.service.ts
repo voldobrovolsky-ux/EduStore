@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
@@ -9,16 +9,23 @@ import {
   type KppApprovedV1,
   type KppScheduledV1,
   type KtpApprovedV1,
+  type KtpGeneratedV1,
   type LessonPhaseChangedV1,
   type LessonStartedV1,
   type TopicCompletedV1,
   type TopicProgressedV1,
 } from './engine.contract';
+import type { TextbookParsedV1 } from '../textbook/textbook.contract';
 
 // База термового календаря для раскладки уроков на даты (упрощение v1; реальный календарь
 // слот→дата по неделям семестра — уточнение).
 const TERM_START = new Date('2025-09-01T08:00:00Z');
 const DAY_MS = 24 * 3600 * 1000;
+
+// Оценка часов темы по числу карт парсера: fgosHours = max(1, ceil(карт/N)).
+// N — конфиг (ENV KTP_CARDS_PER_HOUR), дефолт 5; тема без карт получает 1 час.
+const CARDS_PER_HOUR = Math.max(1, Number(process.env.KTP_CARDS_PER_HOUR ?? 5) || 5);
+const estimateHours = (cardCount: number) => Math.max(1, Math.ceil(cardCount / CARDS_PER_HOUR));
 
 /**
  * Движок планирования — единственный писатель КТП/Timetable/КПП/Lesson (Архстандарт §8).
@@ -27,6 +34,8 @@ const DAY_MS = 24 * 3600 * 1000;
  */
 @Injectable()
 export class EngineService {
+  private readonly log = new Logger('EngineService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
@@ -58,6 +67,154 @@ export class EngineService {
       );
     });
     return { id: ktpId, status: 'approved' as const, classId: ktp.classId, disciplineId: ktp.disciplineId };
+  }
+
+  /**
+   * Автогенерация черновика КТП по textbook.parsed (движок — единственный писатель КТП, §8).
+   * По materialId резолвит (disciplineId, classId) из Material; далее для пары (discipline, class):
+   *  - нет КТП → создаёт draft; есть approved → создаёт НОВУЮ версию draft (утверждённая — рабочая,
+   *    её не трогаем); есть draft → дополняет его.
+   *  - дополнение идемпотентно: тема ищется по title (дубль не создаётся, карты прикрепляются),
+   *    новая тема — в конец (order = max+1) с fgosHours-оценкой по числу карт и hoursSource='estimated'
+   *    (в UI завуча видно, что это оценка парсера; ручная правка темы снимает флаг).
+   * Всё в одной транзакции с эмиссией ktp.generated.
+   */
+  async generateKtpFromParsed(p: TextbookParsedV1): Promise<{ ktpId: string } | null> {
+    const material = await this.prisma.material.findUnique({ where: { id: p.materialId } });
+    if (!material) return null;
+    if (!material.classId) {
+      // материал без класса (старые загрузки/чужой поток) — КТП не к чему привязать, деградация
+      this.log.warn(`ktp-gen: material=${p.materialId} без classId — пропуск`);
+      return null;
+    }
+    const ws = TenantContext.require();
+    const { classId, disciplineId } = { classId: material.classId, disciplineId: material.disciplineId };
+
+    return this.prisma.$transaction(async (tx) => {
+      const dbTopics = await tx.textbookTopic.findMany({ where: { materialId: material.id }, orderBy: { order: 'asc' } });
+      const dbCards = await tx.textbookCard.findMany({ where: { materialId: material.id }, orderBy: { order: 'asc' } });
+      const cardsByTopic = new Map<string, typeof dbCards>();
+      for (const c of dbCards) {
+        if (!c.topicId) continue; // карта вне тем — в КТП не попадает
+        cardsByTopic.set(c.topicId, [...(cardsByTopic.get(c.topicId) ?? []), c]);
+      }
+
+      // черновик: есть → дополняем; нет (в т.ч. есть только approved) → новая draft-версия
+      let ktp = await tx.ktp.findFirst({
+        where: { classId, disciplineId, status: 'draft' },
+        include: { topics: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      let created = false;
+      if (!ktp) {
+        ktp = { ...(await tx.ktp.create({ data: { workspaceId: ws, classId, disciplineId, status: 'draft' } })), topics: [] };
+        created = true;
+      }
+
+      let maxOrder = ktp.topics.reduce((m, t) => Math.max(m, t.order), 0);
+      let topicsAdded = 0;
+      let cardsAttached = 0;
+      for (const t of dbTopics) {
+        const topicCards = cardsByTopic.get(t.id) ?? [];
+        let target = ktp.topics.find((x) => x.title === t.title);
+        if (!target) {
+          target = await tx.ktpTopic.create({
+            data: {
+              workspaceId: ws,
+              ktpId: ktp.id,
+              order: ++maxOrder,
+              title: t.title,
+              fgosHours: estimateHours(topicCards.length),
+              hoursSource: 'estimated',
+              arCodes: [],
+            },
+          });
+          ktp.topics.push(target);
+          topicsAdded++;
+        }
+        // прикрепить карты к теме КТП (идемпотентно: повтор того же учебника ничего не меняет)
+        const ids = topicCards.filter((c) => c.ktpTopicId !== target.id).map((c) => c.id);
+        if (ids.length) {
+          await tx.textbookCard.updateMany({ where: { id: { in: ids } }, data: { ktpTopicId: target.id } });
+          cardsAttached += ids.length;
+        }
+      }
+
+      if (created || topicsAdded > 0 || cardsAttached > 0) {
+        await this.outbox.enqueue(
+          tx,
+          newEvent<KtpGeneratedV1>({
+            type: ENGINE_EVENTS.ktpGenerated,
+            workspaceId: ws,
+            payload: { ktpId: ktp.id, classId, disciplineId, materialId: material.id, topicsAdded, cardsAttached },
+          }),
+        );
+      }
+      return { ktpId: ktp.id };
+    });
+  }
+
+  /** Правка темы черновика (завуч перед утверждением): часы/название. Ручная правка снимает hoursSource. */
+  async updateKtpTopic(topicId: string, input: { title?: string; fgosHours?: number }, actor: string) {
+    const topic = await this.prisma.ktpTopic.findUnique({ where: { id: topicId }, include: { ktp: true } });
+    if (!topic) throw new NotFoundException('тема КТП не найдена');
+    if (topic.ktp.status !== 'draft') {
+      throw new ConflictException({ code: 'KTP_NOT_DRAFT', message: 'править можно только черновик КТП' });
+    }
+    if (input.fgosHours !== undefined && (!Number.isInteger(input.fgosHours) || input.fgosHours < 1)) {
+      throw new BadRequestException('fgosHours — целое ≥ 1');
+    }
+    const updated = await this.prisma.ktpTopic.update({
+      where: { id: topicId },
+      data: {
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.fgosHours !== undefined ? { fgosHours: input.fgosHours } : {}),
+        hoursSource: null, // тема отредактирована вручную — флаг «оценка парсера» снимается
+      },
+    });
+    this.log.log(`КТП-тема ${topicId} отредактирована (${actor}) — hoursSource снят`);
+    return updated;
+  }
+
+  /**
+   * Наполнение уроков содержанием по kpp.approved: карты каждой темы распределяются по её урокам
+   * равномерно (⌊C/L⌋ на урок, остаток — по одной в первые уроки), порядок карт — как у парсера.
+   * Идемпотентно: повторный kpp.approved пересобирает связи без дублей.
+   */
+  async fillLessonContents(kppId: string): Promise<void> {
+    const kpp = await this.prisma.kpp.findUnique({
+      where: { id: kppId },
+      include: { lessons: { orderBy: { sequenceNo: 'asc' } } },
+    });
+    if (!kpp || kpp.lessons.length === 0) return;
+    const ws = TenantContext.require();
+    const byTopic = new Map<string, typeof kpp.lessons>();
+    for (const l of kpp.lessons) byTopic.set(l.topicId, [...(byTopic.get(l.topicId) ?? []), l]);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.lessonContent.deleteMany({ where: { kppLessonId: { in: kpp.lessons.map((l) => l.id) } } });
+      let placed = 0;
+      for (const [topicId, lessons] of byTopic) {
+        const cards = await tx.textbookCard.findMany({
+          where: { ktpTopicId: topicId },
+          orderBy: [{ materialId: 'asc' }, { order: 'asc' }], // порядок парсера (внутри материала)
+        });
+        if (cards.length === 0) continue;
+        const base = Math.floor(cards.length / lessons.length);
+        const rem = cards.length % lessons.length;
+        let idx = 0;
+        for (let i = 0; i < lessons.length; i++) {
+          const take = base + (i < rem ? 1 : 0);
+          for (let k = 0; k < take; k++) {
+            await tx.lessonContent.create({
+              data: { workspaceId: ws, kppLessonId: lessons[i].id, cardId: cards[idx++].id, order: k + 1 },
+            });
+            placed++;
+          }
+        }
+      }
+      this.log.log(`КПП ${kppId}: карты разложены по урокам (${placed} связей)`);
+    });
   }
 
   // ─────────────── Solver (§3): детерминированная раскладка тем КТП по слотам Timetable, 0 ИИ ───────────────
@@ -187,10 +344,26 @@ export class EngineService {
   async getLesson(id: string) {
     const l = await this.prisma.lesson.findUnique({
       where: { id },
-      include: { kppLesson: { include: { kpp: true } } },
+      include: {
+        kppLesson: {
+          include: {
+            kpp: true,
+            topic: { select: { id: true, title: true, fgosHours: true, hoursSource: true } },
+            contents: { orderBy: { order: 'asc' }, include: { card: { select: { id: true, title: true, content: true } } } },
+          },
+        },
+      },
     });
     if (!l) throw new NotFoundException('урок не найден');
-    return { ...l, startGateOpen: l.kppLesson?.kpp.status === 'approved' };
+    // содержание урока: карты парсера, разложенные по kpp.approved (LessonContent)
+    const contents = (l.kppLesson?.contents ?? []).map((c) => ({
+      id: c.id,
+      order: c.order,
+      cardId: c.card.id,
+      title: c.card.title,
+      content: c.card.content,
+    }));
+    return { ...l, startGateOpen: l.kppLesson?.kpp.status === 'approved', contents };
   }
 
   /** Гейт «провести урок»: state→running ТОЛЬКО при kpp.approved урока (Архстандарт §7). */

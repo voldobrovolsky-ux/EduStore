@@ -12,6 +12,7 @@
     "tenant:check": "ts-node scripts/tenant-isolation-check.ts",
     "storage:check": "ts-node scripts/storage-check.ts",
     "parser:check": "ts-node scripts/parser-check.ts",
+    "flow:check": "ts-node scripts/flow-check.ts",
     "minor:check": "ts-node scripts/minor-safety-check.ts",
     "comm:check": "ts-node scripts/comm-messages-check.ts",
     "pilot:check": "ts-node scripts/pilot-check.ts",
@@ -32,6 +33,7 @@
     "cookie-parser": "^1.4.7",
     "jose": "^5.9.6",
     "openid-client": "^5.7.1",
+    "pdf-parse": "^1.1.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
@@ -41,6 +43,7 @@
     "@types/cookie-parser": "^1.4.8",
     "@types/express": "^4.17.21",
     "@types/node": "^22.7.4",
+    "@types/pdf-parse": "^1.1.5",
     "prisma": "^5.22.0",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
