@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
@@ -54,16 +54,23 @@ export class PilotService {
     return { inviteId: invite.id, token, role: invite.role, displayName: invite.displayName };
   }
 
-  /** Список сотрудников: видны сразу; отмечаем вход и назначен ли (иначе «подготавливаем»). */
+  /** Список сотрудников: видны сразу; вход/назначение; ярлыки назначений; token — для повторного QR. */
   async listStaff() {
     const workspaceId = await this.ensureArchimed();
     return TenantContext.runAsSystem(async () => {
       const invites = await this.prisma.pilotInvite.findMany({ where: { workspaceId }, orderBy: { createdAt: 'asc' } });
       const userIds = invites.flatMap((i) => (i.userId ? [i.userId] : []));
       const assigns = userIds.length
-        ? await this.prisma.teachingAssignment.findMany({ where: { workspaceId, teacherId: { in: userIds } }, select: { teacherId: true } })
+        ? await this.prisma.teachingAssignment.findMany({
+            where: { workspaceId, teacherId: { in: userIds } },
+            include: { class: { select: { label: true } }, subject: { select: { name: true } } },
+          })
         : [];
-      const assigned = new Set(assigns.map((a) => a.teacherId));
+      const byTeacher = new Map<string, string[]>();
+      for (const a of assigns) {
+        const label = `${a.class.label} · ${a.subject.name}`;
+        byTeacher.set(a.teacherId, [...(byTeacher.get(a.teacherId) ?? []), label]);
+      }
       return invites.map((i) => ({
         inviteId: i.id,
         role: i.role,
@@ -72,8 +79,24 @@ export class PilotService {
         status: i.status,
         userId: i.userId,
         loggedIn: !!i.userId,
-        assigned: !!(i.userId && assigned.has(i.userId)),
+        assigned: !!(i.userId && byTeacher.has(i.userId)),
+        assignments: i.userId ? byTeacher.get(i.userId) ?? [] : [],
+        // токен отдаём ТОЛЬКО пока сотрудник не вошёл (повторный показ QR); после входа он не нужен
+        token: i.userId ? null : i.token,
       }));
+    });
+  }
+
+  /** Отозвать приглашение: только пока сотрудник НЕ вошёл (active — уже человек с данными, не отзываем в один клик). */
+  async revokeInvite(inviteId: string) {
+    return TenantContext.runAsSystem(async () => {
+      const invite = await this.prisma.pilotInvite.findUnique({ where: { id: inviteId } });
+      if (!invite) throw new NotFoundException('приглашение не найдено');
+      if (invite.userId) {
+        throw new ConflictException({ code: 'INVITE_ACTIVE', message: 'сотрудник уже вошёл — отзыв приглашения невозможен' });
+      }
+      await this.prisma.pilotInvite.delete({ where: { id: inviteId } });
+      return { ok: true };
     });
   }
 

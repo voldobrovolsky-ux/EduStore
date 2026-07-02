@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { setDevIdentity } from "@/lib/http";
 
 // Роли как их несёт Флёрус (см. ADR-0005). staff EduStore маппит локально → sub-роль.
 export type FlorRole = "owner" | "admin" | "teacher" | "staff" | "parent" | "student";
@@ -66,6 +67,10 @@ export function CurrentUserProvider({
     if (import.meta.env.PROD) return;
     localStorage.setItem(KEY, JSON.stringify(user));
   }, [user]);
+  // HTTP-слой новых экранов шлёт x-florus-* под текущую роль (DEV) — RBAC как в проде.
+  useEffect(() => {
+    setDevIdentity({ role: user.florusRole, subRole: user.subRole });
+  }, [user.florusRole, user.subRole]);
 
   return <C.Provider value={{ user, setUser }}>{children}</C.Provider>;
 }

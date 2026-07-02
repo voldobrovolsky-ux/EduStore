@@ -12,6 +12,7 @@ import type { SectionContext, SectionDescriptor, ToastInput } from "@/sections/t
 import { ToastStack, type Toast } from "@/components/Toasts";
 import { NotificationPanel } from "@/components/NotificationPanel";
 import { Personalize } from "@/app/screens/Personalize";
+import { ScheduleScreen } from "@/app/screens/ScheduleScreen";
 import { SimplePlaceholder } from "@/app/screens/SimplePlaceholder";
 import { useIsMobile } from "@/mobile/useIsMobile";
 import { MobileApp } from "@/mobile/MobileApp";
@@ -70,6 +71,13 @@ export function AppShell() {
       <div className="app">
         <LeftSidebar active={nav} onSelect={setNav} expanded profile={profile} />
         <div className="middle"><Personalize /></div>
+      </div>
+    );
+  } else if (nav === "schedule") {
+    body = (
+      <div className="app">
+        <LeftSidebar active={nav} onSelect={setNav} expanded profile={profile} />
+        <div className="middle"><ScheduleScreen /></div>
       </div>
     );
   } else if (nav !== "workspace") {

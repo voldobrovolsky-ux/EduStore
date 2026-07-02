@@ -138,6 +138,14 @@ function StaffPanel({ ownerKey, staff, onChange, onQr, onErr }: {
       setBusy(false);
     }
   };
+  const revoke = async (inviteId: string) => {
+    try {
+      await pilotApi.revokeStaff(ownerKey, inviteId);
+      await onChange();
+    } catch (e) {
+      onErr((e as Error).message || "Не удалось отозвать");
+    }
+  };
   return (
     <div className="pilot-panel">
       <h3><Icon name="user" size={16} /> Сотрудники</h3>
@@ -146,7 +154,11 @@ function StaffPanel({ ownerKey, staff, onChange, onQr, onErr }: {
         <div className="pilot-row" key={s.inviteId}>
           <div className="grow">
             <div className="name">{s.displayName || (s.phone ? s.phone : "Без имени")}</div>
-            <div className="meta">{s.role === "zavuch" ? "Завуч" : "Учитель"}{s.phone ? ` · ${s.phone}` : ""}</div>
+            <div className="meta">
+              {s.role === "zavuch" ? "Завуч" : "Учитель"}
+              {s.phone ? ` · ${s.phone}` : ""}
+              {s.assignments.length > 0 ? ` · ${s.assignments.join(", ")}` : ""}
+            </div>
           </div>
           {!s.loggedIn ? (
             <span className="pilot-chip role">не вошёл</span>
@@ -154,6 +166,24 @@ function StaffPanel({ ownerKey, staff, onChange, onQr, onErr }: {
             <span className="pilot-chip ok">работает</span>
           ) : (
             <span className="pilot-chip wait">подготовка</span>
+          )}
+          {!s.loggedIn && s.token && (
+            <>
+              <button
+                className="pilot-mini"
+                title="Показать QR ещё раз"
+                onClick={() => onQr({ inviteId: s.inviteId, token: s.token!, role: s.role, displayName: s.displayName })}
+              >
+                QR
+              </button>
+              <button
+                className="pilot-mini danger"
+                title="Отозвать приглашение"
+                onClick={() => void revoke(s.inviteId)}
+              >
+                ✕
+              </button>
+            </>
           )}
         </div>
       ))}

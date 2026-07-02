@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import type { IconName } from "@/admin/ds/Icon";
 import { DisciplinesScreen } from "@/structure/DisciplinesScreen";
 import { DistributionScreen } from "@/structure/DistributionScreen";
+import { KtpApprovalScreen } from "@/structure/KtpApprovalScreen";
 
 // Минимальные кабинеты ролей: навигация в сайдбаре + главная.
 // Раздел с `Screen` показывает реальный экран; без — заглушку.
@@ -35,7 +36,7 @@ export const MINIMAL_CABINETS: Record<MinimalKey, CabinetDef> = {
     sections: [
       { id: "disciplines", label: "Дисциплины", icon: "book", Screen: DisciplinesScreen },
       { id: "distribution", label: "Учителя", icon: "users", Screen: DistributionScreen },
-      { id: "ktp", label: "КТП", icon: "ktp" },
+      { id: "ktp", label: "КТП и КПП", icon: "ktp", Screen: KtpApprovalScreen },
       { id: "schedule", label: "Расписание", icon: "calendar-days" },
     ],
   },
