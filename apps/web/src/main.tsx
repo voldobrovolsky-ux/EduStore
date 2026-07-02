@@ -19,6 +19,8 @@ import { MinimalCabinet } from "@/cabinets/MinimalCabinet";
 import { RoleSwitch } from "@/cabinets/RoleSwitch";
 import { Home } from "@/home/Home";
 import { BindConfirm } from "@/home/BindConfirm";
+import { PilotOwner } from "@/pilot/PilotOwner";
+import { PilotLogin } from "@/pilot/PilotLogin";
 
 // Роутинг кабинета по роли (ADR-0005). teacher и admin — готовые кабинеты,
 // остальные роли — минимальные кабинеты (навигация + главная).
@@ -95,6 +97,11 @@ function Root() {
   const gate = useAuthGate();
   const params = new URLSearchParams(window.location.search);
   const bind = params.get("bind");
+
+  // ВРЕМЕННЫЙ пилотный auth (AUTH_MODE=pilot-qr): owner-экран и QR-вход — публичные роуты.
+  const pilot = params.get("pilot");
+  if (pilot === "owner") return <PilotOwner />;
+  if (pilot === "login") return <PilotLogin token={params.get("token") ?? ""} />;
 
   // DEV-превью главной без входа.
   if (!import.meta.env.PROD && params.get("screen") === "home") return <Home />;
