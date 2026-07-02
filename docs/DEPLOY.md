@@ -88,10 +88,27 @@ docker compose -f docker-compose.prod.yml logs api | grep "provision"
 git pull && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
 
-## 5. Что ещё понадобится (по мере подключения)
-- **S3** (Yandex Object Storage) для файлов/учебников — env `S3_*` (когда появится файлохранилище).
-- **AI-ключи** (YandexGPT/DeepSeek) для генерации КТП/материалов — env, маршрутизация по 152-ФЗ
-  (см. план тестирования/персонализации).
+## 5. S3 (Документохранилище + учебники методкопилки)
+
+Через `.env.prod` — `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`
+(Yandex Object Storage / AWS / любой S3-совместимый — один провайдер, разница только в конфиге).
+Пусто → API поднимается нормально, но `upload-init`/`commit`/скачивание файлов отдают 503 —
+мягкая деградация, не блокирует остальной сервис. Создать бакет и статичный ключ доступа в
+Yandex Cloud (Object Storage → бакет `edustore-prod`, приватный; сервисный аккаунт с ролью
+`storage.editor` → статический ключ), вписать в `.env.prod`, передеплоить.
+
+`SETTINGS_ENC_KEY` — обязателен вместе с S3, если будет использоваться LLM-парсер учебников
+(шифрует `apiKey` внешнего эндпоинта в БД). Сгенерировать: `openssl rand -base64 32`. Без него
+используется слабый dev-дефолт — годится для обкатки, не для прода с реальным API-ключом.
+
+> `STORAGE_MODE=local` (дисковый провайдер вместо S3) — **не для прода**: файлы живут в томе
+> контейнера, не переживают пересборку/масштабирование. Только dev/CI/пилотный e2e-смок.
+
+Провайдер LLM-парсера (endpoint/ключ/модель, regexp↔llm) настраивается **не через env**, а в
+админке (Раздел «Школа» → «Парсер учебников», `WorkspaceSettings` в БД) — per-workspace, с кнопкой
+проверки соединения. Ключ отдаётся обратно только маской.
+
+## 6. Что ещё понадобится (по мере подключения)
 - **Регистрация Флёрус-клиента** (`edustore`) с redirect `https://edustore-flor-group.ru/api/auth/flor/callback`
   и backchannel `…/api/auth/flor/backchannel-logout` (ADR-0005 §регистрация).
 - **Бэкапы Postgres**: `pg_dump` по cron (том `pgdata`).
