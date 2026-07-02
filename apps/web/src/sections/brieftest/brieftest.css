@@ -108,13 +108,22 @@
 .bt-ticket .line + .line { margin-top: 2px; }
 .bt-sheet-foot { margin-top: 18px; font-size: 10.5px; color: #888; display: flex; justify-content: space-between; }
 
-/* ПЕЧАТЬ: на бумагу уходит ТОЛЬКО лист */
+/* ПЕЧАТЬ: на бумагу уходит ТОЛЬКО лист. Нейтрализуем зажимы предков (height:100vh + overflow:hidden
+   + flex у оболочки), иначе лист сплющивается в узкую колонку и режется первой страницей. */
 @media print {
+  html, body, #root, .viewport, .app, .middle, .middle-row, .bt-wrap, .bt-col-main, .bt-print-backdrop, .bt-print-frame {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+    position: static !important;
+  }
   body * { visibility: hidden !important; }
-  .bt-print-backdrop { position: static !important; background: none !important; padding: 0 !important; backdrop-filter: none !important; overflow: visible !important; }
+  .bt-print-backdrop { background: none !important; padding: 0 !important; backdrop-filter: none !important; inset: auto !important; }
   .bt-print-bar { display: none !important; }
   .bt-sheet, .bt-sheet * { visibility: visible !important; }
-  .bt-sheet { box-shadow: none !important; border-radius: 0 !important; padding: 0 !important; }
-  .bt-print-frame { max-width: none !important; }
+  .bt-sheet { box-shadow: none !important; border-radius: 0 !important; padding: 0 !important; width: 100% !important; animation: none !important; }
+  .bt-print-frame { max-width: none !important; width: 100% !important; }
+  .bt-sheet-grid { grid-template-columns: 1fr 1fr !important; }
 }
 @page { margin: 14mm; }

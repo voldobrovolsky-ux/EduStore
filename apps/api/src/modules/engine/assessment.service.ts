@@ -65,7 +65,7 @@ export class AssessmentService {
     const ws = TenantContext.require();
     const bt = await this.prisma.briefTest.findUnique({ where: { id: briefTestId } });
     if (!bt) throw new NotFoundException('летучка не найдена');
-    if (bt.status === 'done') throw new BadRequestException('летучка уже завершена');
+    if (bt.status === 'checked' || bt.status === 'done') throw new BadRequestException('летучка уже проверена');
     return this.prisma.$transaction(async (tx) => {
       const ar = await tx.assessmentResult.create({ data: { workspaceId: ws, briefTestId, source: 'tesseract' } });
       await tx.assessmentResultItem.createMany({

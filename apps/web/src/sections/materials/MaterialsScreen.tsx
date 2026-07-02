@@ -67,6 +67,7 @@ export function MaterialsScreen({ ctx }: SectionProps) {
     }
   };
 
+  const [parsedErr, setParsedErr] = useState(false);
   const openParsed = async (fileId: string) => {
     if (openFileId === fileId) {
       setOpenFileId(null);
@@ -75,10 +76,11 @@ export function MaterialsScreen({ ctx }: SectionProps) {
     }
     setOpenFileId(fileId);
     setParsed(null);
+    setParsedErr(false);
     try {
       setParsed(await materialsApi.parsed(fileId));
     } catch {
-      setParsed({ materialId: null, fileId, topics: [], cards: [] });
+      setParsedErr(true); // ошибка загрузки разбора ≠ «не учебник»
     }
   };
 
@@ -153,7 +155,7 @@ export function MaterialsScreen({ ctx }: SectionProps) {
                 </span>
                 <span className={`mt-badge ${f.state}`}>{STATE_LABEL[f.state] ?? f.state}</span>
               </button>
-              {openFileId === f.id && <ParsedView parsed={parsed} enriched={f.state === "enriched"} />}
+              {openFileId === f.id && <ParsedView parsed={parsed} enriched={f.state === "enriched"} error={parsedErr} onRetry={() => void openParsed(f.id)} />}
             </div>
           ))}
         </div>
@@ -167,8 +169,15 @@ function fileName(f: DocFileDto): string {
   return `Учебник · ${tail.slice(0, 8)}…${tail.includes(".") ? tail.slice(tail.lastIndexOf(".")) : ""}`;
 }
 
-function ParsedView({ parsed, enriched }: { parsed: ParsedResp | null; enriched: boolean }) {
+function ParsedView({ parsed, enriched, error, onRetry }: { parsed: ParsedResp | null; enriched: boolean; error: boolean; onRetry: () => void }) {
   const [open, setOpen] = useState<string | null>(null);
+  if (error)
+    return (
+      <div className="mt-sub" style={{ padding: "10px 4px", display: "flex", alignItems: "center", gap: 10 }}>
+        Не удалось загрузить разбор.
+        <button className="mt-file" style={{ width: "auto", padding: "5px 12px", fontSize: 12.5 }} onClick={onRetry}>Повторить</button>
+      </div>
+    );
   if (!parsed) return <div className="mt-sub" style={{ padding: "10px 4px" }}><span className="mt-spin" style={{ display: "inline-block", verticalAlign: -2, marginRight: 7 }} />Читаем разбор…</div>;
   if (!parsed.materialId) return <div className="mt-sub" style={{ padding: "10px 4px" }}>Это файл дисциплины, но не учебник (загружен вне потока «Материалы»).</div>;
   if (parsed.topics.length === 0 && parsed.cards.length === 0) {
@@ -179,6 +188,7 @@ function ParsedView({ parsed, enriched }: { parsed: ParsedResp | null; enriched:
     );
   }
   const byTopic = (tid: string | null) => parsed.cards.filter((c) => c.topicId === tid);
+  const orphans = byTopic(null); // карты без темы (учебник с § без глав) — тоже показываем
   return (
     <div className="mt-parse" style={{ padding: "10px 2px 2px" }}>
       {parsed.topics.map((t) => {
@@ -205,6 +215,25 @@ function ParsedView({ parsed, enriched }: { parsed: ParsedResp | null; enriched:
           </div>
         );
       })}
+      {orphans.length > 0 && (
+        <div className={`mt-topic${open === "__orphans" ? " is-open" : ""}`}>
+          <button onClick={() => setOpen(open === "__orphans" ? null : "__orphans")}>
+            <Icon name="ktp" size={15} /> Вне тем
+            <span className="mt-count">{orphans.length} карт</span>
+            <span className="chev"><Icon name="chevRight" size={15} /></span>
+          </button>
+          {open === "__orphans" && (
+            <div className="mt-cards">
+              {orphans.map((c) => (
+                <div key={c.id} className="mt-cardrow">
+                  <b>{c.title}</b>
+                  {c.content && <span>{c.content}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

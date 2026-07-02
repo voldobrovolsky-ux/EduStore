@@ -7,7 +7,11 @@ import "./schedule.css";
 
 type Filter = "all" | "upcoming" | "done";
 
-const dayKey = (iso: string) => iso.slice(0, 10);
+// локальный календарный день (не UTC) — иначе уроки попадают в чужой день для не-UTC зон
+const dayKey = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 const fmtDay = (key: string) =>
   new Date(key + "T00:00:00").toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
 
@@ -37,7 +41,7 @@ export function ScheduleScreen() {
     return [...m.entries()];
   }, [lessons, filter]);
 
-  const todayKey = dayKey(new Date().toISOString());
+  const todayKey = dayKey(new Date().toISOString()); // dayKey уже приводит к локальному дню
   const total = lessons?.length ?? 0;
 
   return (

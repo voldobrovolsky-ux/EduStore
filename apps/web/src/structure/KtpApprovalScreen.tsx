@@ -43,7 +43,7 @@ export function KtpApprovalScreen() {
         kind: "ok",
         text: res.kpp
           ? `КТП утверждён. Solver собрал КПП: ${res.kpp.lessonCount} уроков — проверьте и утвердите ниже.`
-          : "КТП утверждён, но КПП не собрался (см. слоты Timetable).",
+          : `КТП утверждён, но КПП не собрался: ${reasonText(res.reason)}`,
       });
       refresh();
     } catch (e) {
@@ -149,6 +149,21 @@ export function KtpApprovalScreen() {
       ))}
     </div>
   );
+}
+
+function reasonText(code: string | null | undefined): string {
+  switch (code) {
+    case "INSUFFICIENT_SLOTS":
+      return "в сетке Timetable меньше слотов, чем часов КТП — расширьте расписание класса.";
+    case "NO_TIMETABLE":
+      return "для класса нет сетки Timetable — сначала соберите расписание.";
+    case "KPP_IN_USE":
+      return "уже есть идущие/проведённые уроки — пересборка заблокирована.";
+    case "NO_APPROVED_KTP":
+      return "нет утверждённого КТП (обновите страницу).";
+    default:
+      return code ? `${code}.` : "проверьте сетку Timetable и часы ФГОС.";
+  }
 }
 
 function humanErr(e: HttpError): string {

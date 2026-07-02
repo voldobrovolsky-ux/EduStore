@@ -12,6 +12,7 @@ import {
 } from './pilot.contract';
 
 const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // как у OIDC-сессии
+const INVITE_TTL_MS = 7 * 24 * 3600 * 1000; // одноразовый инвайт живёт неделю
 
 /**
  * Пилотный auth (AUTH_MODE=pilot-qr, ВРЕМЕННЫЙ). Owner-экран: добавить сотрудника → QR, создать
@@ -128,11 +129,15 @@ export class PilotService {
   async resolveInvite(input: { token: string; phone?: string }): Promise<{ sid: string; userId: string }> {
     const invite = await TenantContext.runAsSystem(() => this.prisma.pilotInvite.findUnique({ where: { token: input.token } }));
     if (!invite) throw new NotFoundException('приглашение не найдено или истекло');
+    // одноразовость: токен используется РОВНО один раз (bootstrap). После входа — только cookie-сессия;
+    // повторный вход = новый инвайт от owner. Закрывает replay токена из URL/истории/логов.
+    if (invite.userId) throw new ConflictException({ code: 'INVITE_USED', message: 'приглашение уже использовано — попросите новый QR' });
+    if (Date.now() - invite.createdAt.getTime() > INVITE_TTL_MS) throw new NotFoundException('приглашение истекло — попросите новый QR');
     const { florusRole, subRole } = toSessionRole(invite.role as PilotRole);
     const name = invite.displayName ?? (input.phone ? `Сотрудник ${input.phone}` : 'Сотрудник');
 
     return TenantContext.runAsSystem(async () => {
-      let userId = invite.userId;
+      let userId = invite.userId; // всегда null здесь (одноразовость проверена выше)
       if (!userId) {
         // первый вход — генерируем florus_user_id (реальный Флёр-sub позже = отдельная сверка идентичности)
         userId = `pilot-${randomBytes(12).toString('hex')}`;

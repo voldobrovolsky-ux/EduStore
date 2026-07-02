@@ -42,6 +42,7 @@ export interface KtpApproveOutcome {
   id: string;
   status: string;
   kpp: { id: string; status: string; lessonCount: number } | null;
+  reason?: string | null; // код причины, если КПП не собрался (INSUFFICIENT_SLOTS/NO_TIMETABLE/…)
 }
 export interface KppLessonDto {
   id: string;

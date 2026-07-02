@@ -106,7 +106,7 @@ export function AppShell() {
           />
           <div className="middle-row">
             <SectionShell
-              key={workSection + ":" + (activeClass?.classId ?? "")}
+              key={workSection + ":" + (activeClass?.id ?? "")}
               descriptor={descriptor}
               ctx={ctx}
               active={workSection}
