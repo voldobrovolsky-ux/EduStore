@@ -133,8 +133,9 @@
 
 | purpose | Гейт в коде |
 |---|---|
-| `data_processing`, `comms`, `media` | ⚠ нигде (`has()` не вызывается) — AR-29 |
-| `predictive_profiling` | ⚠ нигде, при живом ИОМ-скоринге и праве `psych.risk.view` — AR-29 |
+| `predictive_profiling` | **Реализовано (AR-29, G-13)**: `analytics/class` исключает ученика из atRisk с явной пометкой (`profilingConsent.withoutConsent`); `GET iom/:studentId` → `403 NO_PROFILING_CONSENT`; отзыв = append `granted=false`; сигналы копятся независимо |
+| `media` | слот: гейт публикаций — в Репутационном параметре (его поверхности ещё нет) |
+| `data_processing`, `comms` | слот: заводится по мере появления поверхностей (рассылки/обработка) |
 
 ### `GradeSource` / `LessonMode`
 
@@ -145,13 +146,18 @@
 
 ## Сводка дыр (вход для дизайн-спеки)
 
-1. Нет обратных переходов: `Ktp.approved`, `Kpp.approved`, `Lesson.done`, `File.archived` — терминальны де-факто, отмена/возврат не определены.
+Закрыто реализацией 2026-07-28: ~~`ConsentPurpose` не гейтится~~ (predictive_profiling —
+G-13; media/comms — слоты поверхностей); ~~авторинг Timetable отсутствует~~ (экран завуча
+«Сетка расписания» + `TIMETABLE_IN_USE`, G-15); снятие оценки получило событие
+`journal.grade.removed.v1` (аудит); двойной журнал устранён (AR-4, G-12).
+
+Остаются (кандидаты в следующие инкременты / дизайн-спеку):
+1. Нет обратных переходов: `Ktp.approved` (прямой возврат), `Kpp.approved`, `Lesson.done`, `File.archived` — отмена/возврат не определены.
 2. `Lesson.complete` не эмитит событие — конец урока невидим для каскадов.
-3. DLQ (`OutboxEvent.FAILED`) — тупик без replay и без операторского экрана.
+3. DLQ (`OutboxEvent.FAILED`) — тупик без replay и без операторского экрана (G-17).
 4. `BriefTest.done` и Ack-реестр — нет дома на экране.
 5. `Channel.dm` — инвариант есть, эндпоинта нет.
-6. `ConsentPurpose` — ни одно значение не гейтится (AR-29).
-7. `LessonMode.hybrid|manual` — мёртвые значения enum.
-8. Скан без текстового слоя → `textExtract=null` → материал навсегда без тем/карт; Vision-OCR — слот (AR-39).
-9. Устройственные потоки in-memory — теряются на рестарте (принято для v1, зафиксировать в спеке).
-10. Авторинг Timetable отсутствует — сетка слотов только из seed (AR-38, остаток узла).
+6. `LessonMode.hybrid|manual` — мёртвые значения enum.
+7. Скан без текстового слоя → `textExtract=null` → материал без тем/карт; Vision-OCR — слот (AR-39).
+8. Устройственные потоки in-memory — теряются на рестарте (принято для v1).
+9. Ручное создание КТП без учебника не определено (остаток AR-38).
