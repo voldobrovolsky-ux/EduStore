@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import type { SessionUser } from '../../common/auth/flor.service';
 import { ParserSettingsService } from './parser-settings.service';
 import { ParserService } from './parser.service';
+import { RequirePermission } from '../../common/authz/require-permission.decorator';
 
 interface PutBody {
   provider?: string; // regexp | llm
@@ -33,12 +34,14 @@ export class ParserSettingsController {
     return this.settings.getView();
   }
 
+  @RequirePermission('settings.parser.manage')
   @Put()
   put(@Body() body: PutBody, @Req() req: Request & { user?: SessionUser }) {
     return this.settings.put(body, this.actor(req));
   }
 
   /** «Проверить соединение»: короткий тестовый текст в настроенный эндпоинт → OK / текст ошибки. */
+  @RequirePermission('settings.parser.manage')
   @Post('test')
   test() {
     return this.parser.testLlmConnection();

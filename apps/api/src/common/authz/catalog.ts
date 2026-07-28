@@ -29,6 +29,16 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'structure.disciplines.manage', section: 'structure', screen: 'disciplines', action: 'manage', label: 'Дисциплины' },
   { code: 'structure.distribution.manage', section: 'structure', screen: 'distribution', action: 'manage', label: 'Распределение учителей' },
   { code: 'structure.devices.manage', section: 'structure', screen: 'devices', action: 'manage', label: 'Устройства-киоски' },
+  { code: 'structure.classes.manage', section: 'structure', screen: 'classes', action: 'manage', label: 'Классы и подгруппы' },
+  { code: 'contingent.students.manage', section: 'contingent', screen: 'students', action: 'manage', label: 'Зачисление/учёт учеников' },
+  { code: 'settings.parser.manage', section: 'settings', screen: 'parser', action: 'manage', label: 'Настройки парсера учебников' },
+  // документохранилище (AR-35): manage = свои файлы/теги/версии; publish = статус-FSM/доступ/шаринг
+  { code: 'doc.files.manage', section: 'doc', screen: 'files', action: 'manage', label: 'Файлы — загрузка/теги/версии' },
+  { code: 'doc.files.publish', section: 'doc', screen: 'files', action: 'publish', label: 'Файлы — статус/доступ/шаринг' },
+  // согласия 152-ФЗ (AR-29/AR-30): запись — любая аутентифицированная роль за себя/подопечного
+  // (source-валидация в сервисе); заявка на удаление — родитель/админ/завуч
+  { code: 'consent.record', section: 'consent', screen: 'consent', action: 'record', label: 'Фиксация согласия' },
+  { code: 'consent.deletion.request', section: 'consent', screen: 'consent', action: 'deletion', label: 'Заявка на удаление ПДн' },
   // кабинет учителя
   { code: 'journal.grades.view', section: 'journal', screen: 'grades', action: 'view', label: 'Журнал — просмотр' },
   { code: 'journal.grades.edit', section: 'journal', screen: 'grades', action: 'edit', label: 'Журнал — оценки' },
@@ -73,12 +83,16 @@ export const PERMISSIONS: PermissionDef[] = [
 // психолог). admin/owner — tenancy-роли Флёра (RoleAssignment), в токен не приходят (канон
 // §7.4) → пакетов на них нет; их кабинеты ведёт панель Флёра/walk-up, не каталог RP.
 export const ROLE_PACKAGES: RolePackageDef[] = [
-  { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'materials.textbook.upload', 'comm.channel.manage', 'notes.teacher.edit', 'lesson.conduct', 'schedule.view'] },
-  { key: 'zavuch', cabinet: 'zavuch', label: 'Кабинет завуча', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'planning.ktp.view', 'planning.ktp.edit', 'planning.ktp.approve', 'planning.kpp.approve', 'standards.assessment.manage', 'standards.org.manage', 'standards.fgos.approve', 'comm.channel.manage', 'comm.announcement.post', 'schedule.build', 'schedule.view'] },
-  { key: 'methodist', cabinet: 'methodist', label: 'Кабинет методиста', permissions: ['structure.disciplines.manage', 'methodics.umk.view', 'methodics.rp.view', 'standards.timing.manage', 'methodics.manage', 'courses.manage', 'curation.assign', 'comm.channel.manage'] },
-  { key: 'parent', cabinet: 'parent', label: 'Кабинет родителя', permissions: ['diary.child.view', 'grades.child.view', 'schedule.view'] },
-  { key: 'student', cabinet: 'student', label: 'Кабинет ученика', permissions: ['tasks.view', 'schedule.view', 'progress.view'] },
-  { key: 'psychologist', cabinet: 'psychologist', label: 'Кабинет психолога', permissions: ['psych.cases.view', 'psych.sessions.view', 'psych.risk.view'] },
+  { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'materials.textbook.upload', 'comm.channel.manage', 'notes.teacher.edit', 'lesson.conduct', 'schedule.view', 'doc.files.manage', 'consent.record'] },
+  { key: 'zavuch', cabinet: 'zavuch', label: 'Кабинет завуча', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'structure.classes.manage', 'contingent.students.manage', 'planning.ktp.view', 'planning.ktp.edit', 'planning.ktp.approve', 'planning.kpp.approve', 'standards.assessment.manage', 'standards.org.manage', 'standards.fgos.approve', 'comm.channel.manage', 'comm.announcement.post', 'schedule.build', 'schedule.view', 'doc.files.manage', 'doc.files.publish', 'consent.record', 'consent.deletion.request'] },
+  { key: 'methodist', cabinet: 'methodist', label: 'Кабинет методиста', permissions: ['structure.disciplines.manage', 'methodics.umk.view', 'methodics.rp.view', 'standards.timing.manage', 'methodics.manage', 'courses.manage', 'curation.assign', 'comm.channel.manage', 'doc.files.manage', 'doc.files.publish', 'consent.record'] },
+  { key: 'parent', cabinet: 'parent', label: 'Кабинет родителя', permissions: ['diary.child.view', 'grades.child.view', 'schedule.view', 'consent.record', 'consent.deletion.request'] },
+  { key: 'student', cabinet: 'student', label: 'Кабинет ученика', permissions: ['tasks.view', 'schedule.view', 'progress.view', 'consent.record'] },
+  { key: 'psychologist', cabinet: 'psychologist', label: 'Кабинет психолога', permissions: ['psych.cases.view', 'psych.sessions.view', 'psych.risk.view', 'consent.record'] },
+  // admin — организационная роль из florus_orgs[].role (провижинится в Membership и сессию),
+  // НЕ путать с tenancy-ролями панели Флёра (operator/workspace_admin, в токен не приходят).
+  // Кабинет админа (AdminApp) работает по этому пакету — уточнение AR-16 в AR-35.
+  { key: 'admin', cabinet: 'admin', label: 'Панель управления школой', permissions: ['structure.classes.manage', 'structure.disciplines.manage', 'structure.distribution.manage', 'structure.devices.manage', 'contingent.students.manage', 'settings.parser.manage', 'consent.record', 'consent.deletion.request'] },
 ];
 
 /** Идемпотентно засеять каталог в БД из канонического определения (boot + сид). */
