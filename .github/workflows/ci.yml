@@ -71,6 +71,7 @@ jobs:
           npm --workspace apps/api run cascade:demo
           npm --workspace apps/api run events:check
           npm --workspace apps/api run consent:check
+          npm --workspace apps/api run timetable:check
       - name: Chromium для смока
         run: npx playwright install --with-deps chromium
       - name: Build API + Web

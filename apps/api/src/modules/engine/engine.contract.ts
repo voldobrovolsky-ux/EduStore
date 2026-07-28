@@ -9,6 +9,7 @@ export const ENGINE_EVENTS = {
   kppScheduled: 'planning.kpp.scheduled.v1',
   kppApproved: 'planning.kpp.approved.v1',
   scheduleBuilt: 'planning.schedule.built.v1',
+  timetableUpdated: 'planning.timetable.updated.v1', // AR-38: завуч сохранил сетку (типовая неделя)
   lessonStarted: 'lesson.lesson.started.v1',
   lessonPhaseChanged: 'lesson.phase.changed.v1',
   // сигналы результата → ИОМ (Архстандарт §6). attendance/topic несут реальный studentId.

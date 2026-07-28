@@ -95,7 +95,25 @@ export const eduApi = {
   kppList: (classId?: string, disciplineId?: string) =>
     http<KppDto[]>(`${BASE}/kpp${qs({ classId, disciplineId })}`),
   approveKpp: (id: string) => http<{ id: string; status: string }>(`${BASE}/kpp/${id}/approve`, { method: "POST", body: "{}" }),
+
+  // Сетка расписания (AR-38): типовая неделя класса; движок — единственный писатель
+  timetable: (classId?: string) => http<TimetableDto[]>(`${BASE}/timetable${qs({ classId })}`),
+  saveTimetable: (classId: string, slots: { day: number; position: number; durationMin?: number }[]) =>
+    http<TimetableDto>(`${BASE}/timetable`, { method: "POST", body: JSON.stringify({ classId, slots }) }),
 };
+
+export interface TimetableSlotDto {
+  id: string;
+  day: number; // 1..7
+  position: number;
+  durationMin: number;
+}
+export interface TimetableDto {
+  id: string;
+  classId: string;
+  source: string;
+  slots: TimetableSlotDto[];
+}
 
 function qs(params: Record<string, string | undefined>): string {
   const p = Object.entries(params).filter(([, v]) => v) as [string, string][];

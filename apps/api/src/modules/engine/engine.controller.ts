@@ -105,6 +105,18 @@ export class EngineController {
     return this.engine.getTimetable(classId);
   }
 
+  /** AR-38: завуч сохраняет сетку класса (типовая неделя). Движок — единственный писатель. */
+  @RequirePermission('schedule.build')
+  @Post('timetable')
+  async upsertTimetable(
+    @Body() body: { classId: string; slots: { day: number; position: number; durationMin?: number }[] },
+    @Req() req: Request & { user?: SessionUser },
+  ) {
+    const res = await this.engine.upsertTimetable(body.classId, body.slots ?? [], this.actor(req));
+    await this.dispatcher.drain();
+    return res;
+  }
+
   @Get('schedule/me')
   scheduleMe(@Req() req: Request & { user?: SessionUser }) {
     return this.engine.scheduleMe(this.actor(req));
