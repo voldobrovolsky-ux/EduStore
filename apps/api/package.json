@@ -18,7 +18,8 @@
     "pilot:check": "ts-node scripts/pilot-check.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "authz:check": "ts-node scripts/authz-coverage-check.ts"
+    "authz:check": "ts-node scripts/authz-coverage-check.ts",
+    "events:check": "ts-node scripts/event-naming-check.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1077.0",

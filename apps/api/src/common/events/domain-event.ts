@@ -3,6 +3,20 @@ import { randomUUID } from 'node:crypto';
 /** Предел глубины каскада — защита от петель (A→B→A). */
 export const MAX_CASCADE_DEPTH = 12;
 
+/**
+ * Канон имени события (AR-23): `<домен>.<агрегат>.<глаголПрош>.v<N>` — ровно 4 сегмента,
+ * версия обязательна. Валидируется на СОЗДАНИИ события (fail-fast у эмиттера, G-16).
+ */
+export const EVENT_TYPE_RE = /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.v\d+$/;
+
+export function assertCanonicalEventType(type: string): void {
+  if (!EVENT_TYPE_RE.test(type)) {
+    throw new Error(
+      `событие "${type}" нарушает канон AR-23 "<домен>.<агрегат>.<глаголПрош>.v<N>" (см. docs/AR-REGISTRY.md)`,
+    );
+  }
+}
+
 /** Единый конверт события (см. docs/PARAMETERS.md §3). */
 export interface DomainEvent<T = unknown> {
   id: string; // идемпотентный ключ (= Nats-Msg-Id в проде)
@@ -25,6 +39,7 @@ export function newEvent<T>(args: {
   causationId?: string;
   depth?: number;
 }): DomainEvent<T> {
+  assertCanonicalEventType(args.type);
   const id = randomUUID();
   return {
     id,

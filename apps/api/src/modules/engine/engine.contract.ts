@@ -1,25 +1,26 @@
 /**
- * События движка планирования (Архстандарт §6 — мастер-каталог). Subjects `edustore.<домен>.<событие>`,
+ * События движка планирования (Архстандарт §6 — мастер-каталог). Subjects — канон AR-23
+ * `<домен>.<агрегат>.<глаголПрош>.v<N>`,
  * на kernel-outbox (DomainEvent-конверт). Имена существующих subject'ов не меняются — только новые.
  */
 export const ENGINE_EVENTS = {
-  ktpGenerated: 'edustore.ktp.generated',
-  ktpApproved: 'edustore.ktp.approved',
-  kppScheduled: 'edustore.kpp.scheduled',
-  kppApproved: 'edustore.kpp.approved',
-  scheduleBuilt: 'edustore.schedule.built',
-  lessonStarted: 'edustore.lesson.started',
-  lessonPhaseChanged: 'edustore.lesson.phase.changed',
+  ktpGenerated: 'planning.ktp.generated.v1',
+  ktpApproved: 'planning.ktp.approved.v1',
+  kppScheduled: 'planning.kpp.scheduled.v1',
+  kppApproved: 'planning.kpp.approved.v1',
+  scheduleBuilt: 'planning.schedule.built.v1',
+  lessonStarted: 'lesson.lesson.started.v1',
+  lessonPhaseChanged: 'lesson.phase.changed.v1',
   // сигналы результата → ИОМ (Архстандарт §6). attendance/topic несут реальный studentId.
-  attendanceMarked: 'edustore.attendance.marked',
-  topicProgressed: 'edustore.topic.progressed', // нетерминальное
-  topicCompleted: 'edustore.topic.completed', // терминальное (mastery)
+  attendanceMarked: 'lesson.attendance.marked.v1',
+  topicProgressed: 'lesson.topic.progressed.v1', // нетерминальное
+  topicCompleted: 'lesson.topic.completed.v1', // терминальное (mastery)
   // петля летучки. brieftest по присутствующим (КОДЫ); assessment.checked несёт studentCode (§3).
-  brieftestGenerated: 'edustore.brieftest.generated',
-  assessmentChecked: 'edustore.assessment.checked',
+  brieftestGenerated: 'assessment.brieftest.generated.v1',
+  assessmentChecked: 'assessment.result.checked.v1',
   // журнал — только grade.posted (реальный studentId); персонализация — ktp.shift.proposed (предложение)
-  gradePosted: 'edustore.grade.posted',
-  ktpShiftProposed: 'edustore.ktp.shift.proposed',
+  gradePosted: 'journal.grade.posted.v1',
+  ktpShiftProposed: 'planning.ktp_shift.proposed.v1',
 } as const;
 
 export interface AttendanceMarkedV1 {

@@ -1,10 +1,10 @@
 /**
- * События учебников/парсера (Архстандарт §6, namespace edustore.textbook.*).
+ * События учебников/парсера (Архстандарт §6, домен textbook.*, канон AR-23).
  * Замыкает вход в верх пайплайна движка: doc.file.enriched → textbook.parsed → КТП.
  */
 export const TEXTBOOK_EVENTS = {
-  uploaded: 'edustore.textbook.uploaded', // учитель загрузил учебник (Material создан)
-  parsed: 'edustore.textbook.parsed', // парсер разобрал textExtract на темы/карты
+  uploaded: 'textbook.material.uploaded.v1', // учитель загрузил учебник (Material создан)
+  parsed: 'textbook.material.parsed.v1', // парсер разобрал textExtract на темы/карты
 } as const;
 
 export interface TextbookUploadedV1 {

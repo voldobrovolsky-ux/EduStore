@@ -126,12 +126,12 @@ async function main() {
   check('КТП-черновик создан (ktp.generated)', !!draft && draft.topics.length === 2);
   check('fgosHours = ceil(7/5)=2 и ceil(3/5)=1', draft?.topics[0]?.fgosHours === 2 && draft?.topics[1]?.fgosHours === 1);
   check('темы помечены hoursSource=estimated', draft?.topics.every((t) => t.hoursSource === 'estimated') ?? false);
-  const ktpGen = await TenantContext.runAsSystem(() => prisma.outboxEvent.count({ where: { workspaceId: WS, type: 'edustore.ktp.generated' } }));
+  const ktpGen = await TenantContext.runAsSystem(() => prisma.outboxEvent.count({ where: { workspaceId: WS, type: 'planning.ktp.generated.v1' } }));
   check('событие ktp.generated эмитировано', ktpGen >= 1);
 
   // идемпотентность: переигровка textbook.parsed не плодит дубли
   const evt = await TenantContext.runAsSystem(() =>
-    prisma.outboxEvent.findFirst({ where: { workspaceId: WS, type: 'edustore.textbook.parsed' }, orderBy: { createdAt: 'asc' } }),
+    prisma.outboxEvent.findFirst({ where: { workspaceId: WS, type: 'textbook.material.parsed.v1' }, orderBy: { createdAt: 'asc' } }),
   );
   await TenantContext.runAsSystem(() => prisma.outboxEvent.update({ where: { id: evt!.id }, data: { status: 'PENDING' } }));
   await dispatcher.drain();

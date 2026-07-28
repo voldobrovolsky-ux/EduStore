@@ -44,11 +44,11 @@ export type AnnouncementAudience = (typeof ANNOUNCEMENT_AUDIENCES)[number];
 export const ACK_STATES = ['sent', 'delivered', 'read', 'acknowledged'] as const;
 export type AckState = (typeof ACK_STATES)[number];
 
-/** События Communitoria (namespace edustore.comm.*, конвенция kernel edustore.<домен>.<событие>). */
+/** События Communitoria (домен comm.*, канон AR-23 `<домен>.<агрегат>.<глаголПрош>.v<N>`). */
 export const COMM_EVENTS = {
-  messageSent: 'edustore.comm.message.sent',
-  announcementPosted: 'edustore.comm.announcement.posted',
-  ackRecorded: 'edustore.comm.ack.recorded',
+  messageSent: 'comm.message.sent.v1',
+  announcementPosted: 'comm.announcement.posted.v1',
+  ackRecorded: 'comm.ack.recorded.v1',
 } as const;
 
 export interface MessageSentV1 {
