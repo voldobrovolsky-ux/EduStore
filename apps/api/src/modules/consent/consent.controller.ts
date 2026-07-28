@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { ConsentPurpose, ConsentSource } from '@prisma/client';
 import type { SessionUser } from '../../common/auth/flor.service';
 import { ConsentService } from './consent.service';
+import { RequirePermission } from '../../common/authz/require-permission.decorator';
 
 interface RecordBody {
   subjectUserId: string;
@@ -24,6 +25,7 @@ interface DeletionBody {
 export class ConsentController {
   constructor(private readonly consent: ConsentService) {}
 
+  @RequirePermission('consent.record')
   @Post()
   record(@Body() body: RecordBody, @Req() req: Request & { user?: SessionUser }) {
     return this.consent.record({
@@ -47,6 +49,7 @@ export class ConsentController {
     return { subjectUserId, purpose, granted: await this.consent.has(subjectUserId, purpose) };
   }
 
+  @RequirePermission('consent.deletion.request')
   @Post('deletion-request')
   requestDeletion(@Body() body: DeletionBody, @Req() req: Request & { user?: SessionUser }) {
     return this.consent.requestDeletion(body.subjectUserId, req.user?.florusUserId ?? 'system', body.reason);

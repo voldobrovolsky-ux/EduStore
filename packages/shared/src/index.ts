@@ -187,3 +187,15 @@ export const API_ROUTES = {
   notes: "/api/teacher/notes",
   notifications: "/api/notifications",
 } as const;
+
+// ─────────────────────────── структура школы (AR-36: единый источник фронт↔бэк) ───────────────────────────
+export interface StSubGroup { id: string; name: string }
+export interface StClass { id: string; label: string; parallel: number; letter: string; students: number; subGroups: StSubGroup[] }
+export interface StSubject { id: string; name: string; color: string }
+export interface StAssignment { id: string; classId: string; classLabel: string; subjectId: string; subjectName: string; subGroupId: string | null }
+export interface StTeacher { id: string; name: string; assignments: StAssignment[] }
+export interface StDevice { id: string; name: string; boundBy: string | null; boundAt: string }
+
+// ─────────────────────────── сетка расписания (AR-38) ───────────────────────────
+export interface TimetableSlotDto { id: string; day: number; position: number; durationMin: number }
+export interface TimetableDto { id: string; classId: string; source: string; slots: TimetableSlotDto[] }

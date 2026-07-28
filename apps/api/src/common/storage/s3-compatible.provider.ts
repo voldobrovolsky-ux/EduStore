@@ -69,6 +69,18 @@ export class S3CompatibleProvider implements StorageProvider {
     }
   }
 
+  async getObject(key: string): Promise<Buffer | null> {
+    try {
+      const r = await this.getClient().send(new GetObjectCommand({ Bucket: this.config.bucket, Key: key }));
+      if (!r.Body) return null;
+      return Buffer.from(await r.Body.transformToByteArray());
+    } catch (e) {
+      const err = e as { name?: string; $metadata?: { httpStatusCode?: number } };
+      if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) return null;
+      throw e;
+    }
+  }
+
   async deleteObject(key: string): Promise<void> {
     await this.getClient().send(new DeleteObjectCommand({ Bucket: this.config.bucket, Key: key }));
   }

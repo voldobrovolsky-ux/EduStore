@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Put, Query } from '@nestjs/common';
 import type { LessonDetail, LessonStation } from '@edustore/shared';
 import { PlanningService, UpdateLessonInput } from './planning.service';
+import { RequirePermission } from '../../common/authz/require-permission.decorator';
 
 // Маршруты планирования живут под /api/teacher/* (как в контракте API_ROUTES).
 @Controller('teacher')
@@ -23,6 +24,7 @@ export class PlanningController {
   }
 
   /** PUT /api/teacher/lesson/:lessonId — обновить ДЗ/цели/страницы. */
+  @RequirePermission('lesson.conduct')
   @Put('lesson/:lessonId')
   updateLesson(
     @Param('lessonId') lessonId: string,

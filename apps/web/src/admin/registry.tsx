@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import type { IconName } from "./ds/Icon";
 import { StructureScreen } from "@/structure/StructureScreen";
 import { DevicesScreen } from "./screens/devices";
+import { ParserSettingsScreen } from "./screens/parser-settings";
 
 export interface AdminSubsection {
   id: string;
@@ -27,6 +28,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     subsections: [
       { id: "structure", label: "Классы и подгруппы", Screen: StructureScreen },
       { id: "devices", label: "Сеть устройств", Screen: DevicesScreen },
+      { id: "parser", label: "Парсер учебников", Screen: ParserSettingsScreen },
     ],
   },
 ];

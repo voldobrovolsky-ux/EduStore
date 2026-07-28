@@ -112,12 +112,23 @@ export function MJournal({
   onSelectClass: (c: TeacherClass) => void;
   query: string;
 }) {
-  const { data, loading, flash, setGrade } = journal;
+  const { data, loading, flash, error, setGrade } = journal;
   const q = (query || "").trim().toLowerCase();
   const rows = (data?.rows ?? []).filter((r) => !q || r.name.toLowerCase().includes(q));
 
   return (
     <div className="work-anim">
+      {error && (
+        <div
+          role="alert"
+          style={{
+            margin: "0 0 8px", padding: "10px 12px", borderRadius: 10, fontSize: 13,
+            background: "rgba(220,38,38,.12)", color: "#DC2626", border: "1px solid rgba(220,38,38,.3)",
+          }}
+        >
+          {error}
+        </div>
+      )}
       <div className="flags" style={{ marginBottom: 4 }}>
         {classes.map((c) => (
           <button

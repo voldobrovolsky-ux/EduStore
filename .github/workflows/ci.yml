@@ -22,3 +22,70 @@ jobs:
         run: npm --workspace apps/api run build
       - name: Build Web
         run: npm --workspace apps/web run build
+
+  # Сквозной поток «учебник → КТП → КПП → содержание уроков»:
+  # flow:check — интеграционные проверки на живом Postgres (25 шт.);
+  # e2e/smoke-textbook.mjs — живой Chromium-смок (owner → QR-вход → загрузка PDF →
+  # черновик КТП → утверждения → расписание с карточками), скриншоты — артефакт.
+  flow-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: edustore
+          POSTGRES_PASSWORD: edustore
+          POSTGRES_DB: edustore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U edustore"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://edustore:edustore@localhost:5432/edustore?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Install
+        run: npm install
+      - name: Prisma generate + migrate
+        run: |
+          npx prisma generate --schema apps/api/prisma/schema.prisma
+          npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+      - name: Flow check (интеграционный, 25 проверок)
+        run: npm --workspace apps/api run flow:check
+      - name: Существующие проверки (парсер, пилот, тенант, RBAC, миноры, comm, каскад)
+        run: |
+          npm --workspace apps/api run seed
+          npm --workspace apps/api run parser:check
+          npm --workspace apps/api run pilot:check
+          npm --workspace apps/api run tenant:check
+          npm --workspace apps/api run authz:check
+          npm --workspace apps/api run minor:check
+          npm --workspace apps/api run comm:check
+          npm --workspace apps/api run cascade:demo
+          npm --workspace apps/api run events:check
+          npm --workspace apps/api run consent:check
+          npm --workspace apps/api run timetable:check
+      - name: Chromium для смока
+        run: npx playwright install --with-deps chromium
+      - name: Build API + Web
+        run: |
+          npm --workspace apps/api run build
+          npm --workspace apps/web run build
+      - name: Смок-БД
+        run: PGPASSWORD=edustore psql -h localhost -U edustore -d edustore -c 'CREATE DATABASE edustore_smoke;'
+      - name: Chromium-смок сквозного потока
+        run: node e2e/smoke-textbook.mjs
+      - name: Скриншоты смока — артефакт
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshots
+          path: e2e/screenshots/
+          if-no-files-found: ignore

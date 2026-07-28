@@ -40,6 +40,13 @@ export class EngineController {
     return this.engine.getKtp(classId, disciplineId);
   }
 
+  /** Правка темы черновика КТП (завуч перед утверждением): часы/название; снимает hoursSource. */
+  @RequirePermission('planning.ktp.edit')
+  @Post('ktp/topics/:id')
+  updateKtpTopic(@Param('id') id: string, @Body() body: { title?: string; fgosHours?: number }, @Req() req: Request & { user?: SessionUser }) {
+    return this.engine.updateKtpTopic(id, body, this.actor(req));
+  }
+
   /** Завуч утверждает КТП → ktp.approved → (inline) Solver раскладывает КПП (§7). */
   @RequirePermission('planning.ktp.approve')
   @Post('ktp/:id/approve')
@@ -96,6 +103,18 @@ export class EngineController {
   @Get('timetable')
   getTimetable(@Query('classId') classId?: string) {
     return this.engine.getTimetable(classId);
+  }
+
+  /** AR-38: завуч сохраняет сетку класса (типовая неделя). Движок — единственный писатель. */
+  @RequirePermission('schedule.build')
+  @Post('timetable')
+  async upsertTimetable(
+    @Body() body: { classId: string; slots: { day: number; position: number; durationMin?: number }[] },
+    @Req() req: Request & { user?: SessionUser },
+  ) {
+    const res = await this.engine.upsertTimetable(body.classId, body.slots ?? [], this.actor(req));
+    await this.dispatcher.drain();
+    return res;
   }
 
   @Get('schedule/me')

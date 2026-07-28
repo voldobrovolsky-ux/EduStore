@@ -3,6 +3,7 @@ import type { IconName } from "@/admin/ds/Icon";
 import { DisciplinesScreen } from "@/structure/DisciplinesScreen";
 import { DistributionScreen } from "@/structure/DistributionScreen";
 import { KtpApprovalScreen } from "@/structure/KtpApprovalScreen";
+import { TimetableScreen } from "@/structure/TimetableScreen";
 
 // Минимальные кабинеты ролей: навигация в сайдбаре + главная.
 // Раздел с `Screen` показывает реальный экран; без — заглушку.
@@ -37,7 +38,7 @@ export const MINIMAL_CABINETS: Record<MinimalKey, CabinetDef> = {
       { id: "disciplines", label: "Дисциплины", icon: "book", Screen: DisciplinesScreen },
       { id: "distribution", label: "Учителя", icon: "users", Screen: DistributionScreen },
       { id: "ktp", label: "КТП и КПП", icon: "ktp", Screen: KtpApprovalScreen },
-      { id: "schedule", label: "Расписание", icon: "calendar-days" },
+      { id: "schedule", label: "Сетка расписания", icon: "calendar-days", Screen: TimetableScreen },
     ],
   },
   methodist: {
@@ -53,14 +54,14 @@ export const MINIMAL_CABINETS: Record<MinimalKey, CabinetDef> = {
     sections: [
       { id: "diary", label: "Дневник ребёнка", icon: "book" },
       { id: "grades", label: "Оценки", icon: "circle-check" },
-      { id: "schedule", label: "Расписание", icon: "calendar-days" },
+      { id: "schedule", label: "Сетка расписания", icon: "calendar-days", Screen: TimetableScreen },
     ],
   },
   student: {
     label: "Кабинет ученика", roleLabel: "Ученик", gradient: ["#16A34A", "#54C57E"],
     sections: [
       { id: "tasks", label: "Задания", icon: "clipboard" },
-      { id: "schedule", label: "Расписание", icon: "calendar-days" },
+      { id: "schedule", label: "Сетка расписания", icon: "calendar-days", Screen: TimetableScreen },
       { id: "progress", label: "Успеваемость", icon: "line-chart" },
     ],
   },

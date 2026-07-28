@@ -25,15 +25,7 @@ function pickGrade(pool: (string | null)[], a: number, b: number): string | null
   return pool[idx];
 }
 
-/** Значение ячейки → поля Grade. */
-function gradeData(value: string | null): {
-  value: number | null;
-  absent: boolean;
-} | null {
-  if (value === null) return null;
-  if (value === 'н') return { value: null, absent: true };
-  return { value: Number(value), absent: false };
-}
+
 
 async function main(): Promise<void> {
   console.log('Синхронизация каталога прав (§5.1) и SKU (§5.2)…');
@@ -68,7 +60,7 @@ async function main(): Promise<void> {
   await prisma.ktp.deleteMany();
   await prisma.entitlement.deleteMany();
   await prisma.consent.deleteMany();
-  await prisma.grade.deleteMany();
+  await prisma.journalCell.deleteMany();
   await prisma.generatedMaterial.deleteMany();
   await prisma.teacherNote.deleteMany();
   await prisma.notification.deleteMany();
@@ -324,16 +316,17 @@ async function main(): Promise<void> {
   for (const student of students8A) {
     for (const lesson of lessons8A) {
       const value = pickGrade(pool, student.number, lesson.n);
-      const data = gradeData(value);
-      if (data === null) continue; // нет оценки
-      await prisma.grade.create({
+      if (value === null) continue; // нет оценки
+      // AR-4: единый журнал — сид пишет сразу в JournalCell ('н' = отсутствие)
+      await prisma.journalCell.create({
         data: {
           workspaceId: ws.id,
+          classId: class8A.id,
+          disciplineId: algebra.id,
           studentId: student.id,
           lessonId: lesson.id,
-          value: data.value,
-          absent: data.absent,
-          createdBy: teacher.id,
+          grade: value,
+          postedBy: teacher.id,
           source: GradeSource.MANUAL,
         },
       });

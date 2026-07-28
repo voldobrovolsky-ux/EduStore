@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
+import { OutboxService } from '../../common/outbox/outbox.service';
+import { newEvent } from '../../common/events/domain-event';
+import { STRUCTURE_EVENTS, type AssignmentEventV1 } from './structure.contract';
 import type { AddSubGroupDto, AssignDto, CreateClassDto, CreateSubjectDto } from './dto';
+// AR-36: контракты ответов — из @edustore/shared (тот же источник, что у фронта):
+// дрейф формы ответа ломает tsc, а не обнаруживается в проде
+import type { StClass, StDevice, StSubject, StTeacher } from '@edustore/shared';
 
 /**
  * Ручное создание структуры школы (онбординг шаги 4.2 и 6):
@@ -11,10 +17,13 @@ import type { AddSubGroupDto, AssignDto, CreateClassDto, CreateSubjectDto } from
  */
 @Injectable()
 export class StructureService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly outbox: OutboxService,
+  ) {}
 
   // ─── классы / подгруппы ───
-  async listClasses() {
+  async listClasses(): Promise<StClass[]> {
     const classes = await this.prisma.class.findMany({
       orderBy: [{ parallel: 'asc' }, { letter: 'asc' }],
       include: { subGroups: true, _count: { select: { students: true } } },
@@ -52,7 +61,7 @@ export class StructureService {
   }
 
   // ─── дисциплины ───
-  async listSubjects() {
+  async listSubjects(): Promise<StSubject[]> {
     const s = await this.prisma.subject.findMany({ orderBy: { name: 'asc' } });
     return s.map((x) => ({ id: x.id, name: x.name, color: x.color }));
   }
@@ -70,7 +79,7 @@ export class StructureService {
   }
 
   // ─── учителя + распределение ───
-  async listTeachers() {
+  async listTeachers(): Promise<StTeacher[]> {
     const teachers = await this.prisma.teacher.findMany({
       include: { user: true, assignments: { include: { class: true, subject: true } } },
     });
@@ -85,21 +94,45 @@ export class StructureService {
   }
 
   async assign(dto: AssignDto) {
-    const a = await this.prisma.teachingAssignment.upsert({
-      where: { teacherId_classId_subjectId: { teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId } },
-      update: { subGroupId: dto.subGroupId ?? null },
-      create: { workspaceId: TenantContext.require(), teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId, subGroupId: dto.subGroupId ?? null },
+    const ws = TenantContext.require();
+    // AR-30: назначение учителя — админ-действие с касанием identity → событие для аудита
+    const a = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.teachingAssignment.upsert({
+        where: { teacherId_classId_subjectId: { teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId } },
+        update: { subGroupId: dto.subGroupId ?? null },
+        create: { workspaceId: ws, teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId, subGroupId: dto.subGroupId ?? null },
+      });
+      await this.outbox.enqueue(
+        tx,
+        newEvent<AssignmentEventV1>({
+          type: STRUCTURE_EVENTS.assignmentCreated,
+          workspaceId: ws,
+          payload: { assignmentId: row.id, teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId },
+        }),
+      );
+      return row;
     });
     return { id: a.id };
   }
 
   async unassign(id: string) {
-    await this.prisma.teachingAssignment.delete({ where: { id } });
+    const ws = TenantContext.require();
+    await this.prisma.$transaction(async (tx) => {
+      const row = await tx.teachingAssignment.delete({ where: { id } });
+      await this.outbox.enqueue(
+        tx,
+        newEvent<AssignmentEventV1>({
+          type: STRUCTURE_EVENTS.assignmentRemoved,
+          workspaceId: ws,
+          payload: { assignmentId: id, teacherId: row.teacherId },
+        }),
+      );
+    });
     return { ok: true };
   }
 
   // ─── привязанные устройства-киоски (реальные, из таблицы Device) ───
-  async listDevices() {
+  async listDevices(): Promise<StDevice[]> {
     const devices = await this.prisma.device.findMany({ orderBy: { createdAt: 'desc' } });
     const boundIds = [...new Set(devices.map((d) => d.boundByUserId).filter((x): x is string => !!x))];
     const users = boundIds.length
@@ -115,7 +148,14 @@ export class StructureService {
   }
 
   async deleteDevice(id: string) {
-    await this.prisma.device.delete({ where: { id } });
+    const ws = TenantContext.require();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.device.delete({ where: { id } });
+      await this.outbox.enqueue(
+        tx,
+        newEvent({ type: STRUCTURE_EVENTS.deviceRemoved, workspaceId: ws, payload: { deviceId: id } }),
+      );
+    });
     return { ok: true };
   }
 }

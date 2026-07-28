@@ -1,5 +1,6 @@
 // Клиент образовательного движка (/api/v1/edu/*): расписание, летучка, КТП/КПП (надзор завуча).
 import { http } from "./http";
+import type { TimetableDto } from "@edustore/shared";
 
 export interface EduLesson {
   id: string;
@@ -27,6 +28,7 @@ export interface KtpTopicDto {
   order: number;
   title: string;
   fgosHours: number;
+  hoursSource: "estimated" | null; // 'estimated' — оценка парсера (ручная правка снимает)
   arCodes: string[];
 }
 export interface KtpDto {
@@ -58,10 +60,25 @@ export interface KppDto {
   createdAt: string;
 }
 
+/** Карта-содержание урока (LessonContent → TextbookCard), разложено по kpp.approved. */
+export interface LessonContentDto {
+  id: string;
+  order: number;
+  cardId: string;
+  title: string;
+  content: string | null;
+}
+export interface EduLessonDetail extends EduLesson {
+  startGateOpen: boolean;
+  contents: LessonContentDto[];
+  kppLesson: { topic: { id: string; title: string; fgosHours: number; hoursSource: string | null } } | null;
+}
+
 const BASE = "/api/v1/edu";
 
 export const eduApi = {
   scheduleMe: () => http<EduLesson[]>(`${BASE}/schedule/me`),
+  lesson: (id: string) => http<EduLessonDetail>(`${BASE}/lessons/${id}`),
 
   // летучка (Движок §5): печать кодов → проверка (score 0..1 по коду)
   printBriefTest: (lessonId: string) =>
@@ -72,11 +89,21 @@ export const eduApi = {
   // КТП / КПП (надзор завуча)
   ktpList: (classId?: string, disciplineId?: string) =>
     http<KtpDto[]>(`${BASE}/ktp${qs({ classId, disciplineId })}`),
+  /** Правка темы черновика (часы/название) — снимает флаг «оценка парсера». */
+  updateKtpTopic: (topicId: string, patch: { title?: string; fgosHours?: number }) =>
+    http<KtpTopicDto>(`${BASE}/ktp/topics/${topicId}`, { method: "POST", body: JSON.stringify(patch) }),
   approveKtp: (id: string) => http<KtpApproveOutcome>(`${BASE}/ktp/${id}/approve`, { method: "POST", body: "{}" }),
   kppList: (classId?: string, disciplineId?: string) =>
     http<KppDto[]>(`${BASE}/kpp${qs({ classId, disciplineId })}`),
   approveKpp: (id: string) => http<{ id: string; status: string }>(`${BASE}/kpp/${id}/approve`, { method: "POST", body: "{}" }),
+
+  // Сетка расписания (AR-38): типовая неделя класса; движок — единственный писатель
+  timetable: (classId?: string) => http<TimetableDto[]>(`${BASE}/timetable${qs({ classId })}`),
+  saveTimetable: (classId: string, slots: { day: number; position: number; durationMin?: number }[]) =>
+    http<TimetableDto>(`${BASE}/timetable`, { method: "POST", body: JSON.stringify({ classId, slots }) }),
 };
+
+export type { TimetableDto, TimetableSlotDto } from "@edustore/shared";
 
 function qs(params: Record<string, string | undefined>): string {
   const p = Object.entries(params).filter(([, v]) => v) as [string, string][];

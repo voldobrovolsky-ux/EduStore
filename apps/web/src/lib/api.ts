@@ -11,33 +11,11 @@ import {
   type VoiceGradeResponse,
   type NotificationDto,
 } from "@edustore/shared";
+import { http, HttpError } from "./http";
 
-const DEV_TEACHER = "teacher-anna"; // dev-аутентификация: подставляем сид-учителя
-
-async function http<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: {
-      "content-type": "application/json",
-      "x-florus-user-id": DEV_TEACHER,
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new ApiError(res.status, body || res.statusText);
-  }
-  return res.json() as Promise<T>;
-}
-
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+// AR-36: единый HTTP-слой (lib/http.ts) — cookie-сессия в проде, dev-заголовки только в DEV.
+// Прод-хардкод x-florus-user-id удалён. ApiError сохранён как алиас для существующих catch.
+export { HttpError as ApiError };
 
 export const api = {
   getProfile: () => http<TeacherProfile>(API_ROUTES.teacherProfile),

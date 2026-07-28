@@ -8,6 +8,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { TenantContext } from '../src/common/tenant/tenant-context';
+import { TenantInterceptor } from '../src/common/tenant/tenant.interceptor';
 
 const A = 'tenant-test-A';
 const B = 'tenant-test-B';
@@ -89,6 +90,17 @@ async function main() {
     threw = true;
   }
   check('доменный запрос без тенанта (не system) → отказ', threw);
+
+  // ── AR-34 (G-11): интерсептор fail-closed — аутентифицированный без школы НЕ получает system ──
+  {
+    const interceptor = new TenantInterceptor(prisma);
+    const store = await (
+      interceptor as unknown as {
+        resolveStore(req: { user?: { florusUserId: string } }): Promise<{ tenantId: string | null; system: boolean }>;
+      }
+    ).resolveStore({ user: { florusUserId: 'no-such-user-ar34' } });
+    check('аутентифицирован без школы → {tenantId:null, system:false} (не обход)', store.tenantId === null && store.system === false);
+  }
 
   // ── строка B не пострадала от кросс-тенант записи ──
   const bAfter = await TenantContext.runAsSystem(() =>

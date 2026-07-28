@@ -85,6 +85,22 @@ export class ConsentService {
   }
 
   /**
+   * Батч-версия гейта §6.3 для классовых срезов (AR-29): множество субъектов с
+   * действующим согласием на цель (последняя запись каждого субъекта = granted).
+   */
+  async grantedSet(subjectUserIds: string[], purpose: ConsentPurpose): Promise<Set<string>> {
+    if (subjectUserIds.length === 0) return new Set();
+    const rows = await this.prisma.consent.findMany({
+      where: { subjectUserId: { in: subjectUserIds }, purpose },
+      orderBy: { createdAt: 'desc' },
+      select: { subjectUserId: true, granted: true },
+    });
+    const latest = new Map<string, boolean>();
+    for (const r of rows) if (!latest.has(r.subjectUserId)) latest.set(r.subjectUserId, r.granted);
+    return new Set([...latest.entries()].filter(([, g]) => g).map(([id]) => id));
+  }
+
+  /**
    * §6.4: запрос на удаление → событие (джоб 30 дней; обязательная отчётность обезличивается,
    * не удаляется). Эмит в outbox транзакционно → каскад/audit (§4.8) подхватит.
    */

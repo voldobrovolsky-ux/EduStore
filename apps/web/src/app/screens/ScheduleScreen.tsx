@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { TeacherClass } from "@edustore/shared";
 import { Icon } from "@/design/Icon";
 import { api } from "@/lib/api";
-import { eduApi, type EduLesson } from "@/lib/eduApi";
+import { eduApi, type EduLesson, type EduLessonDetail } from "@/lib/eduApi";
 import "./schedule.css";
 
 type Filter = "all" | "upcoming" | "done";
@@ -20,6 +20,21 @@ export function ScheduleScreen() {
   const [lessons, setLessons] = useState<EduLesson[] | null>(null);
   const [classes, setClasses] = useState<TeacherClass[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<EduLessonDetail | null>(null);
+  const [detailErr, setDetailErr] = useState(false);
+
+  const toggleLesson = (id: string) => {
+    if (openId === id) {
+      setOpenId(null);
+      setDetail(null);
+      return;
+    }
+    setOpenId(id);
+    setDetail(null);
+    setDetailErr(false);
+    eduApi.lesson(id).then(setDetail).catch(() => setDetailErr(true));
+  };
 
   useEffect(() => {
     eduApi.scheduleMe().then(setLessons).catch(() => setLessons([]));
@@ -72,15 +87,37 @@ export function ScheduleScreen() {
           </div>
           <div className="sch-rows">
             {ls.map((l) => (
-              <div key={l.id} className="sch-row">
-                <span className="sch-class">{classLabel.get(l.classId) ?? "—"}</span>
-                <span className="t">
-                  <span className="topic">{l.topic}</span>
-                  <span className="subj">{subjName.get(l.subjectId) ?? ""}</span>
-                </span>
-                <span className={`sch-st ${l.state}`}>
-                  {l.state === "done" ? "проведён" : l.state === "running" ? "идёт" : "план"}
-                </span>
+              <div key={l.id}>
+                <div className="sch-row" style={{ cursor: "pointer" }} onClick={() => toggleLesson(l.id)} data-testid="sch-lesson">
+                  <span className="sch-class">{classLabel.get(l.classId) ?? "—"}</span>
+                  <span className="t">
+                    <span className="topic">{l.topic}</span>
+                    <span className="subj">{subjName.get(l.subjectId) ?? ""}</span>
+                  </span>
+                  <span className={`sch-st ${l.state}`}>
+                    {l.state === "done" ? "проведён" : l.state === "running" ? "идёт" : "план"}
+                  </span>
+                </div>
+                {openId === l.id && (
+                  <div style={{ margin: "2px 8px 10px", padding: "10px 14px", borderLeft: "3px solid #0EA5A5", background: "color-mix(in oklch, #0EA5A5 6%, transparent)", borderRadius: 8, fontSize: 13.5 }} data-testid="lesson-contents">
+                    {detailErr && <span style={{ opacity: 0.7 }}>Не удалось загрузить содержание урока.</span>}
+                    {!detail && !detailErr && <span style={{ opacity: 0.7 }}>Читаем содержание…</span>}
+                    {detail && detail.contents.length === 0 && (
+                      <span style={{ opacity: 0.7 }}>Содержание появится после утверждения КПП (карточки учебника раскладываются по урокам).</span>
+                    )}
+                    {detail && detail.contents.length > 0 && (
+                      <>
+                        <div style={{ fontWeight: 600, marginBottom: 6 }}>Содержание урока — карточки учебника:</div>
+                        {detail.contents.map((c) => (
+                          <div key={c.id} style={{ padding: "4px 0" }} data-testid="lesson-card">
+                            <b>{c.order}. {c.title}</b>
+                            {c.content && <div style={{ opacity: 0.75, whiteSpace: "pre-wrap", marginTop: 2 }}>{c.content}</div>}
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

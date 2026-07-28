@@ -10,6 +10,8 @@ export interface StorageProvider {
   getDownloadUrl(key: string): Promise<PresignedUrl>;
   /** HEAD — проверка наличия объекта (для commit: нет объекта → 409). */
   headObject(key: string): Promise<HeadResult>;
+  /** чтение объекта целиком (обогащение: экстракция текста учебника). null — объекта нет. */
+  getObject(key: string): Promise<Buffer | null>;
   /** удаление объекта. */
   deleteObject(key: string): Promise<void>;
 }

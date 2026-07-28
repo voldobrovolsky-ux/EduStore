@@ -1,13 +1,13 @@
-/** События документохранилища (Архстандарт §6, namespace edustore.doc.*). */
+/** События документохранилища (Архстандарт §6, домен doc.*, канон AR-23). */
 export const DOC_EVENTS = {
-  fileCreated: 'edustore.doc.file.created',
-  fileEnriched: 'edustore.doc.file.enriched', // → индекс поиска, педагог-парсер (textbook.parsed)
-  fileVersioned: 'edustore.doc.file.versioned',
-  fileAccessChanged: 'edustore.doc.file.access.changed',
-  fileStatusChanged: 'edustore.doc.file.status.changed',
-  fileShared: 'edustore.doc.file.shared',
-  fileDeleted: 'edustore.doc.file.deleted',
-  docEdited: 'edustore.doc.doc.edited',
+  fileCreated: 'doc.file.created.v1',
+  fileEnriched: 'doc.file.enriched.v1', // → индекс поиска, педагог-парсер (textbook.parsed)
+  fileVersioned: 'doc.file.versioned.v1',
+  fileAccessChanged: 'doc.file.access_changed.v1',
+  fileStatusChanged: 'doc.file.status_changed.v1',
+  fileShared: 'doc.file.shared.v1',
+  fileDeleted: 'doc.file.deleted.v1',
+  docEdited: 'doc.doc.edited.v1',
 } as const;
 
 export interface FileCreatedV1 {
