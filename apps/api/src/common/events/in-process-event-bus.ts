@@ -43,6 +43,7 @@ export class InProcessEventBus extends EventBus {
     }
     const matched = this.subs.filter((s) => subjectMatches(s.pattern, event.type));
     this.log.log(`▶ ${event.type} depth=${event.depth} → ${matched.length} подписчик(ов)`);
+    const failures: string[] = [];
     for (const s of matched) {
       const consumerKey = `bus:${s.consumer}`;
       try {
@@ -62,10 +63,17 @@ export class InProcessEventBus extends EventBus {
             if (e.code !== 'P2002') throw e;
           });
       } catch (err) {
-        // изоляция: падение одного потребителя не валит остальных.
-        // в проде: nak → ретрай с backoff → DLQ. Здесь — лог.
+        // изоляция сохраняется: остальные потребители всё равно получают событие в этом же проходе
         this.log.error(`✗ consumer "${s.consumer}" на ${event.type}: ${(err as Error).message}`);
+        failures.push(`${s.consumer}: ${(err as Error).message}`);
       }
+    }
+    // G-17: падение потребителя НЕ глотается — publish бросает, outbox ретраит (attempts++)
+    // и после MAX_ATTEMPTS кладёт событие в DLQ (FAILED). Повторная доставка безопасна:
+    // успешные потребители отсечены отметкой bus:<consumer> выше. Раньше ветка DLQ была
+    // недостижима — событие терялось молча при живом статусе PUBLISHED.
+    if (failures.length) {
+      throw new Error(`потребители упали на ${event.type}: ${failures.join('; ')}`);
     }
   }
 }

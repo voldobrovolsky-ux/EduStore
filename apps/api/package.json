@@ -21,7 +21,10 @@
     "authz:check": "ts-node scripts/authz-coverage-check.ts",
     "events:check": "ts-node scripts/event-naming-check.ts",
     "consent:check": "ts-node scripts/consent-gate-check.ts",
-    "timetable:check": "ts-node scripts/timetable-authoring-check.ts"
+    "timetable:check": "ts-node scripts/timetable-authoring-check.ts",
+    "dlq:check": "ts-node scripts/dlq-replay-check.ts",
+    "dlq:replay": "ts-node scripts/dlq-replay.ts",
+    "fsm:check": "ts-node scripts/fsm-reverse-check.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1077.0",

@@ -63,4 +63,19 @@ export class OutboxDispatcher {
     }
     this.log.warn('drain: достигнут предел раундов — возможна петля или большой каскад');
   }
+
+  /**
+   * G-17: ручной replay DLQ — события `FAILED` возвращаются в `PENDING` (attempts=0) и
+   * дренируются. Повторная обработка идемпотентна: успешные потребители отсечены
+   * inbox-отметкой `bus:<consumer>` — доработает только тот, кто падал.
+   */
+  async replayFailed(ids?: string[]): Promise<{ found: number }> {
+    const where = { status: 'FAILED' as const, ...(ids?.length ? { id: { in: ids } } : {}) };
+    const rows = await this.prisma.outboxEvent.findMany({ where, select: { id: true, type: true } });
+    if (rows.length === 0) return { found: 0 };
+    for (const r of rows) this.log.log(`replay DLQ: ${r.type} (${r.id})`);
+    await this.prisma.outboxEvent.updateMany({ where: { id: { in: rows.map((r) => r.id) } }, data: { status: 'PENDING', attempts: 0 } });
+    await this.drain();
+    return { found: rows.length };
+  }
 }
