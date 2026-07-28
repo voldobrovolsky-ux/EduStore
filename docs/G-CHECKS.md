@@ -14,31 +14,32 @@
 
 | G | Команда | Инвариант | Покрывает АР |
 |---|---|---|---|
-| G-1 | `npm --workspace apps/api run tenant:check` (6/6) | Чтение/запись/`count`/`findUnique` не пересекают границу школы; запрос с тенантом-«не тем» → пусто/`P2025`; аутентифицирован-без-тенанта в guarded-операции → отказ | AR-2 |
+| G-1 | `npm --workspace apps/api run tenant:check` (7/7) | Чтение/запись/`count`/`findUnique` не пересекают границу школы; запрос с тенантом-«не тем» → пусто/`P2025`; аутентифицирован-без-тенанта в guarded-операции → отказ | AR-2 |
 | G-2 | `npm --workspace apps/api run minor:check` (10/10) | DM родитель↔свой ребёнок разрешён по ребру; чужой взрослый↔минор запрещён; двойная роль послаблений не даёт; минор↔минор запрещён; external в канал с минором отклонён на добавлении (двусторонне) | AR-27, AR-3 |
-| G-3 | `npm --workspace apps/api run comm:check` (20/20) | `mode` не угадывается (`400 MODE_REQUIRED`); suggest-mode advisory (не создаёт сообщение); инвариант миноров срабатывает и на REST-пути; keyset-пагинация; правка ⇒ `edited=true` без стирания; объявление → required-set → ack → overdue → reconcile ушедшего | AR-28, AR-18 |
+| G-3 | `npm --workspace apps/api run comm:check` (25/25) | `mode` не угадывается (`400 MODE_REQUIRED`); suggest-mode advisory (не создаёт сообщение); инвариант миноров срабатывает и на REST-пути; keyset-пагинация; правка ⇒ `edited=true` без стирания; объявление → required-set → ack → overdue → reconcile ушедшего | AR-28, AR-18 |
 | G-4 | `npm --workspace apps/api run cascade:demo` | Outbox → 3 подписчика (каналы/питание/УМК); повторная доставка идемпотентна (inbox); петля обрывается depth-guard'ом на MAX_CASCADE_DEPTH | AR-5, AR-21, AR-22 |
 | G-5 | `npm --workspace apps/api run parser:check` (13/13) | `doc.file.enriched → textbook.parsed`; payload несёт `fileId`, не `s3Key`; идемпотентность; не-учебник → молчит; пустой `textExtract` → деградация без падения; tenant-изоляция новых таблиц | AR-20, AR-12 |
-| G-6 | `npm --workspace apps/api run pilot:check` (16/16) | Пилотная сессия = форма OIDC (role/workspace_id), RBAC резолвится одинаково; поток invite→QR→вход→preparing→назначение→ready; одноразовость токена; постоянство workspace «Архимед» | AR-15, AR-14 |
+| G-6 | `npm --workspace apps/api run pilot:check` (20/20) | Пилотная сессия = форма OIDC (role/workspace_id), RBAC резолвится одинаково; поток invite→QR→вход→preparing→назначение→ready; одноразовость токена; постоянство workspace «Архимед» | AR-15, AR-14 |
 | G-7 | `npm --workspace apps/api run storage:check` | Живой S3: presign PUT → HEAD → download → сверка контента → delete; пустой конфиг → внятный отказ, не падение | AR-12 |
 | G-8 | `npm --workspace apps/api run flow:check` (25) | Сквозной поток «учебник → КТП → КПП → содержание уроков»: авто-контекст загрузки из назначения, живой docs/-контур (`STORAGE_MODE=local`), генерация/дополнение/версионирование КТП, оценка часов, раскладка карт по урокам, fallback llm→regexp, шифрование ключа | AR-38, AR-39, AR-20 |
 | G-9 | `node e2e/smoke-textbook.mjs` | Живой Chromium-смок: пилотный QR-вход → загрузка настоящего PDF → скриншоты каждого шага | AR-15, AR-38 |
-| G-10 | `npm --workspace apps/api run authz:check` | **RBAC-полнота перечислением**: обход всех контроллеров через ModulesContainer; каждая мутация — `@RequirePermission` либо whitelist-строка с причиной (resource/key/identity-gated); коды сверяются с каталогом и пакетами; протухший whitelist = провал (64 gated / 16 whitelist) | AR-35, AR-7 |
+| G-10 | `npm --workspace apps/api run authz:check` | **RBAC-полнота перечислением**: обход всех контроллеров через ModulesContainer; каждая мутация — `@RequirePermission` либо whitelist-строка с причиной (resource/key/identity-gated); коды сверяются с каталогом и пакетами; протухший whitelist = провал (68 gated / 16 whitelist). Причины whitelist `editMessage`/`react` стали исполняемыми 2026-07-28 — гейты автор/участник реализованы, кейсы в G-3 | AR-35, AR-7 |
 | G-11 | внутри `tenant:check` (кейс 6) | **Tenant fail-closed**: аутентифицированный без школы → `{tenantId:null, system:false}` (не system-обход); guarded-запрос без тенанта → отказ | AR-34 |
 | G-12 | структурно: миграция `ar4_unified_journal` + `tsc` | **Единый журнал**: модель `Grade` удалена из схемы — любое обращение не компилируется; метрики/отчёты/голос на `JournalCell`; писатель один (`grade.posted`/`grade.removed`) | AR-4 |
 | G-13 | `npm --workspace apps/api run consent:check` (7) | **Consent-гейт**: без `predictive_profiling` — исключён из atRisk с явной пометкой, срез ИОМ → `NO_PROFILING_CONSENT`; согласие открывает, отзыв закрывает; сигналы копятся независимо | AR-29 |
 | G-15 | `npm --workspace apps/api run timetable:check` (6) | **Timetable-авторинг сквозной**: сетка через API (не seed) → `INSUFFICIENT_SLOTS` → расширение → Solver `scheduled`; `TIMETABLE_IN_USE` защищает сетку под КПП; `BAD_SLOT` | AR-38 |
-| G-16 | `npm --workspace apps/api run events:check` | **Канон событий**: запрет `edustore.*`, все литералы реестров — `<домен>.<агрегат>.<глаголПрош>.v<N>`, wildcard-паттерны валидны; + рантайм-валидация в `newEvent()` (40 литералов) | AR-23, AR-24 |
+| G-16 | `npm --workspace apps/api run events:check` | **Канон событий**: запрет `edustore.*`, все литералы реестров — `<домен>.<агрегат>.<глаголПрош>.v<N>`, wildcard-паттерны валидны; + рантайм-валидация в `newEvent()` (45 литералов). Область: contract/events-файлы + `newEvent()`; сырые литералы в subscribe вне них линт не видит (уточнение 2026-07-28) | AR-23, AR-24 |
+| G-14 | структурно: `tsc` обеих сторон | **Контрактная сверка фронт↔бэк**: edu (КТП/КПП/уроки/летучка/timetable), doc/materials и pilot DTO — в `packages/shared`; фронт-клиенты (`eduApi`/`materialsApi`/`pilotApi`) и бэк-контроллеры (engine/textbook/doc/pilot) типизированы одними типами — дрейф формы ломает `tsc` с любой стороны. Остаток: dev-заголовок `x-florus-user-id: teacher-anna` в `http.ts` (только DEV, в PROD пусто) и device-flow клиента | AR-36 |
+| G-17 | `npm --workspace apps/api run dlq:check` (7) | **DLQ живой + replay**: падение потребителя НЕ глотается (publish бросает → outbox ретраит → `FAILED` при attempts≥8 — ветка достижима); успешный сосед при ретраях выполняется ровно 1 раз (inbox `bus:<consumer>`); `dlq:replay` возвращает событие в строй — доработает только падавший; повторный replay/publish — no-op | AR-22, AR-24 |
+| G-19 | `npm --workspace apps/api run fsm:check` (19) | **Ручное КТП + обратные переходы FSM**: черновик КТП без учебника (`planning.ktp.created.v1`, `KTP_DRAFT_EXISTS`); `Ktp.approved→draft` (сносит idle-КПП; `KTP_IN_USE` при не-idle); `Kpp.approved→scheduled` (гейт урока закрывается обратно; `KPP_IN_USE`); `completeLesson` эмитит `lesson.lesson.completed.v1`; `done→running` (reopen) с событием; отзывы — в audit-леджере | AR-38, AR-18, AR-30 |
 
 **В CI** (`.github/workflows/ci.yml`, job `flow-smoke`): все, кроме G-7 (нужен живой S3) —
-G-1…G-6, G-8…G-13, G-15, G-16.
+G-1…G-6, G-8…G-13, G-15…G-17, G-19.
 
 ## Недостающие (завести вместе с закрытием соответствующих узлов)
 
 | G | Инвариант, который надо доказать | Условие появления | АР |
 |---|---|---|---|
-| G-14 | **Контрактная сверка фронт↔бэк — остаток**: structure/timetable уже в `packages/shared` (импортируются обеими сторонами, дрейф ломает tsc; хардкод `x-florus-user-id` удалён); остаток — edu/doc/pilot DTO + типизация engine-контроллера тем же паттерном | следующий инкремент AR-36 | AR-36 |
-| G-17 | **DLQ-replay**: событие, добитое до `FAILED`, переигрывается командой; повторная обработка идемпотентна (inbox) | вместе с вводом NATS или ранее | AR-22, AR-24 |
 | G-18 | **OIDC-цикл вживую**: login→callback→me→logout→back-channel против реального Флёруса (сейчас код не гонялся против issuer) | при получении `FLOR_CLIENT_SECRET` (AR-33) | AR-1, AR-33 |
 
 ## Правила ведения
