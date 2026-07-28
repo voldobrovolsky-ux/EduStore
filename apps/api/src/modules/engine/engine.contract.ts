@@ -5,12 +5,17 @@
  */
 export const ENGINE_EVENTS = {
   ktpGenerated: 'planning.ktp.generated.v1',
+  ktpCreated: 'planning.ktp.created.v1', // ручное создание черновика завучем без учебника (остаток AR-38)
   ktpApproved: 'planning.ktp.approved.v1',
+  ktpReverted: 'planning.ktp.reverted.v1', // обратный переход approved→draft (FSM-дыра №1)
   kppScheduled: 'planning.kpp.scheduled.v1',
   kppApproved: 'planning.kpp.approved.v1',
+  kppReverted: 'planning.kpp.reverted.v1', // обратный переход approved→scheduled (закрывает гейт урока)
   scheduleBuilt: 'planning.schedule.built.v1',
   timetableUpdated: 'planning.timetable.updated.v1', // AR-38: завуч сохранил сетку (типовая неделя)
   lessonStarted: 'lesson.lesson.started.v1',
+  lessonCompleted: 'lesson.lesson.completed.v1', // конец урока виден каскадам (FSM-дыра №2)
+  lessonReopened: 'lesson.lesson.reopened.v1', // done→running: учитель возобновил урок (обратный переход)
   lessonPhaseChanged: 'lesson.phase.changed.v1',
   // сигналы результата → ИОМ (Архстандарт §6). attendance/topic несут реальный studentId.
   attendanceMarked: 'lesson.attendance.marked.v1',
@@ -84,6 +89,30 @@ export interface KppApprovedV1 {
 }
 export interface LessonStartedV1 {
   lessonId: string;
+}
+export interface LessonCompletedV1 {
+  lessonId: string;
+  classId: string;
+  disciplineId: string;
+}
+export interface LessonReopenedV1 {
+  lessonId: string;
+}
+/** Черновик КТП создан вручную завучем (без учебника). */
+export interface KtpCreatedV1 {
+  ktpId: string;
+  classId: string;
+  disciplineId: string;
+  topicCount: number;
+}
+export interface KtpRevertedV1 {
+  ktpId: string;
+  classId: string;
+  disciplineId: string;
+  kppsRemoved: number; // производный idle-план снесён вместе с возвратом
+}
+export interface KppRevertedV1 {
+  kppId: string;
 }
 export interface LessonPhaseChangedV1 {
   lessonId: string;

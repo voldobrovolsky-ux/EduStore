@@ -4,6 +4,8 @@ import { Public } from '../../common/auth/public.decorator';
 import type { SessionUser } from '../../common/auth/flor.service';
 import { PilotService } from './pilot.service';
 import { AUTH_MODE_PILOT, PILOT_ROLES, type PilotRole } from './pilot.contract';
+// G-14: формы ответов — из @edustore/shared (фронт pilotApi типизирован теми же; дрейф ломает tsc)
+import type { CabinetStateDto, PilotClassDto, PilotInviteDto, PilotStaffDto, PilotSubjectDto } from '@edustore/shared';
 
 interface StaffBody { role: string; displayName?: string }
 interface ClassBody { parallel: number; letter: string }
@@ -40,7 +42,7 @@ export class PilotController {
   // ─── Owner-экран (3 действия) ───
   @Public()
   @Post('owner/staff')
-  createStaff(@Body() body: StaffBody, @Req() req: Request) {
+  createStaff(@Body() body: StaffBody, @Req() req: Request): Promise<PilotInviteDto> {
     this.assertPilotMode();
     this.assertOwner(req);
     if (!(PILOT_ROLES as readonly string[]).includes(body.role)) throw new BadRequestException('роль: teacher | zavuch');
@@ -49,7 +51,7 @@ export class PilotController {
 
   @Public()
   @Get('owner/staff')
-  listStaff(@Req() req: Request) {
+  listStaff(@Req() req: Request): Promise<PilotStaffDto[]> {
     this.assertPilotMode();
     this.assertOwner(req);
     return this.pilot.listStaff();
@@ -66,7 +68,7 @@ export class PilotController {
 
   @Public()
   @Post('owner/classes')
-  createClass(@Body() body: ClassBody, @Req() req: Request) {
+  createClass(@Body() body: ClassBody, @Req() req: Request): Promise<PilotClassDto> {
     this.assertPilotMode();
     this.assertOwner(req);
     return this.pilot.createClass(body);
@@ -74,7 +76,7 @@ export class PilotController {
 
   @Public()
   @Get('owner/classes')
-  listClasses(@Req() req: Request) {
+  listClasses(@Req() req: Request): Promise<PilotClassDto[]> {
     this.assertPilotMode();
     this.assertOwner(req);
     return this.pilot.listClasses();
@@ -82,7 +84,7 @@ export class PilotController {
 
   @Public()
   @Post('owner/subjects')
-  createSubject(@Body() body: SubjectBody, @Req() req: Request) {
+  createSubject(@Body() body: SubjectBody, @Req() req: Request): Promise<PilotSubjectDto> {
     this.assertPilotMode();
     this.assertOwner(req);
     return this.pilot.createSubject(body);
@@ -90,7 +92,7 @@ export class PilotController {
 
   @Public()
   @Get('owner/subjects')
-  listSubjects(@Req() req: Request) {
+  listSubjects(@Req() req: Request): Promise<PilotSubjectDto[]> {
     this.assertPilotMode();
     this.assertOwner(req);
     return this.pilot.listSubjects();
@@ -118,7 +120,7 @@ export class PilotController {
 
   // ─── Состояние кабинета (аутентифицирован пилотной сессией) ───
   @Get('cabinet-state')
-  cabinetState(@Req() req: Request & { user?: SessionUser }) {
+  cabinetState(@Req() req: Request & { user?: SessionUser }): Promise<CabinetStateDto> {
     if (!req.user) throw new UnauthorizedException();
     return this.pilot.cabinetState(this.actor(req));
   }

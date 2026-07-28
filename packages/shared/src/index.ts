@@ -199,3 +199,156 @@ export interface StDevice { id: string; name: string; boundBy: string | null; bo
 // ─────────────────────────── сетка расписания (AR-38) ───────────────────────────
 export interface TimetableSlotDto { id: string; day: number; position: number; durationMin: number }
 export interface TimetableDto { id: string; classId: string; source: string; slots: TimetableSlotDto[] }
+/** Входной слот сетки при сохранении (POST timetable): без id, durationMin — из OrgStandards. */
+export interface TimetableSlotInput { day: number; position: number; durationMin?: number }
+export interface UpsertTimetableRequest { classId: string; slots: TimetableSlotInput[] }
+
+// ─────────────────────────── движок планирования /api/v1/edu (G-14) ───────────────────────────
+export type LessonFsmState = "idle" | "running" | "done";
+
+export interface EduLessonDto {
+  id: string;
+  date: string; // ISO
+  topic: string;
+  classId: string;
+  subjectId: string;
+  state: LessonFsmState | string;
+}
+
+/** Карта-содержание урока (LessonContent → TextbookCard), разложено по kpp.approved. */
+export interface LessonContentDto {
+  id: string;
+  order: number;
+  cardId: string;
+  title: string;
+  content: string | null;
+}
+
+export interface EduLessonDetailDto extends EduLessonDto {
+  startGateOpen: boolean;
+  contents: LessonContentDto[];
+  kppLesson: { topic: { id: string; title: string; fgosHours: number; hoursSource: string | null } } | null;
+}
+
+export interface KtpTopicDto {
+  id: string;
+  order: number;
+  title: string;
+  fgosHours: number;
+  hoursSource: "estimated" | string | null; // 'estimated' — оценка парсера (ручная правка снимает)
+  arCodes: string[];
+}
+export interface KtpDto {
+  id: string;
+  classId: string;
+  disciplineId: string;
+  status: "draft" | "approved" | string;
+  approvedBy: string | null;
+  topics: KtpTopicDto[];
+  createdAt: string;
+}
+/** Патч темы черновика КТП (часы/название); ручная правка снимает hoursSource. */
+export interface KtpTopicPatch { title?: string; fgosHours?: number }
+/** Ручное создание КТП без учебника (остаток AR-38): черновик с темами завуча. */
+export interface CreateKtpRequest {
+  classId: string;
+  disciplineId: string;
+  topics?: { title: string; fgosHours?: number }[];
+}
+export interface KtpApproveOutcome {
+  id: string;
+  status: string;
+  kpp: { id: string; status: string; lessonCount: number } | null;
+  reason?: string | null; // код причины, если КПП не собрался (INSUFFICIENT_SLOTS/NO_TIMETABLE/…)
+}
+
+export interface KppLessonDto {
+  id: string;
+  sequenceNo: number;
+  topic: { id: string; title: string; order: number };
+}
+export interface KppDto {
+  id: string;
+  classId: string;
+  disciplineId: string;
+  status: "scheduled" | "approved" | string;
+  lessons: KppLessonDto[];
+  createdAt: string;
+}
+
+export interface BriefTestPrintDto {
+  id: string;
+  status: "generated";
+  count: number;
+  codes: string[]; // псевдонимы (гейт §3 — без ФИО)
+}
+export interface BriefTestCheckItem { studentCode: string; score: number }
+export interface BriefTestCheckResultDto {
+  id: string;
+  status: "checked";
+  items: number;
+}
+
+// ─────────────────────────── учебники и Документохранилище (G-14) ───────────────────────────
+export interface UploadInitResponse {
+  fileId: string;
+  uploadUrl: string;
+  expiresIn: number;
+  classId: string;
+  disciplineId: string;
+}
+export interface CommitResponse {
+  materialId: string;
+  fileId: string;
+  disciplineId: string;
+  classId: string | null;
+  state: string;
+}
+/** Назначение учителя (его собственный «флажок» класс+дисциплина) — контекст загрузки. */
+export interface MyAssignmentDto {
+  id: string; // assignmentId
+  classId: string;
+  label: string; // «6А»
+  subject: string; // «Математика»
+  subjectId: string;
+}
+export interface ParsedTopicDto { id: string; order: number; title: string }
+export interface ParsedCardDto {
+  id: string;
+  order: number;
+  title: string;
+  content: string | null;
+  topicId: string | null;
+}
+export interface ParsedResponse {
+  materialId: string | null;
+  fileId: string;
+  topics: ParsedTopicDto[];
+  cards: ParsedCardDto[];
+}
+export interface DocFileDto {
+  id: string;
+  mime: string | null;
+  state: "pending" | "raw" | "enriched" | string;
+  disciplineId: string | null;
+  createdAt: string;
+  s3Key: string;
+}
+
+// ─────────────────────────── пилотный контур /api/pilot (G-14, временный — AR-15/33) ───────────────────────────
+export interface PilotStaffDto {
+  inviteId: string;
+  role: string;
+  displayName: string | null;
+  phone: string | null;
+  status: string;
+  userId: string | null;
+  loggedIn: boolean;
+  assigned: boolean;
+  assignments: string[]; // ярлыки «5А · Математика»
+  token: string | null; // для повторного QR (только пока не вошёл)
+}
+export interface PilotInviteDto { inviteId: string; token: string; role: string; displayName: string | null }
+export interface PilotClassDto { id: string; label: string; parallel: number; letter: string }
+export interface PilotSubjectDto { id: string; name: string; color: string }
+export interface CabinetStateDto { state: "preparing" | "ready"; message?: string }

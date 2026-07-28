@@ -1,22 +1,21 @@
 // Клиент ВРЕМЕННОГО пилотного auth (/api/pilot/*, AUTH_MODE=pilot-qr).
 // Owner — по ключу x-pilot-owner-key; вход — публичный (ставит cookie сессии); состояние кабинета — по cookie.
 
-export interface PilotStaff {
-  inviteId: string;
-  role: string;
-  displayName: string | null;
-  phone: string | null;
-  status: string;
-  userId: string | null;
-  loggedIn: boolean;
-  assigned: boolean;
-  assignments: string[]; // ярлыки «5А · Математика»
-  token: string | null; // для повторного QR (только пока не вошёл)
-}
-export interface PilotInvite { inviteId: string; token: string; role: string; displayName: string | null }
-export interface PilotClass { id: string; label: string; parallel: number; letter: string }
-export interface PilotSubject { id: string; name: string; color: string }
-export interface CabinetState { state: "preparing" | "ready"; message?: string }
+// G-14: формы — из @edustore/shared (та же типизация на бэке; дрейф ломает tsc).
+import type {
+  CabinetStateDto,
+  PilotClassDto,
+  PilotInviteDto,
+  PilotStaffDto,
+  PilotSubjectDto,
+} from "@edustore/shared";
+
+// алиасы прежних локальных имён (экраны импортируют отсюда)
+export type PilotStaff = PilotStaffDto;
+export type PilotInvite = PilotInviteDto;
+export type PilotClass = PilotClassDto;
+export type PilotSubject = PilotSubjectDto;
+export type CabinetState = CabinetStateDto;
 
 export class PilotError extends Error {
   constructor(

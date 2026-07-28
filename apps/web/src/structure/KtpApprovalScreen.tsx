@@ -54,6 +54,34 @@ export function KtpApprovalScreen() {
     }
   };
 
+  const revertKtp = async (k: KtpDto) => {
+    setBusyId(k.id);
+    setNote(null);
+    try {
+      await eduApi.revertKtp(k.id);
+      setNote({ kind: "ok", text: "КТП возвращён в черновик; собранный по нему КПП снят." });
+      refresh();
+    } catch (e) {
+      setNote({ kind: "err", text: e instanceof HttpError ? humanErr(e) : "Не удалось вернуть КТП в черновик" });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const revertKpp = async (k: KppDto) => {
+    setBusyId(k.id);
+    setNote(null);
+    try {
+      await eduApi.revertKpp(k.id);
+      setNote({ kind: "ok", text: "Утверждение КПП отозвано — уроки снова заблокированы." });
+      refresh();
+    } catch (e) {
+      setNote({ kind: "err", text: e instanceof HttpError ? humanErr(e) : "Не удалось отозвать утверждение КПП" });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const approveKpp = async (k: KppDto) => {
     setBusyId(k.id);
     setNote(null);
@@ -86,6 +114,17 @@ export function KtpApprovalScreen() {
         </Panel>
       )}
 
+      {/* Ручное создание КТП без учебника (остаток AR-38) */}
+      <ManualKtpForm
+        classes={classes}
+        subjects={subjects}
+        onCreated={() => {
+          setNote({ kind: "ok", text: "Черновик КТП создан — правьте темы и утверждайте ниже." });
+          refresh();
+        }}
+        onError={(text) => setNote({ kind: "err", text })}
+      />
+
       {/* КТП */}
       <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--text-muted)", margin: "4px 2px 8px" }}>
         Календарно-тематические планы
@@ -111,7 +150,17 @@ export function KtpApprovalScreen() {
                 </div>
               </div>
               {k.status === "approved" ? (
-                <Badge tone="create">утверждён</Badge>
+                <>
+                  <Badge tone="create">утверждён</Badge>
+                  <Button
+                    icon={<Icon name="rotate-ccw" size={15} />}
+                    onClick={(e) => { e.stopPropagation(); void revertKtp(k); }}
+                    disabled={busyId === k.id}
+                    title="Вернуть в черновик (возможно только пока уроки не проводились)"
+                  >
+                    {busyId === k.id ? "Возвращаем…" : "В черновик"}
+                  </Button>
+                </>
               ) : (
                 <>
                   <Badge>черновик</Badge>
@@ -158,7 +207,17 @@ export function KtpApprovalScreen() {
             </div>
           </div>
           {k.status === "approved" ? (
-            <Badge tone="create">утверждён</Badge>
+            <>
+              <Badge tone="create">утверждён</Badge>
+              <Button
+                icon={<Icon name="rotate-ccw" size={15} />}
+                onClick={() => void revertKpp(k)}
+                disabled={busyId === k.id}
+                title="Отозвать утверждение (возможно только пока уроки не проводились)"
+              >
+                {busyId === k.id ? "Отзываем…" : "Отозвать"}
+              </Button>
+            </>
           ) : (
             <>
               <Badge tone="accent">на утверждении</Badge>
@@ -170,6 +229,111 @@ export function KtpApprovalScreen() {
         </Panel>
       ))}
     </div>
+  );
+}
+
+/**
+ * Ручное создание черновика КТП без учебника (остаток AR-38): класс + дисциплина + темы построчно
+ * («Название темы» или «Название темы | часы»). Сервер создаёт draft с hoursSource=null.
+ */
+function ManualKtpForm({
+  classes,
+  subjects,
+  onCreated,
+  onError,
+}: {
+  classes: StClass[];
+  subjects: StSubject[];
+  onCreated: () => void;
+  onError: (text: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [classId, setClassId] = useState("");
+  const [subjectId, setSubjectId] = useState("");
+  const [topicsText, setTopicsText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const create = async () => {
+    const topics = topicsText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [title, hoursRaw] = line.split("|").map((s) => s.trim());
+        const hours = Number(hoursRaw);
+        return { title, ...(Number.isInteger(hours) && hours >= 1 ? { fgosHours: hours } : {}) };
+      });
+    if (!classId || !subjectId || topics.length === 0) {
+      onError("Выберите класс, дисциплину и введите хотя бы одну тему.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await eduApi.createKtp({ classId, disciplineId: subjectId, topics });
+      setOpen(false);
+      setTopicsText("");
+      onCreated();
+    } catch (e) {
+      onError(
+        e instanceof HttpError && e.code === "KTP_DRAFT_EXISTS"
+          ? "Черновик КТП для этой пары уже есть — дополняйте его, а не создавайте второй."
+          : e instanceof HttpError
+            ? e.message
+            : "Не удалось создать КТП",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selStyle = { padding: "7px 10px", border: "1px solid var(--border, #d1d5db)", borderRadius: 10, fontSize: "var(--text-sm)", background: "var(--surface, #fff)" } as const;
+
+  return (
+    <Panel style={{ padding: 16, marginBottom: 14 }} data-testid="manual-ktp-form">
+      <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => setOpen(!open)}>
+        <span style={{ width: 42, height: 42, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", background: "color-mix(in oklch, #7C3AED 13%, transparent)", color: "#7C3AED", flexShrink: 0 }}>
+          <Icon name="plus" size={20} />
+        </span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 600, color: "var(--text-strong)" }}>Создать КТП вручную</div>
+          <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginTop: 2 }}>
+            без учебника: темы задаёт завуч, часы — руками (не «оценка парсера»)
+          </div>
+        </div>
+        <Icon name={open ? "chevron-down" : "chevron-right"} size={18} />
+      </div>
+      {open && (
+        <div style={{ marginTop: 12, borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <select value={classId} onChange={(e) => setClassId(e.target.value)} style={selStyle} aria-label="Класс">
+              <option value="">Класс…</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
+            <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} style={selStyle} aria-label="Дисциплина">
+              <option value="">Дисциплина…</option>
+              {subjects.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <textarea
+            value={topicsText}
+            onChange={(e) => setTopicsText(e.target.value)}
+            rows={5}
+            placeholder={"По теме на строку. Часы — через «|», например:\nМеханика | 4\nОптика"}
+            style={{ padding: "9px 12px", border: "1px solid var(--border, #d1d5db)", borderRadius: 10, fontSize: "var(--text-sm)", resize: "vertical", fontFamily: "inherit" }}
+            aria-label="Темы КТП (по одной на строку)"
+          />
+          <div>
+            <Button variant="create" icon={<Icon name="circle-check" size={15} />} onClick={() => void create()} disabled={busy}>
+              {busy ? "Создаём…" : "Создать черновик"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -244,7 +408,9 @@ function humanErr(e: HttpError): string {
     case "NO_TIMETABLE":
       return "Для класса нет сетки Timetable — сначала соберите расписание.";
     case "KPP_IN_USE":
-      return "КПП нельзя пересобрать: есть идущие или проведённые уроки.";
+      return "Нельзя: есть идущие или проведённые уроки.";
+    case "KTP_IN_USE":
+      return "Нельзя вернуть КТП в черновик: есть идущие или проведённые уроки.";
     default:
       return e.message;
   }

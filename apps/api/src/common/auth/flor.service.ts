@@ -110,8 +110,9 @@ export class FlorService {
       create: { id: sub, firstName: first || fullName, lastName: last, displayName: fullName, email: (c.email as string) ?? undefined },
     });
 
-    // ДОМЕННАЯ роль (teacher|student|parent|staff) — из florus_orgs[].role/org_role.
-    // admin/owner — tenancy-роли (RoleAssignment Флёра), в токен не приходят (канон §7.4).
+    // Роль из florus_orgs[].role/org_role: доменные (teacher|student|parent|staff) и
+    // организационная admin (уточнение AR-16 — у неё есть пакет в каталоге). owner и
+    // tenancy-роли панели (operator/workspace_admin) в токен НЕ приходят (канон §7.4).
     const orgs = (c.florus_orgs as FlorOrg[] | undefined) ?? [];
     const activeFlorOrg = (c.org_id as string) ?? orgs[0]?.org_id ?? null; // платформенная org Флёра
     const activeOrg = orgs.find((o) => o.org_id === activeFlorOrg) ?? orgs[0];

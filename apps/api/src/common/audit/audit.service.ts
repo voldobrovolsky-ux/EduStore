@@ -20,9 +20,11 @@ const AUDITED: Record<string, { categories: string[]; subject: (p: Record<string
   // журнал (AR-4/AR-30): кто, кому, когда выставил/снял оценку
   [ENGINE_EVENTS.gradePosted]: { categories: ['learning'], subject: (p) => p.studentId as string },
   [ENGINE_EVENTS.gradeRemoved]: { categories: ['learning'], subject: (p) => p.studentId as string },
-  // утверждения планов (кто утвердил — actor конверта)
+  // утверждения планов и их отзыв (кто утвердил/вернул — actor конверта)
   [ENGINE_EVENTS.ktpApproved]: { categories: ['process'], subject: () => undefined },
+  [ENGINE_EVENTS.ktpReverted]: { categories: ['process'], subject: () => undefined },
   [ENGINE_EVENTS.kppApproved]: { categories: ['process'], subject: () => undefined },
+  [ENGINE_EVENTS.kppReverted]: { categories: ['process'], subject: () => undefined },
   // документохранилище: раздача доступа/шаринг/смена статуса
   [DOC_EVENTS.fileShared]: { categories: ['files'], subject: (p) => p.granteeId as string | undefined },
   [DOC_EVENTS.fileAccessChanged]: { categories: ['files'], subject: () => undefined },

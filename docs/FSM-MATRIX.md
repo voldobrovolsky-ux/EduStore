@@ -9,15 +9,15 @@
 
 | Состояние | Вход | Выход | Дом-экран | Терминал? |
 |---|---|---|---|---|
-| `draft` | автогенерация из `textbook.parsed` (`ktp.generated`, часы `hoursSource='estimated'`); дополнение при повторной загрузке; ручная правка темы `POST edu/ktp/topics/:id` (снимает флаг оценки); ⚠ ручное создание КТП без учебника не определено (AR-38) | `approve` → `approved` (завуч, `planning.ktp.approve`) | KtpApprovalScreen (завуч, бейдж «оценка парсера») | нет |
-| `approved` | `approve` + событие `edustore.ktp.approved` → триггерит Solver | повторный `textbook.parsed` → НОВАЯ draft-версия (утверждённая не трогается); ⚠ прямой возврат approved→draft не определён | KtpApprovalScreen | да (де-факто) |
+| `draft` | автогенерация из `textbook.parsed` (`ktp.generated`, часы `hoursSource='estimated'`); дополнение при повторной загрузке; ручная правка темы `POST edu/ktp/topics/:id` (снимает флаг оценки); ручное создание без учебника `POST edu/ktp` (`planning.ktp.created.v1`, второй черновик пары → `KTP_DRAFT_EXISTS`; G-19); возврат из approved (`revert`) | `approve` → `approved` (завуч, `planning.ktp.approve`) | KtpApprovalScreen (завуч, бейдж «оценка парсера») | нет |
+| `approved` | `approve` + событие `edustore.ktp.approved` → триггерит Solver | повторный `textbook.parsed` → НОВАЯ draft-версия (утверждённая не трогается); `revert` → `draft` (`planning.ktp.reverted.v1`, сносит производный idle-КПП; не-idle уроки → `KTP_IN_USE`; G-19) | KtpApprovalScreen | нет |
 
 ## 2. `Kpp` (календарно-поурочный план) — `KppStatus`
 
 | Состояние | Вход | Выход | Дом-экран | Терминал? |
 |---|---|---|---|---|
 | `scheduled` | Solver `generateKpp` (по `ktp.approved`); отказы: `NO_APPROVED_KTP`, `NO_TIMETABLE`, `INSUFFICIENT_SLOTS`, `KPP_IN_USE` | `approve` → `approved` (завуч); пересборка Solver'ом (сносит КПП+уроки, только пока все уроки idle) | KtpApprovalScreen | нет |
-| `approved` | `approve` + `edustore.kpp.approved` → открывает гейт `lesson.start` | ⚠ отзыв утверждения не определён; пересборка заблокирована `KPP_IN_USE` при не-idle уроках | KtpApprovalScreen | да (де-факто) |
+| `approved` | `approve` + `planning.kpp.approved.v1` → открывает гейт `lesson.start` | `revert` → `scheduled` (`planning.kpp.reverted.v1`, гейт закрывается обратно; не-idle уроки → `KPP_IN_USE`; G-19); пересборка заблокирована `KPP_IN_USE` при не-idle уроках | KtpApprovalScreen | да (де-факто) |
 
 ## 3. `Lesson` — `LessonState` (+ `phase` внутри running)
 
@@ -25,7 +25,7 @@
 |---|---|---|---|---|
 | `idle` | создаётся Solver'ом (mode=auto) | `start` → `running` — гейт `kpp.approved`, иначе `409 LESSON_LOCKED`; право `lesson.conduct` | ПП («метро»), Летучка (выбор урока) | нет |
 | `running` | `start` (t0, teacherId, событие `lesson.started`) | `setPhase` (цикл внутри, `lesson.phase.changed`); `complete` → `done` | ПП / Летучка | нет |
-| `done` | `complete` — ⚠ БЕЗ события | ⚠ выхода нет (отмена/повторное проведение не определены) | ПП | да |
+| `done` | `complete` (`lesson.lesson.completed.v1` — конец урока виден каскадам; G-19) | `reopen` → `running` (`lesson.lesson.reopened.v1`, только при утверждённом КПП; G-19) | ПП | нет |
 
 Сопутствующие сигналы running: `attendance.marked`, `topic.progressed`, `topic.completed` → ИОМ.
 ⚠ `TimingProfile` (методист) заведён и читается, но пороги фаз в FSM не применяются (ENGINE.md, стаб).
@@ -74,7 +74,7 @@
 |---|---|---|---|---|
 | `PENDING` | `enqueue` в транзакции домена | publish (inline drain / воркер 2с) → `PUBLISHED`; ошибка → attempts++ | ⚠ операторского экрана DLQ нет (только БД) | нет |
 | `PUBLISHED` | publish | выхода нет | — | да |
-| `FAILED` (DLQ) | attempts ≥ 8 | ⚠ ручного replay нет — ни API, ни скрипта | ⚠ | да (тупик) |
+| `FAILED` (DLQ) | attempts ≥ 8 (ветка достижима: падение потребителя больше не глотается — G-17) | `npm run dlq:replay` (в т.ч. `--list`, адресный по id); идемпотентно (inbox `bus:<consumer>`); ⚠ операторского экрана нет — CLI | — | нет |
 
 ## 8. `PilotInvite` (временный контур, AR-15)
 
@@ -151,13 +151,16 @@ G-13; media/comms — слоты поверхностей); ~~авторинг T
 «Сетка расписания» + `TIMETABLE_IN_USE`, G-15); снятие оценки получило событие
 `journal.grade.removed.v1` (аудит); двойной журнал устранён (AR-4, G-12).
 
+Закрыто реализацией 2026-07-28 (вторая волна, G-17/G-19): ~~обратные переходы
+`Ktp.approved`/`Kpp.approved`/`Lesson.done`~~ (revert/reopen с событиями и `*_IN_USE`-гейтами);
+~~`Lesson.complete` без события~~ (`lesson.lesson.completed.v1`); ~~DLQ-тупик~~ (ветка достижима +
+`dlq:replay`); ~~ручное создание КТП~~ (`POST edu/ktp` + форма завуча).
+
 Остаются (кандидаты в следующие инкременты / дизайн-спеку):
-1. Нет обратных переходов: `Ktp.approved` (прямой возврат), `Kpp.approved`, `Lesson.done`, `File.archived` — отмена/возврат не определены.
-2. `Lesson.complete` не эмитит событие — конец урока невидим для каскадов.
-3. DLQ (`OutboxEvent.FAILED`) — тупик без replay и без операторского экрана (G-17).
-4. `BriefTest.done` и Ack-реестр — нет дома на экране.
-5. `Channel.dm` — инвариант есть, эндпоинта нет.
-6. `LessonMode.hybrid|manual` — мёртвые значения enum.
-7. Скан без текстового слоя → `textExtract=null` → материал без тем/карт; Vision-OCR — слот (AR-39).
-8. Устройственные потоки in-memory — теряются на рестарте (принято для v1).
-9. Ручное создание КТП без учебника не определено (остаток AR-38).
+1. `File.archived` — восстановление не определено (форк official→draft — слот §5).
+2. DLQ: операторского экрана нет — только CLI `dlq:replay`.
+3. `BriefTest.done` и Ack-реестр — нет дома на экране.
+4. `Channel.dm` — инвариант есть, эндпоинта нет.
+5. `LessonMode.hybrid|manual` — мёртвые значения enum.
+6. Скан без текстового слоя → `textExtract=null` → материал без тем/карт; Vision-OCR — слот (AR-39).
+7. Устройственные потоки in-memory — теряются на рестарте (принято для v1).

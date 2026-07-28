@@ -8,6 +8,15 @@ import { IomService } from './iom.service';
 import { AssessmentService } from './assessment.service';
 import { JournalService, type PostGradeInput } from './journal.service';
 import { AnalyticsService } from './analytics.service';
+// G-14: request/response-формы фронт↔бэк — из @edustore/shared (дрейф ломает tsc с обеих сторон)
+import type {
+  BriefTestCheckItem,
+  CreateKtpRequest,
+  EduLessonDetailDto,
+  KtpApproveOutcome,
+  KtpTopicPatch,
+  UpsertTimetableRequest,
+} from '@edustore/shared';
 
 interface GenerateBody { classId: string; disciplineId: string }
 interface PhaseBody { phase: string }
@@ -15,7 +24,7 @@ interface AttendanceBody { marks: { studentId: string; status: string; arrivalTi
 interface TopicProgressBody { topicId: string; timeSpent: number }
 interface TopicCompleteBody { topicId: string }
 interface PrintBody { type?: string }
-interface CheckBody { results: { studentCode: string; score: number }[] }
+interface CheckBody { results: BriefTestCheckItem[] }
 interface KtpAdjustBody { lessonId: string; action: string; reason?: string }
 
 // Движок планирования — /api/v1/edu/* (Архстандарт §2; глобальный префикс api → путь v1/edu).
@@ -40,17 +49,33 @@ export class EngineController {
     return this.engine.getKtp(classId, disciplineId);
   }
 
+  /** Ручное создание черновика КТП без учебника (остаток AR-38): завуч задаёт темы руками. */
+  @RequirePermission('planning.ktp.edit')
+  @Post('ktp')
+  createKtp(@Body() body: CreateKtpRequest, @Req() req: Request & { user?: SessionUser }) {
+    return this.engine.createKtp(body.classId, body.disciplineId, body.topics ?? [], this.actor(req));
+  }
+
   /** Правка темы черновика КТП (завуч перед утверждением): часы/название; снимает hoursSource. */
   @RequirePermission('planning.ktp.edit')
   @Post('ktp/topics/:id')
-  updateKtpTopic(@Param('id') id: string, @Body() body: { title?: string; fgosHours?: number }, @Req() req: Request & { user?: SessionUser }) {
+  updateKtpTopic(@Param('id') id: string, @Body() body: KtpTopicPatch, @Req() req: Request & { user?: SessionUser }) {
     return this.engine.updateKtpTopic(id, body, this.actor(req));
+  }
+
+  /** Обратный переход approved→draft (только при idle-плане); производный КПП сносится. */
+  @RequirePermission('planning.ktp.approve')
+  @Post('ktp/:id/revert')
+  async revertKtp(@Param('id') id: string, @Req() req: Request & { user?: SessionUser }) {
+    const res = await this.engine.revertKtp(id, this.actor(req));
+    await this.dispatcher.drain();
+    return res;
   }
 
   /** Завуч утверждает КТП → ktp.approved → (inline) Solver раскладывает КПП (§7). */
   @RequirePermission('planning.ktp.approve')
   @Post('ktp/:id/approve')
-  async approveKtp(@Param('id') id: string, @Req() req: Request & { user?: SessionUser }) {
+  async approveKtp(@Param('id') id: string, @Req() req: Request & { user?: SessionUser }): Promise<KtpApproveOutcome> {
     const res = await this.engine.approveKtp(id, this.actor(req));
     await this.dispatcher.drain(); // прогнать пайплайн: ktp.approved → генерация КПП
     // вернуть исход генерации (Solver может упасть на нехватке слотов — ошибка в логах,
@@ -99,6 +124,15 @@ export class EngineController {
     return res;
   }
 
+  /** Обратный переход approved→scheduled: закрывает гейт урока (только при idle-уроках). */
+  @RequirePermission('planning.kpp.approve')
+  @Post('kpp/:id/revert')
+  async revertKpp(@Param('id') id: string, @Req() req: Request & { user?: SessionUser }) {
+    const res = await this.engine.revertKpp(id, this.actor(req));
+    await this.dispatcher.drain();
+    return res;
+  }
+
   // ─── Timetable / Расписание ───
   @Get('timetable')
   getTimetable(@Query('classId') classId?: string) {
@@ -108,10 +142,7 @@ export class EngineController {
   /** AR-38: завуч сохраняет сетку класса (типовая неделя). Движок — единственный писатель. */
   @RequirePermission('schedule.build')
   @Post('timetable')
-  async upsertTimetable(
-    @Body() body: { classId: string; slots: { day: number; position: number; durationMin?: number }[] },
-    @Req() req: Request & { user?: SessionUser },
-  ) {
+  async upsertTimetable(@Body() body: UpsertTimetableRequest, @Req() req: Request & { user?: SessionUser }) {
     const res = await this.engine.upsertTimetable(body.classId, body.slots ?? [], this.actor(req));
     await this.dispatcher.drain();
     return res;
@@ -137,7 +168,7 @@ export class EngineController {
 
   // ─── Lesson FSM ───
   @Get('lessons/:id')
-  getLesson(@Param('id') id: string) {
+  getLesson(@Param('id') id: string): Promise<EduLessonDetailDto> {
     return this.engine.getLesson(id);
   }
 
@@ -157,8 +188,19 @@ export class EngineController {
 
   @RequirePermission('lesson.conduct')
   @Post('lessons/:id/complete')
-  complete(@Param('id') id: string) {
-    return this.engine.completeLesson(id);
+  async complete(@Param('id') id: string, @Req() req: Request & { user?: SessionUser }) {
+    const res = await this.engine.completeLesson(id, this.actor(req));
+    await this.dispatcher.drain(); // lesson.completed → каскады (аудит и будущие потребители)
+    return res;
+  }
+
+  /** Обратный переход done→running: возобновление ошибочно завершённого урока. */
+  @RequirePermission('lesson.conduct')
+  @Post('lessons/:id/reopen')
+  async reopen(@Param('id') id: string, @Req() req: Request & { user?: SessionUser }) {
+    const res = await this.engine.reopenLesson(id, this.actor(req));
+    await this.dispatcher.drain();
+    return res;
   }
 
   // ─── Сигналы урока → ИОМ (inline-дренаж → аккумулятор обновляется сразу) ───

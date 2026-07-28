@@ -1,55 +1,21 @@
 // Клиент учебников: загрузка через Документохранилище (upload-init → PUT presigned → commit)
 // и разбор парсера (темы/карты). Контур docs/ — S3-абстракция бэка; фронт видит только presigned URL.
+// G-14: формы — из @edustore/shared (та же типизация на бэке; дрейф ломает tsc).
 import { http, HttpError } from "./http";
+import type {
+  CommitResponse,
+  DocFileDto,
+  MyAssignmentDto,
+  ParsedResponse,
+  UploadInitResponse,
+} from "@edustore/shared";
 
-export interface UploadInitResp {
-  fileId: string;
-  uploadUrl: string;
-  expiresIn: number;
-  classId: string;
-  disciplineId: string;
-}
-export interface CommitResp {
-  materialId: string;
-  fileId: string;
-  disciplineId: string;
-  classId: string | null;
-  state: string;
-}
-/** Назначение учителя (его собственный «флажок» класс+дисциплина) — контекст загрузки. */
-export interface MyAssignmentDto {
-  id: string; // assignmentId
-  classId: string;
-  label: string; // «6А»
-  subject: string; // «Математика»
-  subjectId: string;
-}
-export interface ParsedTopicDto {
-  id: string;
-  order: number;
-  title: string;
-}
-export interface ParsedCardDto {
-  id: string;
-  order: number;
-  title: string;
-  content: string | null;
-  topicId: string | null;
-}
-export interface ParsedResp {
-  materialId: string | null;
-  fileId: string;
-  topics: ParsedTopicDto[];
-  cards: ParsedCardDto[];
-}
-export interface DocFileDto {
-  id: string;
-  mime: string | null;
-  state: "pending" | "raw" | "enriched" | string;
-  disciplineId: string | null;
-  createdAt: string;
-  s3Key: string;
-}
+// алиасы прежних локальных имён (экраны импортируют отсюда)
+export type UploadInitResp = UploadInitResponse;
+export type CommitResp = CommitResponse;
+export type ParsedResp = ParsedResponse;
+export type { DocFileDto, MyAssignmentDto };
+export type { ParsedCardDto, ParsedTopicDto } from "@edustore/shared";
 
 const EDU = "/api/v1/edu/materials";
 const DOC = "/api/v1/doc";

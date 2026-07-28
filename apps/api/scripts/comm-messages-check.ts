@@ -123,12 +123,14 @@ async function main() {
     const pmsg = await messages.postMessage(ch.id, P1, { mode: 'chat', body: 'от родителя-участника' });
     check('участник (после добавления) может писать', pmsg.mode === 'chat');
 
-    // ── правка: edited=true, история не стёрта; реакция ──
-    const edited = await messages.editMessage(m1.id, 'сообщение 1 (правка)');
+    // ── правка: edited=true, история не стёрта; ресурс-гейты правки/реакции (whitelist G-10) ──
+    const edited = await messages.editMessage(m1.id, T1, 'сообщение 1 (правка)');
     const stillThere = await prisma.message.findUnique({ where: { id: m1.id } });
     check('правка: edited=true, тело обновлено, сообщение НЕ удалено', edited.edited === true && stillThere?.body === 'сообщение 1 (правка)' && stillThere !== null);
+    await expectThrow('правка чужого сообщения → NOT_MESSAGE_AUTHOR', () => messages.editMessage(m1.id, P1, 'взлом'), 'NOT_MESSAGE_AUTHOR');
     await messages.addReaction(m1.id, T1, '👍');
     check('реакция добавлена', (await prisma.messageReaction.count({ where: { messageId: m1.id } })) === 1);
+    await expectThrow('реакция не-участника → NOT_CHANNEL_PARTICIPANT', () => messages.addReaction(m1.id, P2, '👀'), 'NOT_CHANNEL_PARTICIPANT');
 
     // ── объявление → required-set → ack → overdue → reconcile ──
     const past = new Date(Date.now() - 60_000).toISOString();
