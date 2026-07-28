@@ -44,7 +44,10 @@ export class TenantInterceptor implements NestInterceptor {
     // сессия без активной школы или DEV-bypass: вывести тенант (= школу) из directory
     const tenantId = await this.resolveTenantForUser(user.florusUserId);
     if (tenantId) return { tenantId, system: false };
-    return { tenantId: null, system: true }; // не привязан ни к одной школе (owner до выбора)
+    // AR-34 fail-closed: аутентифицирован, но не привязан ни к одной школе → доменные модели
+    // недоступны (guard бросит 403). Кейсы «до выбора школы» (/me, provision) работают только
+    // через явный TenantContext.runAsSystem в своих сервисах, не через этот дефолт.
+    return { tenantId: null, system: false };
   }
 
   // Membership вне изоляции; Teacher — fallback для DEV-учителя (guarded, потому system).
