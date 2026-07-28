@@ -1,6 +1,4 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { GradeSource } from '@prisma/client';
-import { TenantContext } from '../../common/tenant/tenant-context';
 import type {
   GradeValue,
   JournalColumn,
@@ -8,19 +6,22 @@ import type {
   JournalRow,
 } from '@edustore/shared';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  cellToGradeData,
-  formatDay,
-  gradeToCell,
-  rowAverage,
-  ruWeekday,
-} from '../../common/grade.util';
+import { formatDay, rowAverage, ruWeekday } from '../../common/grade.util';
+import { JournalService as EngineJournalService } from '../engine/journal.service';
 import { SetGradeDto, UpdateGradeDto } from './dto/set-grade.dto';
 
-/** Домен «журнал»: сетка оценок класса×предмета, сводка, CRUD оценок. */
+/**
+ * Домен «журнал» (поверхность кабинета учителя): сетка оценок класса×предмета, сводка.
+ * AR-4: источник истины — JournalCell; ЗАПИСЬ делегируется движковому JournalService
+ * (единственный писатель, событие journal.grade.posted.v1 / .removed.v1). Здесь — только
+ * чтение и сборка сетки.
+ */
 @Injectable()
 export class JournalService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly writer: EngineJournalService,
+  ) {}
 
   /** Полная сетка журнала: колонки-уроки, строки-ученики, сводка. */
   async getJournal(classId: string, subjectId?: string): Promise<JournalData> {
@@ -53,24 +54,21 @@ export class JournalService {
     });
 
     const lessonIds = lessons.map((l) => l.id);
-    const grades = lessonIds.length
-      ? await this.prisma.grade.findMany({
+    const cells = lessonIds.length
+      ? await this.prisma.journalCell.findMany({
           where: { lessonId: { in: lessonIds } },
         })
       : [];
 
-    // Быстрый доступ: studentId → lessonId → запись.
-    const byStudent = new Map<
-      string,
-      Map<string, { value: number | null; absent: boolean }>
-    >();
-    for (const g of grades) {
-      let row = byStudent.get(g.studentId);
+    // Быстрый доступ: studentId → lessonId → значение ячейки.
+    const byStudent = new Map<string, Map<string, string>>();
+    for (const c of cells) {
+      let row = byStudent.get(c.studentId);
       if (!row) {
         row = new Map();
-        byStudent.set(g.studentId, row);
+        byStudent.set(c.studentId, row);
       }
-      row.set(g.lessonId, { value: g.value, absent: g.absent });
+      row.set(c.lessonId, c.grade);
     }
 
     const columns: JournalColumn[] = lessons.map((l) => ({
@@ -101,7 +99,7 @@ export class JournalService {
     };
   }
 
-  /** Upsert/снятие оценки в ячейке. Возвращает обновлённую строку ученика. */
+  /** Выставление/правка/снятие оценки в ячейке — через единственного писателя (AR-4). */
   async setGrade(dto: SetGradeDto, teacherId: string): Promise<JournalRow> {
     const lesson = await this.prisma.lesson.findUnique({
       where: { id: dto.lessonId },
@@ -111,84 +109,65 @@ export class JournalService {
       throw new NotFoundException(`Урок ${dto.lessonId} не найден`);
     }
 
-    const data = cellToGradeData(dto.value);
-    const source = (dto.source as GradeSource) ?? GradeSource.MANUAL;
-
-    if (data === null) {
-      // Пустое значение — удаляем оценку, если она была.
-      await this.prisma.grade.deleteMany({
-        where: { studentId: dto.studentId, lessonId: dto.lessonId },
-      });
+    if (dto.value === '') {
+      // Пустое значение — снятие оценки (journal.grade.removed.v1)
+      await this.writer.removeGrade(dto.studentId, dto.lessonId, teacherId);
     } else {
-      await this.prisma.grade.upsert({
-        where: {
-          studentId_lessonId: {
-            studentId: dto.studentId,
-            lessonId: dto.lessonId,
-          },
-        },
-        create: {
-          workspaceId: TenantContext.require(), // тенант = школа урока (активный контекст)
-          studentId: dto.studentId,
+      await this.writer.postGrade(
+        {
           lessonId: dto.lessonId,
-          value: data.value,
-          absent: data.absent,
-          comment: dto.comment ?? null,
-          createdBy: teacherId,
-          source,
+          studentId: dto.studentId,
+          grade: dto.value,
+          comment: dto.comment,
+          source: dto.source === 'VOICE' ? 'VOICE' : 'MANUAL',
         },
-        update: {
-          value: data.value,
-          absent: data.absent,
-          ...(dto.comment !== undefined ? { comment: dto.comment } : {}),
-          source,
-        },
-      });
+        teacherId,
+      );
     }
 
     return this.studentRow(dto.studentId, lesson.classId, lesson.subjectId);
   }
 
-  /** Правка существующей оценки по её id. Возвращает строку ученика. */
-  async updateGrade(gradeId: string, dto: UpdateGradeDto): Promise<JournalRow> {
-    const grade = await this.prisma.grade.findUnique({
-      where: { id: gradeId },
-      include: { lesson: { select: { classId: true, subjectId: true } } },
+  /** Правка существующей ячейки по её id (легаси-роут PUT /journal/grade/:id). */
+  async updateGrade(cellId: string, dto: UpdateGradeDto, teacherId: string): Promise<JournalRow> {
+    const cell = await this.prisma.journalCell.findUnique({ where: { id: cellId } });
+    if (!cell) {
+      throw new NotFoundException(`Оценка ${cellId} не найдена`);
+    }
+    const lesson = await this.prisma.lesson.findUnique({
+      where: { id: cell.lessonId },
+      select: { classId: true, subjectId: true },
     });
-    if (!grade) {
-      throw new NotFoundException(`Оценка ${gradeId} не найдена`);
+    if (!lesson) {
+      throw new NotFoundException(`Урок ${cell.lessonId} не найден`);
     }
 
-    const data = cellToGradeData(dto.value);
-    if (data === null) {
-      await this.prisma.grade.delete({ where: { id: gradeId } });
+    if (dto.value === '') {
+      await this.writer.removeGrade(cell.studentId, cell.lessonId, teacherId);
     } else {
-      await this.prisma.grade.update({
-        where: { id: gradeId },
-        data: {
-          value: data.value,
-          absent: data.absent,
-          ...(dto.comment !== undefined ? { comment: dto.comment } : {}),
-          ...(dto.source ? { source: dto.source as GradeSource } : {}),
+      await this.writer.postGrade(
+        {
+          lessonId: cell.lessonId,
+          studentId: cell.studentId,
+          grade: dto.value,
+          comment: dto.comment,
+          source: dto.source === 'VOICE' ? 'VOICE' : 'MANUAL',
         },
-      });
+        teacherId,
+      );
     }
 
-    return this.studentRow(
-      grade.studentId,
-      grade.lesson.classId,
-      grade.lesson.subjectId,
-    );
+    return this.studentRow(cell.studentId, lesson.classId, lesson.subjectId);
   }
 
   /** Строит JournalRow ученика для заданного набора уроков (по порядку). */
   private buildRow(
     student: { id: string; number: number; displayName: string },
     lessonIds: string[],
-    studentGrades?: Map<string, { value: number | null; absent: boolean }>,
+    studentCells?: Map<string, string>,
   ): JournalRow {
-    const grades: GradeValue[] = lessonIds.map((lessonId) =>
-      gradeToCell(studentGrades?.get(lessonId)),
+    const grades: GradeValue[] = lessonIds.map(
+      (lessonId) => (studentCells?.get(lessonId) ?? '') as GradeValue,
     );
     return {
       studentId: student.id,
@@ -219,14 +198,12 @@ export class JournalService {
     });
     const lessonIds = lessons.map((l) => l.id);
 
-    const grades = lessonIds.length
-      ? await this.prisma.grade.findMany({
+    const cells = lessonIds.length
+      ? await this.prisma.journalCell.findMany({
           where: { studentId, lessonId: { in: lessonIds } },
         })
       : [];
-    const byLesson = new Map(
-      grades.map((g) => [g.lessonId, { value: g.value, absent: g.absent }]),
-    );
+    const byLesson = new Map(cells.map((c) => [c.lessonId, c.grade]));
 
     return this.buildRow(student, lessonIds, byLesson);
   }

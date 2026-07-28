@@ -289,7 +289,6 @@ model Student {
   firstName   String
   lastName    String
   displayName String // "Иванов Артём"
-  grades      Grade[]
   profile     StudentProfile?
   notes       TeacherNote[]
 
@@ -324,7 +323,6 @@ model Lesson {
   pageStart    Int?
   pageEnd      Int?
   homework     String?
-  grades       Grade[]
   materials    GeneratedMaterial[]
   notes        TeacherNote[]
 
@@ -333,25 +331,6 @@ model Lesson {
   @@index([kppLessonId])
 }
 
-model Grade {
-  id          String      @id @default(cuid())
-  workspaceId String // тенант = школа (Workspace)
-  studentId   String
-  student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  lessonId    String
-  lesson      Lesson      @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  value       Int? // 2..5, null если только посещаемость/комментарий
-  absent      Boolean     @default(false)
-  comment     String?
-  createdBy   String // teacherId
-  source      GradeSource @default(MANUAL)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-  @@unique([studentId, lessonId])
-  @@index([lessonId])
-  @@index([workspaceId])
-}
 
 // ─────────────────────────── materials / profile / notes ───────────────────────────
 model GeneratedMaterial {
@@ -922,21 +901,28 @@ model FgosHours {
 // Ячейка журнала пишется ТОЛЬКО через grade.posted — явное человеко-авторское действие
 // (реальный studentId). assessment.checked сюда НЕ пишет (Архстандарт §8). Отдельно от
 // Phase-0 Grade (legacy демо-журнал кабинета).
+// ЕДИНСТВЕННЫЙ журнал оценок (AR-4): Phase-0 Grade мигрирован сюда и удалён.
+// Писатель один — engine/JournalService.postGrade (событие journal.grade.posted.v1).
 model JournalCell {
-  id           String   @id @default(cuid())
+  id           String      @id @default(cuid())
   workspaceId  String
   classId      String
   disciplineId String
   studentId    String // РЕАЛЬНЫЙ (человеко-авторское)
   lessonId     String
-  grade        String
+  grade        String // '5'|'4'|'3'|'2'|'н'
+  comment      String?
+  source       GradeSource @default(MANUAL)
   workType     String?
   period       String?
   postedBy     String // identity учителя
-  postedAt     DateTime @default(now())
+  postedAt     DateTime    @default(now())
+  updatedAt    DateTime    @default(now()) @updatedAt
 
+  @@unique([studentId, lessonId])
   @@index([workspaceId, classId, disciplineId, period])
   @@index([workspaceId, studentId])
+  @@index([lessonId])
 }
 
 // ═══════════════════════════ ДОКУМЕНТОХРАНИЛИЩЕ (Phase 1, Техспека §5) ═══════════════════════════

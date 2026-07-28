@@ -20,6 +20,7 @@ export const ENGINE_EVENTS = {
   assessmentChecked: 'assessment.result.checked.v1',
   // журнал — только grade.posted (реальный studentId); персонализация — ktp.shift.proposed (предложение)
   gradePosted: 'journal.grade.posted.v1',
+  gradeRemoved: 'journal.grade.removed.v1', // снятие оценки (коррекция) — для аудита AR-30
   ktpShiftProposed: 'planning.ktp_shift.proposed.v1',
 } as const;
 

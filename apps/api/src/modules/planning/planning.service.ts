@@ -36,7 +36,6 @@ export class PlanningService {
       where: { id: lessonId },
       include: {
         materials: { orderBy: { generatedAt: 'asc' } },
-        grades: true,
       },
     });
     if (!lesson) {
@@ -90,24 +89,26 @@ export class PlanningService {
    * - performance = % оценок 4/5 среди выставленных баллов;
    * - progress = % проведённых уроков в этой главе (приближение).
    */
-  private async computeMetrics(
-    lesson: Lesson & { grades: { value: number | null; absent: boolean }[] },
-  ): Promise<LessonMetrics> {
+  private async computeMetrics(lesson: Lesson): Promise<LessonMetrics> {
     const total = await this.prisma.student.count({
       where: { classId: lesson.classId },
     });
 
-    const records = lesson.grades;
-    const graded = records.filter((g) => g.value !== null && !g.absent);
+    // AR-4: единый журнал — метрики считаются по JournalCell ('5'..'2' | 'н')
+    const records = await this.prisma.journalCell.findMany({
+      where: { lessonId: lesson.id },
+      select: { grade: true },
+    });
+    const graded = records.filter((g) => g.grade !== 'н');
     const submitted = graded.length;
-    const present = records.filter((g) => !g.absent).length;
+    const present = graded.length; // 'н' = отсутствие; остальные ячейки — присутствовал
 
     const attendance = records.length
       ? Math.round((present / records.length) * 100)
       : 0;
     const performance = submitted
       ? Math.round(
-          (graded.filter((g) => g.value === 4 || g.value === 5).length /
+          (graded.filter((g) => g.grade === '4' || g.grade === '5').length /
             submitted) *
             100,
         )

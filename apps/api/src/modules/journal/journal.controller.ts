@@ -43,7 +43,8 @@ export class JournalController {
   updateGrade(
     @Param('gradeId') gradeId: string,
     @Body() dto: UpdateGradeDto,
+    @CurrentTeacher() teacherId: string,
   ): Promise<JournalRow> {
-    return this.journalService.updateGrade(gradeId, dto);
+    return this.journalService.updateGrade(gradeId, dto, teacherId);
   }
 }

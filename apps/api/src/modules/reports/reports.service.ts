@@ -36,21 +36,20 @@ export class ReportsService {
       ? [classId]
       : [...new Set(assignments.map((a) => a.classId))];
 
+    // AR-4: единый журнал — отчёты считаются по JournalCell
     const grades = classIds.length
-      ? await this.prisma.grade.findMany({
+      ? await this.prisma.journalCell.findMany({
           where: {
-            lesson: {
-              classId: { in: classIds },
-              ...(subjectId ? { subjectId } : {}),
-            },
+            classId: { in: classIds },
+            ...(subjectId ? { disciplineId: subjectId } : {}),
           },
-          select: { value: true, absent: true },
+          select: { grade: true },
         })
       : [];
 
-    const graded = grades.filter((g) => g.value !== null && !g.absent);
-    const present = grades.filter((g) => !g.absent).length;
-    const good = graded.filter((g) => g.value === 4 || g.value === 5).length;
+    const graded = grades.filter((g) => g.grade !== 'н');
+    const present = graded.length;
+    const good = graded.filter((g) => g.grade === '4' || g.grade === '5').length;
 
     const performance = graded.length
       ? Math.round((good / graded.length) * 100)

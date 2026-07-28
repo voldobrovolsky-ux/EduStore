@@ -16,5 +16,8 @@ import { AnalyticsService } from './analytics.service';
   imports: [PrismaModule],
   controllers: [EngineController],
   providers: [EngineService, EngineHandlers, IomService, IomHandlers, AssessmentService, JournalService, AnalyticsService],
+  // JournalService — ЕДИНСТВЕННЫЙ писатель ячеек журнала (AR-4): его переиспользует
+  // Phase-0 модуль journal (публичный сервис, правило границ №1 из ARCHITECTURE.md)
+  exports: [JournalService],
 })
 export class EngineModule {}

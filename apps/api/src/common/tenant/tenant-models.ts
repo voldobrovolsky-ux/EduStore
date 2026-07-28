@@ -22,7 +22,6 @@ export const TENANT_COLUMN: Record<string, string> = {
   Student: 'workspaceId',
   SubGroup: 'workspaceId',
   TeachingAssignment: 'workspaceId',
-  Grade: 'workspaceId',
   GeneratedMaterial: 'workspaceId',
   StudentProfile: 'workspaceId',
   TeacherNote: 'workspaceId',
