@@ -80,8 +80,8 @@ export class ChannelController {
   }
 
   @Patch('messages/:id')
-  editMessage(@Param('id') id: string, @Body() body: EditBody) {
-    return this.messages.editMessage(id, body.body);
+  editMessage(@Param('id') id: string, @Body() body: EditBody, @Req() req: Request & { user?: SessionUser }) {
+    return this.messages.editMessage(id, this.actor(req), body.body);
   }
 
   @Post('messages/:id/reactions')

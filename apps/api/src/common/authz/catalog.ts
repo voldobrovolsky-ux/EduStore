@@ -21,10 +21,9 @@ export interface RolePackageDef {
 }
 
 export const PERMISSIONS: PermissionDef[] = [
-  // учредитель
-  { code: 'owner.metrics.view', section: 'owner', screen: 'metrics', action: 'view', label: 'Бизнес-метрики' },
-  { code: 'owner.schools.view', section: 'owner', screen: 'schools', action: 'view', label: 'Школы' },
-  { code: 'owner.license.view', section: 'owner', screen: 'license', action: 'view', label: 'Лицензия' },
+  // owner.* прав в каталоге НЕТ: owner — tenancy-роль Флёра (AR-16), кабинет учредителя ведёт
+  // панель Флёра; мёртвые owner.metrics/schools/license.view удалены аудитом 2026-07-28
+  // (не входили ни в один пакет — резолвились в пустоту).
   // структура школы (admin/завуч)
   { code: 'structure.disciplines.manage', section: 'structure', screen: 'disciplines', action: 'manage', label: 'Дисциплины' },
   { code: 'structure.distribution.manage', section: 'structure', screen: 'distribution', action: 'manage', label: 'Распределение учителей' },
@@ -59,8 +58,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'schedule.build', section: 'schedule', screen: 'builder', action: 'build', label: 'Сборка расписания (завуч)' },
   { code: 'materials.lesson.generate', section: 'materials', screen: 'lesson', action: 'generate', label: 'Генерация материалов' },
   { code: 'materials.textbook.upload', section: 'materials', screen: 'textbook', action: 'upload', label: 'Загрузка учебника (учитель)' },
-  // Communitoria (каналы/объявления). admin/owner — tenancy-роли Флёра, в токен не приходят (§7.4),
-  // поэтому «завуч/админ» на объявлениях = доменная роль завуча; админ действует через панель Флёра.
+  // Communitoria (каналы/объявления): «завуч» на объявлениях = доменная суб-роль staff·завуч.
   { code: 'comm.channel.manage', section: 'comm', screen: 'channels', action: 'manage', label: 'Создание каналов Communitoria' },
   { code: 'comm.announcement.post', section: 'comm', screen: 'announcements', action: 'post', label: 'Публикация объявлений (завуч)' },
   { code: 'notes.teacher.edit', section: 'notes', screen: 'teacher', action: 'edit', label: 'Заметки учителя' },
@@ -79,9 +77,10 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'psych.risk.view', section: 'psych', screen: 'risk', action: 'view', label: 'Risk-карта' },
 ];
 
-// Каталог строится ТОЛЬКО на доменных ролях (teacher|student|parent|staff·завуч/методист/
-// психолог). admin/owner — tenancy-роли Флёра (RoleAssignment), в токен не приходят (канон
-// §7.4) → пакетов на них нет; их кабинеты ведёт панель Флёра/walk-up, не каталог RP.
+// Каталог строится на ролях, ПРИХОДЯЩИХ в токен: доменные (teacher|student|parent|
+// staff·завуч/методист/психолог) + организационная admin из florus_orgs[].role (уточнение
+// AR-16 от 2026-07-28). Вне каталога только owner и tenancy-роли панели Флёра
+// (operator/workspace_admin) — они в токен не приходят, их кабинеты ведёт панель Флёра.
 export const ROLE_PACKAGES: RolePackageDef[] = [
   { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'materials.textbook.upload', 'comm.channel.manage', 'notes.teacher.edit', 'lesson.conduct', 'schedule.view', 'doc.files.manage', 'consent.record'] },
   { key: 'zavuch', cabinet: 'zavuch', label: 'Кабинет завуча', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'structure.classes.manage', 'contingent.students.manage', 'planning.ktp.view', 'planning.ktp.edit', 'planning.ktp.approve', 'planning.kpp.approve', 'standards.assessment.manage', 'standards.org.manage', 'standards.fgos.approve', 'comm.channel.manage', 'comm.announcement.post', 'schedule.build', 'schedule.view', 'doc.files.manage', 'doc.files.publish', 'consent.record', 'consent.deletion.request'] },
@@ -120,8 +119,9 @@ export async function syncAuthzCatalog(prisma: PrismaClient): Promise<void> {
       });
     }
   }
-  // прунинг: убрать пакеты, выпавшие из канона (например прежние admin/owner — tenancy-роли,
-  // каталог на них не строим). Связи RolePackagePermission уходят каскадом.
+  // прунинг: убрать пакеты и права, выпавшие из канона (например мёртвые owner.* —
+  // owner вне каталога, AR-16). Связи RolePackagePermission уходят каскадом.
   const keep = ROLE_PACKAGES.map((p) => p.key);
   await prisma.rolePackage.deleteMany({ where: { key: { notIn: keep } } });
+  await prisma.permission.deleteMany({ where: { code: { notIn: PERMISSIONS.map((p) => p.code) } } });
 }

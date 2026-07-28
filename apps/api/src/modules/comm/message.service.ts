@@ -78,10 +78,16 @@ export class MessageService {
     return message;
   }
 
-  /** Правка тела: edited=true, историю НЕ стираем (секретность/аудируемость). */
-  async editMessage(messageId: string, body: string) {
+  /**
+   * Правка тела: edited=true, историю НЕ стираем (секретность/аудируемость).
+   * Resource-гейт (whitelist G-10): править может ТОЛЬКО автор сообщения.
+   */
+  async editMessage(messageId: string, editorId: string, body: string) {
     const msg = await this.prisma.message.findUnique({ where: { id: messageId } });
     if (!msg) throw new NotFoundException('сообщение не найдено');
+    if (msg.authorId !== editorId) {
+      throw new ForbiddenException({ code: 'NOT_MESSAGE_AUTHOR', message: 'править сообщение может только его автор' });
+    }
     return this.prisma.message.update({ where: { id: messageId }, data: { body, edited: true } });
   }
 
@@ -117,7 +123,17 @@ export class MessageService {
     return { items, nextCursor: hasMore ? items[items.length - 1].id : null };
   }
 
-  addReaction(messageId: string, userId: string, emoji: string) {
+  /** Resource-гейт (whitelist G-10): реагировать может только участник/модератор канала сообщения. */
+  async addReaction(messageId: string, userId: string, emoji: string) {
+    const msg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      include: { channel: { include: { participants: { select: { userId: true } } } } },
+    });
+    if (!msg) throw new NotFoundException('сообщение не найдено');
+    const allowed = msg.channel.participants.some((p) => p.userId === userId) || msg.channel.moderators.includes(userId);
+    if (!allowed) {
+      throw new ForbiddenException({ code: 'NOT_CHANNEL_PARTICIPANT', message: 'реагировать может только участник/модератор канала' });
+    }
     return this.prisma.messageReaction.upsert({
       where: { messageId_userId_emoji: { messageId, userId, emoji } },
       update: {},
