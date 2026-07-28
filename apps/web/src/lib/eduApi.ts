@@ -1,5 +1,6 @@
 // Клиент образовательного движка (/api/v1/edu/*): расписание, летучка, КТП/КПП (надзор завуча).
 import { http } from "./http";
+import type { TimetableDto } from "@edustore/shared";
 
 export interface EduLesson {
   id: string;
@@ -102,18 +103,7 @@ export const eduApi = {
     http<TimetableDto>(`${BASE}/timetable`, { method: "POST", body: JSON.stringify({ classId, slots }) }),
 };
 
-export interface TimetableSlotDto {
-  id: string;
-  day: number; // 1..7
-  position: number;
-  durationMin: number;
-}
-export interface TimetableDto {
-  id: string;
-  classId: string;
-  source: string;
-  slots: TimetableSlotDto[];
-}
+export type { TimetableDto, TimetableSlotDto } from "@edustore/shared";
 
 function qs(params: Record<string, string | undefined>): string {
   const p = Object.entries(params).filter(([, v]) => v) as [string, string][];

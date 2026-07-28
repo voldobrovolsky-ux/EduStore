@@ -5,6 +5,9 @@ import { OutboxService } from '../../common/outbox/outbox.service';
 import { newEvent } from '../../common/events/domain-event';
 import { STRUCTURE_EVENTS, type AssignmentEventV1 } from './structure.contract';
 import type { AddSubGroupDto, AssignDto, CreateClassDto, CreateSubjectDto } from './dto';
+// AR-36: контракты ответов — из @edustore/shared (тот же источник, что у фронта):
+// дрейф формы ответа ломает tsc, а не обнаруживается в проде
+import type { StClass, StDevice, StSubject, StTeacher } from '@edustore/shared';
 
 /**
  * Ручное создание структуры школы (онбординг шаги 4.2 и 6):
@@ -20,7 +23,7 @@ export class StructureService {
   ) {}
 
   // ─── классы / подгруппы ───
-  async listClasses() {
+  async listClasses(): Promise<StClass[]> {
     const classes = await this.prisma.class.findMany({
       orderBy: [{ parallel: 'asc' }, { letter: 'asc' }],
       include: { subGroups: true, _count: { select: { students: true } } },
@@ -58,7 +61,7 @@ export class StructureService {
   }
 
   // ─── дисциплины ───
-  async listSubjects() {
+  async listSubjects(): Promise<StSubject[]> {
     const s = await this.prisma.subject.findMany({ orderBy: { name: 'asc' } });
     return s.map((x) => ({ id: x.id, name: x.name, color: x.color }));
   }
@@ -76,7 +79,7 @@ export class StructureService {
   }
 
   // ─── учителя + распределение ───
-  async listTeachers() {
+  async listTeachers(): Promise<StTeacher[]> {
     const teachers = await this.prisma.teacher.findMany({
       include: { user: true, assignments: { include: { class: true, subject: true } } },
     });
@@ -129,7 +132,7 @@ export class StructureService {
   }
 
   // ─── привязанные устройства-киоски (реальные, из таблицы Device) ───
-  async listDevices() {
+  async listDevices(): Promise<StDevice[]> {
     const devices = await this.prisma.device.findMany({ orderBy: { createdAt: 'desc' } });
     const boundIds = [...new Set(devices.map((d) => d.boundByUserId).filter((x): x is string => !!x))];
     const users = boundIds.length
