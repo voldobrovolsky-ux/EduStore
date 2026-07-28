@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
+import { OutboxService } from '../../common/outbox/outbox.service';
+import { newEvent } from '../../common/events/domain-event';
+import { STRUCTURE_EVENTS, type AssignmentEventV1 } from './structure.contract';
 import type { AddSubGroupDto, AssignDto, CreateClassDto, CreateSubjectDto } from './dto';
 
 /**
@@ -11,7 +14,10 @@ import type { AddSubGroupDto, AssignDto, CreateClassDto, CreateSubjectDto } from
  */
 @Injectable()
 export class StructureService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly outbox: OutboxService,
+  ) {}
 
   // ─── классы / подгруппы ───
   async listClasses() {
@@ -85,16 +91,40 @@ export class StructureService {
   }
 
   async assign(dto: AssignDto) {
-    const a = await this.prisma.teachingAssignment.upsert({
-      where: { teacherId_classId_subjectId: { teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId } },
-      update: { subGroupId: dto.subGroupId ?? null },
-      create: { workspaceId: TenantContext.require(), teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId, subGroupId: dto.subGroupId ?? null },
+    const ws = TenantContext.require();
+    // AR-30: назначение учителя — админ-действие с касанием identity → событие для аудита
+    const a = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.teachingAssignment.upsert({
+        where: { teacherId_classId_subjectId: { teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId } },
+        update: { subGroupId: dto.subGroupId ?? null },
+        create: { workspaceId: ws, teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId, subGroupId: dto.subGroupId ?? null },
+      });
+      await this.outbox.enqueue(
+        tx,
+        newEvent<AssignmentEventV1>({
+          type: STRUCTURE_EVENTS.assignmentCreated,
+          workspaceId: ws,
+          payload: { assignmentId: row.id, teacherId: dto.teacherId, classId: dto.classId, subjectId: dto.subjectId },
+        }),
+      );
+      return row;
     });
     return { id: a.id };
   }
 
   async unassign(id: string) {
-    await this.prisma.teachingAssignment.delete({ where: { id } });
+    const ws = TenantContext.require();
+    await this.prisma.$transaction(async (tx) => {
+      const row = await tx.teachingAssignment.delete({ where: { id } });
+      await this.outbox.enqueue(
+        tx,
+        newEvent<AssignmentEventV1>({
+          type: STRUCTURE_EVENTS.assignmentRemoved,
+          workspaceId: ws,
+          payload: { assignmentId: id, teacherId: row.teacherId },
+        }),
+      );
+    });
     return { ok: true };
   }
 
@@ -115,7 +145,14 @@ export class StructureService {
   }
 
   async deleteDevice(id: string) {
-    await this.prisma.device.delete({ where: { id } });
+    const ws = TenantContext.require();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.device.delete({ where: { id } });
+      await this.outbox.enqueue(
+        tx,
+        newEvent({ type: STRUCTURE_EVENTS.deviceRemoved, workspaceId: ws, payload: { deviceId: id } }),
+      );
+    });
     return { ok: true };
   }
 }

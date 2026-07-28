@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
+import { ConsentService } from '../consent/consent.service';
 
 // Веса формулы mastery v1 (Движок §4): 0.6·летучка + 0.25·темы + 0.15·присутствие.
 // Затухание сигналов 60 дней (полупериод) — стаб v1 (нужны per-signal timestamps).
@@ -22,7 +23,10 @@ interface SignalRefs {
  */
 @Injectable()
 export class IomService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly consent: ConsentService,
+  ) {}
 
   private async arOfLesson(lessonId: string): Promise<{ disciplineId: string; arCodes: string[] } | null> {
     const l = await this.prisma.lesson.findUnique({
@@ -116,6 +120,14 @@ export class IomService {
 
   /** Срез ИОМ. UI учителя — реальные имена (авторизован); ИИ-граница — гейт в analytics. */
   async getIom(studentId: string) {
+    // AR-29: персональный срез ИОМ = профилирование → требуется predictive_profiling-согласие.
+    // Отказ ЯВНЫЙ (код NO_PROFILING_CONSENT), не пустой ответ — UI показывает причину.
+    if (!(await this.consent.has(studentId, 'predictive_profiling'))) {
+      throw new ForbiddenException({
+        code: 'NO_PROFILING_CONSENT',
+        message: 'нет согласия на профилирование (152-ФЗ §6.3) — срез ИОМ недоступен',
+      });
+    }
     const edges = await this.prisma.masteryEdge.findMany({
       where: { studentId },
       include: { competencyNode: true },

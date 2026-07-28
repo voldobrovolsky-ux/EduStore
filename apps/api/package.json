@@ -19,7 +19,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "authz:check": "ts-node scripts/authz-coverage-check.ts",
-    "events:check": "ts-node scripts/event-naming-check.ts"
+    "events:check": "ts-node scripts/event-naming-check.ts",
+    "consent:check": "ts-node scripts/consent-gate-check.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1077.0",
