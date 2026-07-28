@@ -1,6 +1,6 @@
 # EduStore — FSM-матрицы полноты
 
-> Дата: 2026-07-28. Каждый конечный автомат системы — строкой на состояние:
+> Дата: 2026-07-28, состояние **main** (`cfe3a09`). Каждый конечный автомат системы — строкой на состояние:
 > `состояние → (входы, выходы, дом-экран, терминал?)`. Пустая ячейка или «—» с
 > пометкой ⚠ = дыра, видимая перечислением, а не чтением кода. Ссылки АР-N —
 > на [AR-REGISTRY.md](./AR-REGISTRY.md). Дыры сведены в конец документа.
@@ -9,8 +9,8 @@
 
 | Состояние | Вход | Выход | Дом-экран | Терминал? |
 |---|---|---|---|---|
-| `draft` | создание (сейчас только seed — ⚠ AR-38) | `approve` → `approved` (завуч, `planning.ktp.approve`) | KtpApprovalScreen (завуч) | нет |
-| `approved` | `approve` + событие `edustore.ktp.approved` → триггерит Solver | ⚠ выхода нет: возврат в draft/редактирование утверждённого не определены | KtpApprovalScreen | да (де-факто) |
+| `draft` | автогенерация из `textbook.parsed` (`ktp.generated`, часы `hoursSource='estimated'`); дополнение при повторной загрузке; ручная правка темы `POST edu/ktp/topics/:id` (снимает флаг оценки); ⚠ ручное создание КТП без учебника не определено (AR-38) | `approve` → `approved` (завуч, `planning.ktp.approve`) | KtpApprovalScreen (завуч, бейдж «оценка парсера») | нет |
+| `approved` | `approve` + событие `edustore.ktp.approved` → триггерит Solver | повторный `textbook.parsed` → НОВАЯ draft-версия (утверждённая не трогается); ⚠ прямой возврат approved→draft не определён | KtpApprovalScreen | да (де-факто) |
 
 ## 2. `Kpp` (календарно-поурочный план) — `KppStatus`
 
@@ -54,7 +54,7 @@
 | Состояние | Вход | Выход | Дом-экран | Терминал? |
 |---|---|---|---|---|
 | `pending` | `upload-url` (presign) | `commit` (HEAD-валидация; нет объекта → `409 NO_OBJECT`); orphan-GC через 15 мин → удаление | MaterialsScreen (прогресс) | нет |
-| `raw` | `commit` (`doc.file.created`) | `enrich` → `enriched` — ⚠ enrich = стаб, `textExtract:null` (AR-39) | MaterialsScreen (значок состояния) | нет |
+| `raw` | `commit` (`doc.file.created`) | `enrich` → `enriched` (PDF — `pdf-parse`, `text/*` — как есть; скан без слоя → `textExtract=null`, деградация — AR-39) | MaterialsScreen (значок состояния) | нет |
 | `enriched` | `enrich` (`doc.file.enriched` → парсер учебников) | выхода нет (повторный enrich идемпотентен) | MaterialsScreen (темы/карты) | да |
 
 `status` (документооборот, только scope=школа): `draft → review → official → archived`.
@@ -152,5 +152,6 @@
 5. `Channel.dm` — инвариант есть, эндпоинта нет.
 6. `ConsentPurpose` — ни одно значение не гейтится (AR-29).
 7. `LessonMode.hybrid|manual` — мёртвые значения enum.
-8. `File.state=raw → enriched` в реальном потоке не происходит (enrich-стаб, AR-39).
+8. Скан без текстового слоя → `textExtract=null` → материал навсегда без тем/карт; Vision-OCR — слот (AR-39).
 9. Устройственные потоки in-memory — теряются на рестарте (принято для v1, зафиксировать в спеке).
+10. Авторинг Timetable отсутствует — сетка слотов только из seed (AR-38, остаток узла).
