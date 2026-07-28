@@ -5,6 +5,8 @@ import { OutboxDispatcher } from '../../common/outbox/outbox.dispatcher';
 import { RequirePermission } from '../../common/authz/require-permission.decorator';
 import { MaterialService } from './material.service';
 import { ParserService } from './parser.service';
+// G-14: формы ответов — из @edustore/shared (фронт materialsApi типизирован теми же; дрейф ломает tsc)
+import type { CommitResponse, ParsedResponse, UploadInitResponse } from '@edustore/shared';
 
 interface UploadInitBody {
   mime: string;
@@ -30,14 +32,14 @@ export class TextbookController {
    */
   @RequirePermission('materials.textbook.upload')
   @Post('upload-init')
-  uploadInit(@Body() body: UploadInitBody, @Req() req: Request & { user?: SessionUser }) {
+  uploadInit(@Body() body: UploadInitBody, @Req() req: Request & { user?: SessionUser }): Promise<UploadInitResponse> {
     return this.material.uploadInit(body, this.actor(req));
   }
 
   /** Подтвердить загрузку → Material + textbook.uploaded; прогнать каскад (enrich → parsed → КТП). */
   @RequirePermission('materials.textbook.upload')
   @Post(':fileId/commit')
-  async commit(@Param('fileId') fileId: string, @Req() req: Request & { user?: SessionUser }) {
+  async commit(@Param('fileId') fileId: string, @Req() req: Request & { user?: SessionUser }): Promise<CommitResponse> {
     const res = await this.material.commit(fileId, this.actor(req));
     await this.dispatcher.drain(); // doc.file.created → enrich → doc.file.enriched → parser → textbook.parsed → ktp.generated
     return res;
@@ -45,7 +47,7 @@ export class TextbookController {
 
   /** Разбор учебника (темы/карты) по fileId — для UI/проверки. */
   @Get(':fileId/parsed')
-  parsed(@Param('fileId') fileId: string) {
+  parsed(@Param('fileId') fileId: string): Promise<ParsedResponse> {
     return this.parser.getParsed(fileId);
   }
 }

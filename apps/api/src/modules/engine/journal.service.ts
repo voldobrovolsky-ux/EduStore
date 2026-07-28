@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OutboxService } from '../../common/outbox/outbox.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
@@ -28,10 +28,21 @@ export class JournalService {
     private readonly outbox: OutboxService,
   ) {}
 
+  // единственный писатель журнала — валидация здесь, а не только в HTTP-DTO Phase-0 роута
+  private static readonly GRADES = ['5', '4', '3', '2', 'н'] as const;
+
   async postGrade(input: PostGradeInput, teacherId: string) {
     const ws = TenantContext.require();
+    if (!(JournalService.GRADES as readonly string[]).includes(input.grade)) {
+      throw new BadRequestException(`недопустимая оценка «${input.grade}» (ожидается 5|4|3|2|н)`);
+    }
     const lesson = await this.prisma.lesson.findUnique({ where: { id: input.lessonId } });
     if (!lesson) throw new NotFoundException('урок не найден');
+    const student = await this.prisma.student.findUnique({ where: { id: input.studentId } });
+    if (!student) throw new NotFoundException('ученик не найден');
+    if (student.classId !== lesson.classId) {
+      throw new BadRequestException({ code: 'STUDENT_NOT_IN_CLASS', message: 'ученик не из класса этого урока' });
+    }
     return this.prisma.$transaction(async (tx) => {
       // upsert: одна ячейка на ученика×урок (AR-4) — повторный пост = правка оценки
       const cell = await tx.journalCell.upsert({

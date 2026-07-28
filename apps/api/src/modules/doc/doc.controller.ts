@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import type { Request } from 'express';
 import type { SessionUser } from '../../common/auth/flor.service';
 import { DocService } from './doc.service';
+// G-14: форма списка файлов — из @edustore/shared (фронт materialsApi.listByDiscipline типизирован тем же)
+import type { DocFileDto } from '@edustore/shared';
 
 interface UploadUrlBody { mime: string; scope?: string; disciplineId?: string; classId?: string }
 interface TagsBody { add?: { dim: string; value: string }[]; remove?: string[] }
@@ -42,14 +44,16 @@ export class DocController {
     return this.doc.getUrl(id);
   }
   @Get('files')
-  list(
+  async list(
     @Query('scope') scope?: string,
     @Query('audience') audience?: string,
     @Query('disciplineId') disciplineId?: string,
     @Query('classId') classId?: string,
     @Query('q') q?: string,
-  ) {
-    return this.doc.list({ scope, audience, disciplineId, classId, q });
+  ): Promise<DocFileDto[]> {
+    const files = await this.doc.list({ scope, audience, disciplineId, classId, q });
+    // даты — ISO, как на проводе (JSON и так сериализует Date в ISO; тип фиксирует контракт)
+    return files.map((f) => ({ ...f, createdAt: f.createdAt.toISOString() }));
   }
   @RequirePermission('doc.files.manage')
   @Delete('files/:id')

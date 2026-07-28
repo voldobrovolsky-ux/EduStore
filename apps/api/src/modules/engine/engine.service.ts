@@ -7,15 +7,21 @@ import {
   ENGINE_EVENTS,
   type AttendanceMarkedV1,
   type KppApprovedV1,
+  type KppRevertedV1,
   type KppScheduledV1,
   type KtpApprovedV1,
+  type KtpCreatedV1,
   type KtpGeneratedV1,
+  type KtpRevertedV1,
+  type LessonCompletedV1,
   type LessonPhaseChangedV1,
+  type LessonReopenedV1,
   type LessonStartedV1,
   type TopicCompletedV1,
   type TopicProgressedV1,
 } from './engine.contract';
 import type { TextbookParsedV1 } from '../textbook/textbook.contract';
+import type { EduLessonDto, KppDto, KtpDto, TimetableSlotInput } from '@edustore/shared';
 
 // База термового календаря для раскладки уроков на даты (упрощение v1; реальный календарь
 // слот→дата по неделям семестра — уточнение).
@@ -42,11 +48,114 @@ export class EngineService {
   ) {}
 
   // ─────────────── КТП ───────────────
-  getKtp(classId?: string, disciplineId?: string) {
-    return this.prisma.ktp.findMany({
+  /** G-14: форма ответа — shared `KtpDto` (фронт `eduApi.ktpList` типизирован тем же). */
+  async getKtp(classId?: string, disciplineId?: string): Promise<KtpDto[]> {
+    const list = await this.prisma.ktp.findMany({
       where: { ...(classId && { classId }), ...(disciplineId && { disciplineId }) },
       include: { topics: { orderBy: { order: 'asc' } } },
       orderBy: { createdAt: 'desc' },
+    });
+    return list.map((k) => ({ ...k, createdAt: k.createdAt.toISOString() }));
+  }
+
+  /**
+   * Ручное создание черновика КТП без учебника (остаток AR-38, FSM-дыра №9).
+   * Завуч задаёт темы руками (hoursSource=null — это НЕ оценка парсера); черновик один на пару
+   * (class, discipline) — при существующем draft → 409 (дополнять его правками тем, не плодить версии).
+   */
+  async createKtp(
+    classId: string,
+    disciplineId: string,
+    topics: { title: string; fgosHours?: number }[],
+    actor: string,
+  ) {
+    const ws = TenantContext.require();
+    const klass = await this.prisma.class.findUnique({ where: { id: classId } });
+    if (!klass) throw new NotFoundException('класс не найден');
+    const disc = await this.prisma.subject.findUnique({ where: { id: disciplineId } });
+    if (!disc) throw new NotFoundException('дисциплина не найдена');
+    for (const t of topics) {
+      if (!t.title?.trim()) throw new BadRequestException('тема без названия');
+      if (t.fgosHours !== undefined && (!Number.isInteger(t.fgosHours) || t.fgosHours < 1)) {
+        throw new BadRequestException('fgosHours — целое ≥ 1');
+      }
+    }
+    const existing = await this.prisma.ktp.findFirst({ where: { classId, disciplineId, status: 'draft' } });
+    if (existing) {
+      throw new ConflictException({ code: 'KTP_DRAFT_EXISTS', ktpId: existing.id, message: 'черновик КТП уже есть — дополняйте его' });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const ktp = await tx.ktp.create({
+        data: {
+          workspaceId: ws,
+          classId,
+          disciplineId,
+          status: 'draft',
+          topics: {
+            create: topics.map((t, i) => ({
+              workspaceId: ws,
+              order: i + 1,
+              title: t.title.trim(),
+              fgosHours: t.fgosHours ?? 1,
+              hoursSource: null, // ручной ввод завуча — не оценка парсера
+              arCodes: [],
+            })),
+          },
+        },
+        include: { topics: { orderBy: { order: 'asc' } } },
+      });
+      await this.outbox.enqueue(
+        tx,
+        newEvent<KtpCreatedV1>({
+          type: ENGINE_EVENTS.ktpCreated,
+          workspaceId: ws,
+          actor,
+          payload: { ktpId: ktp.id, classId, disciplineId, topicCount: ktp.topics.length },
+        }),
+      );
+      return ktp;
+    });
+  }
+
+  /**
+   * Обратный переход approved→draft (FSM-дыра №1). Допустим только пока производный план idle:
+   * не-idle уроки → 409 KTP_IN_USE. Производный КПП (собранный по этой версии) сносится вместе
+   * с idle-уроками — иначе остался бы план от уже не-утверждённого КТП.
+   */
+  async revertKtp(ktpId: string, actor: string) {
+    const ktp = await this.prisma.ktp.findUnique({ where: { id: ktpId } });
+    if (!ktp) throw new NotFoundException('КТП не найден');
+    if (ktp.status !== 'approved') throw new ConflictException({ code: 'KTP_NOT_APPROVED', message: 'возврат возможен только из approved' });
+    const inFlight = await this.prisma.lesson.count({
+      where: { kppLesson: { kpp: { classId: ktp.classId, disciplineId: ktp.disciplineId } }, state: { not: 'idle' } },
+    });
+    if (inFlight > 0) {
+      throw new ConflictException({ code: 'KTP_IN_USE', message: 'нельзя вернуть КТП в черновик: есть идущие/проведённые уроки' });
+    }
+    const ws = TenantContext.require();
+    return this.prisma.$transaction(async (tx) => {
+      const old = await tx.kpp.findMany({
+        where: { classId: ktp.classId, disciplineId: ktp.disciplineId },
+        select: { lessons: { select: { id: true } } },
+      });
+      const oldKlIds = old.flatMap((k) => k.lessons.map((l) => l.id));
+      if (oldKlIds.length) await tx.lesson.deleteMany({ where: { kppLessonId: { in: oldKlIds } } });
+      const removed = await tx.kpp.deleteMany({ where: { classId: ktp.classId, disciplineId: ktp.disciplineId } });
+      const updated = await tx.ktp.update({
+        where: { id: ktpId },
+        data: { status: 'draft', approvedBy: null },
+        include: { topics: { orderBy: { order: 'asc' } } },
+      });
+      await this.outbox.enqueue(
+        tx,
+        newEvent<KtpRevertedV1>({
+          type: ENGINE_EVENTS.ktpReverted,
+          workspaceId: ws,
+          actor,
+          payload: { ktpId, classId: ktp.classId, disciplineId: ktp.disciplineId, kppsRemoved: removed.count },
+        }),
+      );
+      return updated;
     });
   }
 
@@ -310,12 +419,14 @@ export class EngineService {
     return { ...result, standards }; // исход + использованные входные слоты завуча
   }
 
-  getKpp(classId?: string, disciplineId?: string) {
-    return this.prisma.kpp.findMany({
+  /** G-14: форма ответа — shared `KppDto` (фронт `eduApi.kppList` типизирован тем же). */
+  async getKpp(classId?: string, disciplineId?: string): Promise<KppDto[]> {
+    const list = await this.prisma.kpp.findMany({
       where: { ...(classId && { classId }), ...(disciplineId && { disciplineId }) },
       include: { lessons: { orderBy: { sequenceNo: 'asc' }, include: { topic: true, mapping: true } } },
       orderBy: { createdAt: 'desc' },
     });
+    return list.map((k) => ({ ...k, createdAt: k.createdAt.toISOString() }));
   }
 
   async approveKpp(kppId: string, approver: string) {
@@ -332,6 +443,31 @@ export class EngineService {
     return { id: kppId, status: 'approved' as const };
   }
 
+  /**
+   * Обратный переход approved→scheduled (FSM-дыра №1): закрывает гейт `lesson.start` обратно.
+   * Допустим только при полностью idle-плане (не-idle уроки → 409 KPP_IN_USE).
+   */
+  async revertKpp(kppId: string, actor: string) {
+    const kpp = await this.prisma.kpp.findUnique({ where: { id: kppId } });
+    if (!kpp) throw new NotFoundException('КПП не найден');
+    if (kpp.status !== 'approved') throw new ConflictException({ code: 'KPP_NOT_APPROVED', message: 'возврат возможен только из approved' });
+    const inFlight = await this.prisma.lesson.count({
+      where: { kppLesson: { kppId }, state: { not: 'idle' } },
+    });
+    if (inFlight > 0) {
+      throw new ConflictException({ code: 'KPP_IN_USE', message: 'нельзя отозвать утверждение: есть идущие/проведённые уроки' });
+    }
+    const ws = TenantContext.require();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.kpp.update({ where: { id: kppId }, data: { status: 'scheduled', approvedBy: null } });
+      await this.outbox.enqueue(
+        tx,
+        newEvent<KppRevertedV1>({ type: ENGINE_EVENTS.kppReverted, workspaceId: ws, actor, payload: { kppId } }),
+      );
+    });
+    return { id: kppId, status: 'scheduled' as const };
+  }
+
   // ─────────────── Timetable ───────────────
   getTimetable(classId?: string) {
     return this.prisma.timetable.findMany({
@@ -345,11 +481,7 @@ export class EngineService {
    * Движок остаётся ЕДИНСТВЕННЫМ писателем Timetable. Будущее CP-SAT-авторасписание
    * заполняет ту же сетку тем же контрактом — экран завуча не меняется.
    */
-  async upsertTimetable(
-    classId: string,
-    slots: { day: number; position: number; durationMin?: number }[],
-    actor: string,
-  ) {
+  async upsertTimetable(classId: string, slots: TimetableSlotInput[], actor: string) {
     const ws = TenantContext.require();
     const klass = await this.prisma.class.findUnique({ where: { id: classId } });
     if (!klass) throw new NotFoundException('класс не найден');
@@ -406,6 +538,7 @@ export class EngineService {
   }
 
   // ─────────────── Lesson FSM (гейт §7) ───────────────
+  /** G-14: форма — расширение shared `EduLessonDetailDto` (фронт `eduApi.lesson` типизирован тем же). */
   async getLesson(id: string) {
     const l = await this.prisma.lesson.findUnique({
       where: { id },
@@ -428,7 +561,8 @@ export class EngineService {
       title: c.card.title,
       content: c.card.content,
     }));
-    return { ...l, startGateOpen: l.kppLesson?.kpp.status === 'approved', contents };
+    // G-14: форма ответа — расширение shared `EduLessonDetailDto` (даты — ISO, как на проводе)
+    return { ...l, date: l.date.toISOString(), startGateOpen: l.kppLesson?.kpp.status === 'approved', contents };
   }
 
   /** Гейт «провести урок»: state→running ТОЛЬКО при kpp.approved урока (Архстандарт §7). */
@@ -465,12 +599,47 @@ export class EngineService {
     return { id, phase };
   }
 
-  async completeLesson(id: string) {
+  /** Конец урока теперь виден каскадам (FSM-дыра №2): событие в той же транзакции. */
+  async completeLesson(id: string, teacherId: string) {
     const l = await this.prisma.lesson.findUnique({ where: { id } });
     if (!l) throw new NotFoundException('урок не найден');
     if (l.state !== 'running') throw new BadRequestException('урок не идёт (state≠running)');
-    await this.prisma.lesson.update({ where: { id }, data: { state: 'done' } });
+    const ws = TenantContext.require();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.lesson.update({ where: { id }, data: { state: 'done' } });
+      await this.outbox.enqueue(
+        tx,
+        newEvent<LessonCompletedV1>({
+          type: ENGINE_EVENTS.lessonCompleted,
+          workspaceId: ws,
+          actor: teacherId,
+          payload: { lessonId: id, classId: l.classId, disciplineId: l.subjectId },
+        }),
+      );
+    });
     return { id, state: 'done' as const };
+  }
+
+  /**
+   * Обратный переход done→running (FSM-дыра №1): учитель возобновляет завершённый урок
+   * (ошибочное закрытие). Оценки/сигналы не трогаются; гейт КПП должен оставаться открытым.
+   */
+  async reopenLesson(id: string, teacherId: string) {
+    const l = await this.prisma.lesson.findUnique({ where: { id }, include: { kppLesson: { include: { kpp: true } } } });
+    if (!l) throw new NotFoundException('урок не найден');
+    if (l.state !== 'done') throw new BadRequestException(`урок не завершён (state=${l.state})`);
+    if (l.kppLesson?.kpp.status !== 'approved') {
+      throw new ConflictException({ code: 'LESSON_LOCKED', message: 'возобновить урок можно только при утверждённом КПП' });
+    }
+    const ws = TenantContext.require();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.lesson.update({ where: { id }, data: { state: 'running', teacherId } });
+      await this.outbox.enqueue(
+        tx,
+        newEvent<LessonReopenedV1>({ type: ENGINE_EVENTS.lessonReopened, workspaceId: ws, actor: teacherId, payload: { lessonId: id } }),
+      );
+    });
+    return { id, state: 'running' as const };
   }
 
   // ─────────────── Сигналы урока → ИОМ (Архстандарт §6). marks несут реальный studentId. ───────────────
@@ -495,14 +664,16 @@ export class EngineService {
   }
 
   // ─────────────── Расписание (Кабинеты_ТЗ; schedule.built публикует ТОЛЬКО движок, §8) ───────────────
-  async scheduleMe(teacherId: string) {
+  /** G-14: форма ответа — shared `EduLessonDto` (фронт `eduApi.scheduleMe` типизирован тем же). */
+  async scheduleMe(teacherId: string): Promise<EduLessonDto[]> {
     const assignments = await this.prisma.teachingAssignment.findMany({ where: { teacherId }, select: { classId: true } });
     const classIds = [...new Set(assignments.map((a) => a.classId))];
-    return this.prisma.lesson.findMany({
+    const lessons = await this.prisma.lesson.findMany({
       where: { classId: { in: classIds } },
       orderBy: { date: 'asc' },
       select: { id: true, date: true, topic: true, classId: true, subjectId: true, state: true },
     });
+    return lessons.map((l) => ({ ...l, date: l.date.toISOString() }));
   }
 
   scheduleBuilder() {
