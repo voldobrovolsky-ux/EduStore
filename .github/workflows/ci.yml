@@ -23,6 +23,24 @@ jobs:
       - name: Build Web
         run: npm --workspace apps/web run build
 
+  # Фитнес-функции метода (docs/method/): реестры решений, линзы, линт спек.
+  # Бегут без БД и без зависимостей — самый дешёвый барьер в конвейере.
+  method-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: G-19 — протокол АР-реестров
+        run: node tools/method/lint-ar.mjs
+      - name: G-20 — протокол линз
+        run: node tools/method/lint-lenses.mjs
+      - name: G-21 — самопроверка линта спек
+        run: node tools/method/spec-lint.mjs --self-test
+      - name: Линт спек (P1…P7)
+        run: node tools/method/spec-lint.mjs
+
   # Сквозной поток «учебник → КТП → КПП → содержание уроков»:
   # flow:check — интеграционные проверки на живом Postgres (25 шт.);
   # e2e/smoke-textbook.mjs — живой Chromium-смок (owner → QR-вход → загрузка PDF →
