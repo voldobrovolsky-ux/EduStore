@@ -1,5 +1,6 @@
 // Свойства спеки 1.1.1: генератор, материализация, журнал, контингент.
 // Одноразовая модель (T2): без БД, без сети. Задача — сломать спеку.
+import { states, transitions } from './states.mjs';
 let fails = 0, notes = [];
 const ok  = (m)=>console.log('  ✅ '+m);
 const bad = (m)=>{ console.error('  ❌ '+m); fails++; };
@@ -181,6 +182,58 @@ if (postMark('2027-03-02',{}).err==='LESSON_NOT_HELD') ok('отметка в з�
 if (postMark('2027-03-01',{}).ok) ok('текущий день — отметка принята'); else bad('текущий день отклонён');
 if (postMark('2027-02-25',{deactivated:true}).err==='STUDENT_INACTIVE') ok('деактивированный ученик: новая отметка отклонена, история не тронута'); else bad('деактивация не держится');
 note('НАХОДКА: гейт «текущий урок» в постановке — про уроки, а модель дат сравнивает дни. Урок сегодня в 14:00, отметка в 9:00 — урок ещё не прошёл. Принято [дефолт]: гейт по дате дня, не по времени слота (учитель заполняет журнал в течение дня свободно); сравнение по времени слота — кандидат на ужесточение в 1.1.x.');
+
+// ---------- P8. Регенерация после ready: судьба уроков и отметок ----------
+console.log('P8. Жизненный цикл сетки после подтверждения (AR-74, AR-85)');
+const { regenerationPolicy, editEffects, wizard } = await import('./states.mjs');
+function rematerialize(existing, nextKeys, policy){
+  const lessons=[], events=[];
+  for (const l of existing){
+    if (nextKeys.has(l.key)) { lessons.push(l); continue; }
+    if (policy==='detach-marked' && l.marks>0){ lessons.push({...l, detached:true}); events.push('schedule.lesson.detached.v1'); }
+    // иначе урок исчезает вместе со старым шаблоном
+  }
+  return {lessons, events};
+}
+const wasLessons = [
+  {key:'пн:1:5:матем', marks:12},   // проведён, отметки стоят — новый шаблон его не содержит
+  {key:'пн:2:5:русск', marks:0},    // пустой урок, нового шаблона тоже нет
+  {key:'вт:1:5:матем', marks:3},    // остаётся в новом шаблоне
+];
+const nextKeys = new Set(['вт:1:5:матем','ср:1:5:матем']);
+const rem = rematerialize(wasLessons, nextKeys, regenerationPolicy);
+const kept = rem.lessons.find(l=>l.key==='пн:1:5:матем');
+if (kept?.detached) ok('регенерация: урок с отметками отвязан (detached), история не удалена');
+else bad('регенерация уничтожает урок с выставленными отметками — история теряется');
+if (rem.events.includes('schedule.lesson.detached.v1')) ok('журнал узнаёт об отвязке событием — колонок-призраков нет');
+else bad('журнал подписан только на материализацию: об исчезновении урока не узнаёт');
+if (!rem.lessons.some(l=>l.key==='пн:2:5:русск')) ok('урок без отметок исчезает вместе со старым шаблоном'); else bad('пустой урок пережил регенерацию');
+
+// ---------- P9. Таксономия правок после ready ----------
+console.log('P9. Что делает расписание устаревшим (AR-85)');
+if (Array.isArray(editEffects) && editEffects.length) {
+  const bogus = editEffects.filter(([,,target]) => !states.includes(target));
+  if (!bogus.length) ok(`таксономия правок: ${editEffects.length} видов, у каждого назван исход`);
+  else bad('правка ведёт в несуществующее состояние: '+bogus.map(e=>e[0]).join(', '));
+  const roster = editEffects.filter(([name]) => /ученик/.test(name));
+  if (roster.length && roster.every(([,affects,target]) => affects===false && target==='ready'))
+    ok('правки контингента не роняют подтверждённую сетку в stale — отметки не под угрозой');
+  else bad('добавление ученика переводит расписание в stale → регенерация ради нового ученика');
+  const unbind = editEffects.find(([name]) => /открепить педагога/.test(name));
+  if (unbind && unbind[1]===true && unbind[2]==='stale') ok('открепление педагога помечает сетку устаревшей — уроки без педагога видны');
+  else bad('открепление педагога после ready: исход не определён');
+  const hasIdle = transitions.some(([f,t,label]) => f==='ready' && t==='ready' && /правк/i.test(label));
+  if (hasIdle) ok('в FSM есть правка, не выводящая из ready'); else bad('в FSM любая правка после ready ведёт в stale — таксономия правок не выражена');
+} else bad('таксономия правок после ready не объявлена: editEffects отсутствует в states.mjs');
+
+// ---------- P10. Класс из одного ученика и пустые группы ----------
+console.log('P10. Крайний случай: класс из одного ученика (AR-75)');
+if (wizard && typeof wizard.groupsFit === 'function') {
+  if (wizard.groupsFit(15,2) && !wizard.groupsFit(1,2)) ok('мастер отклоняет 2 группы в классе из одного ученика');
+  else bad('мастер допускает группу без учеников: класс 1 ученик × 2 группы');
+  const one = split(Array.from({length:1},(_,i)=>({id:i})), 1);
+  if (one.every(s=>s.group===1)) ok('класс из одного ученика без деления: единственная группа непуста'); else bad('разбиение сломалось на классе из одного ученика');
+} else bad('правило «групп не больше, чем учеников» не объявлено: wizard.groupsFit отсутствует в states.mjs');
 
 console.log(fails? `\n❌ Свойства: ${fails} падений` : '\n✅ Свойства: все инварианты держатся.');
 if (notes.length){ console.log('\nЗаметки для 40-bench.md:'); notes.forEach(n=>console.log('  · '+n)); }
