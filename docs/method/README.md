@@ -12,6 +12,7 @@
 | Слой | Файл | Отвечает на вопрос |
 |---|---|---|
 | Конвейер | [PIPELINE.md](./PIPELINE.md) | Какие стадии, какие ворота, что нельзя пропустить |
+| **Агенты** | [agents/](./agents/README.md) | **Кто что делает: инструкция на каждого исполнителя конвейера** |
 | Добыча базиса | [RESEARCH-PROTOCOL.md](./RESEARCH-PROTOCOL.md) | Откуда берутся внешние требования и как они становятся строками спеки |
 | Линзы | [LENSES.md](./LENSES.md) | Чем просвечиваем спеку и процесс (реестр L-1…L-18) |
 | Правила линз | [LENS-PROTOCOL.md](./LENS-PROTOCOL.md) | Когда заводить новую линзу, когда расширить старую, когда убить |
@@ -47,8 +48,10 @@
 ## Машинная часть
 
 ```bash
-npm run method:lint      # все три проверки метода
+npm run method:lint      # все проверки метода
 node tools/method/lint-ar.mjs        # реестры: нумерация, диапазоны, ворота, ссылки
 node tools/method/lint-lenses.mjs    # линзы: паспорта, покрытие чек-листа
 node tools/method/spec-lint.mjs      # спеки: параметры P1…P7
+node tools/method/lint-screens.mjs   # экраны и адаптация против спеки
+node tools/method/lint-agents.mjs    # инструкции агентов против конвейера
 ```
