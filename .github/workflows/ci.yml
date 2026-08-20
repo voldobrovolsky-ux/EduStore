@@ -42,6 +42,8 @@ jobs:
         run: node tools/method/spec-lint.mjs
       - name: G-37 — контраст дизайн-токенов
         run: node tools/design/check-contrast.mjs
+      - name: G-38 — экраны против спеки
+        run: node tools/method/lint-screens.mjs
 
   # Сквозной поток «учебник → КТП → КПП → содержание уроков»:
   # flow:check — интеграционные проверки на живом Postgres (25 шт.);

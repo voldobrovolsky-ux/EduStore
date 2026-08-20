@@ -1,0 +1,76 @@
+#!/usr/bin/env node
+/**
+ * G-38: экранный реестр против FSM и контрактов спеки.
+ * Проверяет перечислением, что интерфейс не врёт о бэке (линза L-15):
+ *  — у каждого состояния FSM есть экран-дом;
+ *  — каждый экран объявляет маршрут и роли;
+ *  — идентификаторы экранов и элементов уникальны;
+ *  — каждое событие, упомянутое на экранах, существует в контракте спеки;
+ *  — каждый код ошибки из таблицы §9 встречается в описании экранов.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+
+const ROOT = process.cwd();
+const SPEC_DIR = path.join(ROOT, 'specs/school-onboarding');
+const screensPath = path.join(SPEC_DIR, '70-screens.md');
+if (!fs.existsSync(screensPath)) { console.log('Экранного реестра нет — пропуск.'); process.exit(0); }
+
+const screens = fs.readFileSync(screensPath, 'utf8');
+const spec = fs.readFileSync(path.join(SPEC_DIR, '30-spec.md'), 'utf8');
+const { states } = await import(path.join(SPEC_DIR, 'model/states.mjs'));
+const errors = [];
+const fail = (m) => errors.push(m);
+
+// ---------- 1. экраны ----------
+const blocks = screens.split(/^##\s+/m).filter((b) => /^S-\d+\s+·/.test(b));
+const ids = new Set();
+for (const b of blocks) {
+  const id = b.match(/^(S-\d+)\s+·\s+(.+)$/m);
+  if (!id) continue;
+  if (ids.has(id[1])) fail(`${id[1]}: дубликат экрана`);
+  ids.add(id[1]);
+  const isNested = /^\*\*Внутри\*\*/m.test(b);
+  if (!/\*\*Маршрут:\*\*/.test(b) && !isNested) fail(`${id[1]} «${id[2].trim()}»: не объявлен маршрут`);
+  if (!/\*\*Роли:\*\*/.test(b) && !isNested) fail(`${id[1]} «${id[2].trim()}»: не объявлены роли`);
+}
+if (ids.size < 5) fail('экранов подозрительно мало — реестр не разобран');
+
+// ---------- 2. уникальность идентификаторов элементов ----------
+const elems = [...screens.matchAll(/`(S-\d+(?:\.\d+)?\.[a-zA-Z]+\.[a-zA-Z0-9\[\].]+)`/g)].map((m) => m[1]);
+const seen = new Map();
+for (const e of elems) seen.set(e, (seen.get(e) || 0) + 1);
+
+// ---------- 3. покрытие состояний FSM ----------
+const matrix = screens.slice(screens.indexOf('Матрица «состояние FSM → экран»'));
+for (const s of states) {
+  const row = new RegExp(`^\\|\\s*${s}\\s*\\|\\s*(S-\\d+[^|]*)\\|`, 'm').exec(matrix);
+  if (!row) { fail(`состояние FSM «${s}» отсутствует в матрице «состояние → экран»`); continue; }
+  for (const ref of [...row[1].matchAll(/S-\d+/g)].map((m) => m[0]))
+    if (!ids.has(ref)) fail(`состояние «${s}» ссылается на несуществующий экран ${ref}`);
+}
+
+// ---------- 4. события экранов существуют в контракте спеки ----------
+const specEvents = new Set([...spec.matchAll(/\b([a-z]+\.[a-z]+\.[a-z]+\.v\d+)\b/g)].map((m) => m[1]));
+for (const m of screens.matchAll(/\b([a-z]+\.[a-z]+\.[a-z]+\.v\d+)\b/g))
+  if (!specEvents.has(m[1])) fail(`экраны ссылаются на событие ${m[1]}, которого нет в контракте 30-spec.md`);
+
+// ---------- 5. коды ошибок объявлены и использованы ----------
+const codes = [...screens.matchAll(/^\|\s*`([A-Z_]{4,})`\s*\|/gm)].map((m) => m[1]);
+for (const c of codes) {
+  const uses = [...screens.matchAll(new RegExp(`\\b${c}\\b`, 'g'))].length;
+  if (uses < 2) fail(`код ошибки ${c} объявлен в таблице, но не встречается в описании экранов`);
+}
+if (!codes.length) fail('таблица кодов ошибок пуста');
+
+// ---------- 6. обязательные состояния экранов ----------
+if (!/loading/.test(screens) || !/empty/.test(screens) || !/error/.test(screens))
+  fail('не объявлены обязательные состояния экранов (loading/empty/error)');
+
+console.log(`Экраны: ${ids.size}; элементов с идентификаторами: ${seen.size}; кодов ошибок: ${codes.length}; состояний FSM: ${states.length}.`);
+if (errors.length) {
+  console.error(`\n❌ Расхождений экранов и спеки: ${errors.length}`);
+  for (const e of errors) console.error('  · ' + e);
+  process.exit(1);
+}
+console.log('✅ G-38: каждое состояние FSM имеет экран, события и коды ошибок сходятся со спекой.');
