@@ -67,10 +67,36 @@ if (!codes.length) fail('таблица кодов ошибок пуста');
 if (!/loading/.test(screens) || !/empty/.test(screens) || !/error/.test(screens))
   fail('не объявлены обязательные состояния экранов (loading/empty/error)');
 
-console.log(`Экраны: ${ids.size}; элементов с идентификаторами: ${seen.size}; кодов ошибок: ${codes.length}; состояний FSM: ${states.length}.`);
+// ---------- 7. адаптивная спецификация (G-39) ----------
+const adaptivePath = path.join(SPEC_DIR, '75-adaptive.md');
+let modals = 0, buttons = 0;
+if (!fs.existsSync(adaptivePath)) fail('нет 75-adaptive.md — раскладки не описаны');
+else {
+  const ad = fs.readFileSync(adaptivePath, 'utf8');
+  const cover = ad.slice(ad.indexOf('## 6. Адаптация экранов'));
+  for (const id of ids)
+    if (!new RegExp(`\\b${id}\\b`).test(cover))
+      fail(`экран ${id} не описан в 75-adaptive.md §6 (нет мобильной/десктопной раскладки)`);
+  const modalRows = [...ad.matchAll(/^\|\s*`(M-\d+)`\s*\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|/gm)];
+  modals = modalRows.length;
+  for (const m of modalRows) {
+    const [, id, , , desktop, mobile] = m;
+    if (!desktop.trim() || desktop.trim() === '—') fail(`модалка ${id}: не описано поведение на десктопе`);
+    if (!mobile.trim() || mobile.trim() === '—') fail(`модалка ${id}: не описано поведение на мобайле`);
+  }
+  if (modals < 10) fail(`реестр модалок подозрительно мал (${modals}) — не разобран`);
+  buttons = [...ad.matchAll(/^\|\s*`(B-[a-z]+)`\s*\|/gm)].length;
+  if (buttons < 8) fail(`реестр кнопок подозрительно мал (${buttons})`);
+  for (const bp of ['mobile', 'desktop'])
+    if (!new RegExp('`' + bp + '`').test(ad)) fail(`не объявлена точка останова «${bp}»`);
+  if (!/overflow-x/.test(ad)) fail('не задано правило горизонтальной прокрутки широких таблиц');
+}
+
+console.log(`Экраны: ${ids.size}; элементов с идентификаторами: ${seen.size}; кодов ошибок: ${codes.length}; состояний FSM: ${states.length}; модалок: ${modals}; типов кнопок: ${buttons}.`);
 if (errors.length) {
   console.error(`\n❌ Расхождений экранов и спеки: ${errors.length}`);
   for (const e of errors) console.error('  · ' + e);
   process.exit(1);
 }
 console.log('✅ G-38: каждое состояние FSM имеет экран, события и коды ошибок сходятся со спекой.');
+console.log('✅ G-39: каждый экран описан в двух раскладках, у каждой модалки задано поведение на десктопе и на мобайле.');
