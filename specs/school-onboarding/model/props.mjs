@@ -251,6 +251,36 @@ if (typeof st.markGate === 'function') {
   else bad('полные права обходят гейт непроведённого урока');
 } else bad('правила прав не объявлены: markGate отсутствует в states.mjs');
 
+// ---------- P12. У каждой операции есть обратная либо названная причина ----------
+console.log('P12. Обратимость операций (AR-90)');
+if (Array.isArray(st.reversals) && st.reversals.length) {
+  const mute = st.reversals.filter(([, back, why]) => !back && !why);
+  if (!mute.length) ok(`обратимость: ${st.reversals.length} операций, у каждой названа обратная либо причина её отсутствия`);
+  else bad('операции без обратной и без причины: ' + mute.map((r) => r[0]).join(', '));
+  const need = ['создать класс','создать предмет','деактивировать ученика','добавить роль','зарегистрировать сотрудника','подтвердить сетку','поставить отметку','запустить генерацию','загрузить аватар','привязать педагога'];
+  const missing = need.filter((n) => !st.reversals.some(([op]) => op === n));
+  if (!missing.length) ok('каждая создающая операция версии присутствует в таблице обратимости');
+  else bad('операции вне таблицы обратимости: ' + missing.join(', '));
+} else bad('таблица обратимости не объявлена: reversals отсутствует в states.mjs');
+
+// ---------- P13. Удаление сотрудника: каскад и защита школы ----------
+console.log('P13. Удаление и деактивация сотрудника (AR-89)');
+if (typeof st.staffRemoval === 'function') {
+  const school = { moderators: 1 };
+  const one = st.staffRemoval({ roles:['moderator'], hasHistory:false }, school);
+  if (one.code === 'LAST_MODERATOR') ok('последний модератор не удаляется — школа не остаётся без управления');
+  else bad('последнего модератора можно удалить: ' + JSON.stringify(one));
+  const teacher = st.staffRemoval({ roles:['teacher'], hasHistory:true }, { moderators:2 });
+  if (teacher.action === 'deactivate' && teacher.keepsMarks) ok('педагог с историей деактивируется, отметки остаются на месте');
+  else bad('педагог с историей удаляется вместе с историей: ' + JSON.stringify(teacher));
+  const fresh = st.staffRemoval({ roles:['teacher'], hasHistory:false }, { moderators:2 });
+  if (fresh.action === 'delete' && fresh.unbinds && fresh.staleSchedule)
+    ok('педагог без истории удаляется: привязки сняты, сетка помечена устаревшей');
+  else bad('удаление педагога без истории не описано каскадом: ' + JSON.stringify(fresh));
+  const secondMod = st.staffRemoval({ roles:['moderator'], hasHistory:false }, { moderators:2 });
+  if (secondMod.action === 'delete') ok('второй модератор удаляется — правило защищает школу, а не должность'); else bad('второй модератор защищён ошибочно');
+} else bad('правила удаления сотрудника не объявлены: staffRemoval отсутствует в states.mjs');
+
 console.log(fails? `\n❌ Свойства: ${fails} падений` : '\n✅ Свойства: все инварианты держатся.');
 if (notes.length){ console.log('\nЗаметки для 40-bench.md:'); notes.forEach(n=>console.log('  · '+n)); }
 process.exit(fails?1:0);

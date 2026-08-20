@@ -192,6 +192,8 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | `S-12.btn.editStudent` | secondary | «Редактировать» | → `S-13` для выделенной строки | `contingent.write` |
 | `S-12.btn.deleteStudent` | danger-текст | «Удалить ученика» — **только если у ученика нет отметок** | `DELETE /api/v1/students/:id` | `contingent.write` |
 | `S-12.btn.deactivateStudent` | danger-текст | «Деактивировать» — **заменяет** предыдущую, если отметки есть (AR-78) | `POST /api/v1/students/:id/deactivate` → `contingent.student.deactivated.v1` | `contingent.write` |
+| `S-12.btn.reactivateStudent` | secondary | «Вернуть в класс» — видна на строке с бейджем «деактивирован» | `POST /api/v1/students/:id/reactivate` → `contingent.student.reactivated.v1` | `contingent.write` |
+| `S-12.btn.deleteClass` | danger-текст | «Удалить класс» — только когда ни у одного ученика нет отметок; пустые профили удаляются вместе с классом (AR-89) | `DELETE /api/v1/classes/:id` → `contingent.class.deleted.v1`; иначе `CLASS_HAS_MARKS` | `contingent.write` |
 
 - **Правило подмены кнопки:** решение принимает сервер — ответ
   `GET /students/:id` содержит `hasMarks: boolean`; UI показывает ровно одну из
@@ -248,6 +250,7 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | `S-21.list.bindings` | список | привязанные педагоги: аватар, ФИО, охват («весь класс» / «группа 1») | — |
 | `S-21.btn.unbind` | текст-действие | «Открепить» у каждой привязки | `DELETE /api/v1/subjects/:id/teachers/:tid` |
 | `S-21.status.coverage` | строка состояния | «Покрытие полное» (success) / «Группа 2 без педагога» (warning) | — |
+| `S-21.btn.deleteSubject` | danger-текст | «Удалить предмет» — доступна, когда педагог не привязан либо привязки сняты | `DELETE /api/v1/subjects/:id` → `subject.deleted.v1`; после подтверждённой сетки переводит расписание в `stale` |
 
 ## S-22 · QR привязки педагога
 
@@ -302,10 +305,21 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | `S-31.qr` | QR 240px | `POST /api/v1/staff/:id/activation-token`; одноразовый, привязан к карточке |
 | `S-31.status` | строка | «Ожидание регистрации» → «Зарегистрирован: Иванова М. И.»; обновляется поллингом `GET /api/v1/staff/:id/activation-token` раз в 2 секунды, пока карточка открыта (AR-87) |
 | `S-31.btn.addRole` | secondary | «Добавить роль» — доступна **после** регистрации; список допустимых пар (учредитель+директор, зам+преподаватель). Модератора в списке нет: его права и так полные (AR-88), совмещение ему ничего не добавляет |
+| `S-31.btn.deleteStaff` | danger-текст | «Удалить сотрудника» — показывается, когда сервер вернул `hasHistory: false` (нет привязок и выставленных отметок) | `DELETE /api/v1/staff/:id` → `staff.member.deleted.v1` |
+| `S-31.btn.deactivateStaff` | danger-текст | «Деактивировать» — **заменяет** предыдущую при `hasHistory: true`; доступ закрывается, карточка и отметки остаются | `POST /api/v1/staff/:id/deactivate` → `staff.member.deactivated.v1` |
+| `S-31.btn.reactivateStaff` | secondary | «Вернуть доступ» — на деактивированной карточке | `POST /api/v1/staff/:id/reactivate` → `staff.member.reactivated.v1` |
+| `S-31.btn.removeRole` | текст-действие | «Снять» у каждой роли в списке; последняя роль не снимается — у сотрудника без ролей нет доступа, для этого есть деактивация | `DELETE /api/v1/staff/:id/roles/:role` |
+| `S-31.badge.inactive` | бейдж | «доступ закрыт» на деактивированной карточке | — |
 | `S-31.btn.close` | secondary | «Закрыть» — **гасит QR** (правило AR-76) |
 
 - **error:** `TOKEN_USED` при повторном скане — «Код уже использован, откройте
-  карточку заново».
+  карточку заново»; `LAST_MODERATOR` при попытке удалить или деактивировать
+  единственного модератора школы.
+- **Каскад (AR-89):** удаление и деактивация снимают привязки сотрудника к
+  предметам (`subject.teacher.unbound.v1`), покрытие предметов падает, сетка
+  получает плашку `stale`. Выставленные им отметки остаются в журнале.
+- **Правило подмены кнопки** — то же, что у ученика: сервер отдаёт
+  `hasHistory: boolean`, экран показывает ровно одну кнопку из двух.
 
 ---
 
@@ -384,7 +398,8 @@ primary-кнопка к следующему шагу), `error` (карточк�
 
 | Элемент | Тип | Поведение |
 |---|---|---|
-| `S-42.progress` | полноэкранный прогресс | на белом, логотип; отменяемый кнопкой «Отменить» |
+| `S-42.progress` | полноэкранный прогресс | на белом, логотип; отменяемый кнопкой `S-42.btn.cancelGen` |
+| `S-42.btn.cancelGen` | secondary | «Отменить» → `POST /api/v1/schedule/generate/cancel`; школа остаётся в `day_params_set`, шаблон не создаётся |
 | `S-42.refusal` | карточка отказа | код, человекочитаемая причина с цифрами, кнопка «К шагу N» — ведёт на конкретный экран `S-41` |
 | `S-42.grid.preview` | сетка недели | как `S-40.grid.week` |
 | `S-42.warn.priority` | мягкое предупреждение | «Химия в 7 классе не попала в первую половину дня» — не блокирует |
@@ -419,7 +434,7 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | `S-50.table` | таблица | строки — ученики (заливка по полу), колонки — материализованные уроки | — | `*.read` |
 | `S-50.colhead.date` | заголовок колонки | «4.09»; два урока в дату — две колонки под одним числом со скобкой | тап → `S-51` | `journal.topic.set` |
 | `S-50.col.future` | колонка | `disabled-bg` / `disabled-ink` | тап → тост «Урок ещё не прошёл» | — |
-| `S-50.col.detached` | колонка | урок, которого нет в новом шаблоне, но с отметками: подпись «вне расписания», заливка `disabled-bg`, отметки читаются | тап по ячейке → тост «Урок вне расписания» | — |
+| `S-50.col.detached` | колонка | урок, которого нет в новом шаблоне, но с отметками: подпись «вне расписания», заливка `disabled-bg`, отметки читаются | тап по ячейке → тост `LESSON_DETACHED`; постановка и снятие отметки отклоняются | — |
 | `S-50.cell.mark` | ячейка | чип отметки либо пусто | тап → `S-52` | `journal.mark.post`: педагог — свой урок, модератор — любой (AR-88) |
 | `S-50.row.inactive` | строка | приглушена, бейдж «деактивирован»; ячейка в новой колонке отвечает `STUDENT_INACTIVE` | — | — |
 | `S-50.empty` | пустое состояние | до подтверждения сетки: «Уроки появятся после подтверждения расписания» + ссылка на `S-40` | — | — |
@@ -529,11 +544,18 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | `GROUPS_UNASSIGNED` | S-42 | 7 класс: группы объявлены, состав не назначен |
 | `NO_SOLUTION` | S-42 | Не удалось собрать сетку. Ослабьте приоритеты или добавьте учебный день |
 | `LESSON_NOT_HELD` | S-50 | Урок ещё не прошёл |
+| `LESSON_DETACHED` | S-50 | Урок вне расписания: отметки сохранены, изменить их нельзя |
+| `CLASS_HAS_MARKS` | S-12 | В классе есть выставленные отметки — класс не удаляется |
+| `LAST_MODERATOR` | S-31 | Это единственный модератор школы — удалить или деактивировать его нельзя |
 | `STUDENT_INACTIVE` | S-50 | Ученик деактивирован |
 
 Правило: текст ошибки называет **объект и цифры**, а не «произошла ошибка».
 
 ## 11. Контракты мутаций (полный перечень версии)
+
+Каждая операция, создающая или меняющая состояние, имеет обратную либо
+записанную причину её отсутствия (AR-90, реестр — `30-spec.md` «Обратимость
+операций»).
 
 Каждая строка обязана нести `@RequirePermission` с указанным правом; право
 попадает в каталог тем же коммитом (AR-35, ворота G-10). Действия, которого нет
@@ -556,7 +578,7 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | 13 | POST `/api/v1/subjects` | M-03 | `subject.write` | — | — |
 | 14 | POST `/api/v1/subjects/:id/bind-token` | S-22 | `subject.write` | — | — |
 | 15 | POST `/api/v1/subjects/:id/teachers` | S-22 | `subject.write` | `subject.teacher.bound.v1` | `TOKEN_EXPIRED` |
-| 16 | DELETE `/api/v1/subjects/:id/teachers/:tid` | S-21 | `subject.write` | — | — |
+| 16 | DELETE `/api/v1/subjects/:id/teachers/:tid` | S-21 | `subject.write` | `subject.teacher.unbound.v1` | — |
 | 17 | PUT `/api/v1/calendar/terms` | S-41.1 | `schedule.build` | `calendar.term.set.v1` | `TERM_OVERLAP`, `TERM_REVERSED` |
 | 18 | PUT `/api/v1/schedule/load` | S-41.2 | `schedule.build` | — | `LOAD_EXCEEDS_SANPIN`, `LOAD_EXCEEDS_GRID`, `TEACHER_OVERBOOKED`, `GROUP_HOURS_UNEQUAL` |
 | 19 | PUT `/api/v1/schedule/priorities` | S-41.3 | `schedule.build` | — | — |
@@ -565,7 +587,16 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | 22 | POST `/api/v1/schedule/confirm` | S-42 | `schedule.build` | `schedule.template.confirmed.v1`, `schedule.lesson.materialized.v1` ×N, `schedule.lesson.detached.v1` ×M | — |
 | 23 | PUT `/api/v1/lessons/:id/topic` | S-51 | `journal.topic.set` | `journal.topic.set.v1` | `LESSON_NOT_HELD` |
 | 24 | POST `/api/v1/lessons/:id/marks` | S-52 | `journal.mark.post` | `journal.mark.posted.v1` | `LESSON_NOT_HELD`, `STUDENT_INACTIVE` |
-| 25 | DELETE `/api/v1/lessons/:id/marks/:studentId` | S-52 | `journal.mark.post` | `journal.mark.posted.v1` (снятие) | `LESSON_NOT_HELD` |
+| 25 | DELETE `/api/v1/lessons/:id/marks/:studentId` | S-52 | `journal.mark.post` | `journal.mark.removed.v1` | `LESSON_NOT_HELD`, `LESSON_DETACHED` |
+| 26 | DELETE `/api/v1/classes/:id` | S-12 | `contingent.write` | `contingent.class.deleted.v1` | `CLASS_HAS_MARKS` |
+| 27 | POST `/api/v1/students/:id/reactivate` | S-12 | `contingent.write` | `contingent.student.reactivated.v1` | — |
+| 28 | DELETE `/api/v1/subjects/:id` | S-21 | `subject.write` | `subject.deleted.v1` | — |
+| 29 | POST `/api/v1/staff/:id/deactivate` | S-31 | `staff.manage` | `staff.member.deactivated.v1`, `subject.teacher.unbound.v1` ×N | `LAST_MODERATOR` |
+| 30 | POST `/api/v1/staff/:id/reactivate` | S-31 | `staff.manage` | `staff.member.reactivated.v1` | — |
+| 31 | DELETE `/api/v1/staff/:id` | S-31 | `staff.manage` | `staff.member.deleted.v1`, `subject.teacher.unbound.v1` ×N | `LAST_MODERATOR` |
+| 32 | DELETE `/api/v1/staff/:id/roles/:role` | S-31 | `staff.manage` | — | — |
+| 33 | DELETE `/api/v1/staff/me/avatar` | M-15 | `staff.self.write` | — | — |
+| 34 | POST `/api/v1/schedule/generate/cancel` | S-42 | `schedule.build` | — | — |
 
 Роль в колонке «Право» — минимальная. Модератор проходит **каждую** строку
 таблицы (AR-88); отказ по праву он получить не может, отказ по факту
@@ -576,6 +607,9 @@ primary-кнопка к следующему шагу), `error` (карточк�
 раз в 2 секунды, пока открыта карточка (AR-87).
 
 ## 10. Чего на экранах нет (не додумывать)
+
+Массового удаления нет: удаление и деактивация — по одной записи из её карточки
+(AR-89). Всё остальное, чего нет:
 
 Поиск и фильтры в списках · сортировка таблиц по клику · массовое выделение ·
 экспорт и печать · уведомления и колокольчик · настройки профиля кроме аватара ·

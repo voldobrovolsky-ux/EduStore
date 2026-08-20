@@ -103,6 +103,15 @@ for (const [n, d] of decisions) {
 // ---------- 6. ссылки G-n и L-n ----------
 const gchecks = fs.readFileSync(path.join(ROOT, 'docs/G-CHECKS.md'), 'utf8');
 const knownG = new Set([...gchecks.matchAll(/\bG-(\d+)\b/g)].map((m) => m[1]));
+
+// ---------- 6a. номер ворот уникален ----------
+// Дыра, найденная аудитом обратимости: две ветки завели G-40 на разные проверки,
+// слияние оставило обе. Номер ворот — адрес; два адреса одного имени ломают
+// каждую ссылку AR-N → G-N.
+const gRows = [...gchecks.matchAll(/^\|\s*G-(\d+)\s*\|/gm)].map((m) => m[1]);
+const gSeen = new Map();
+for (const g of gRows) gSeen.set(g, (gSeen.get(g) || 0) + 1);
+for (const [g, n] of gSeen) if (n > 1) fail(`G-CHECKS.md: ворота G-${g} объявлены ${n} раза — номер обязан быть уникальным`);
 const lensesDoc = fs.readFileSync(path.join(ROOT, 'docs/method/LENSES.md'), 'utf8');
 const knownL = new Set([...lensesDoc.matchAll(/^###\s+L-(\d+)/gm)].map((m) => m[1]));
 
