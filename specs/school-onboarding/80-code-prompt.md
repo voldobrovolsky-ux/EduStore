@@ -1,8 +1,21 @@
 # Промпт для окна генерации кода — Schoolium 1.1.1
 
 > Скопировать целиком в новое окно Claude Code, открытое на репозитории
-> `voldobrovolsky-ux/EduStore`, ветка `claude/automated-spec-evolutionary-arch-4oerhj`.
-> Рекомендуемый режим: **Opus, reasoning high**.
+> `voldobrovolsky-ux/EduStore`. Рекомендуемый режим: **Opus, reasoning high**.
+>
+> **Ветка-источник: `edustore-final-edition`, тег версии `v1.1.1`.**
+> Начни с неё, а не с `main`:
+>
+> ```bash
+> git fetch origin edustore-final-edition
+> git checkout edustore-final-edition
+> ls specs/school-onboarding/     # должно быть 8 файлов + model/
+> ```
+>
+> **Если `specs/` не видно — ты на другой ветке.** На `main` пакета спеки нет,
+> там же лежит устаревший единый `docs/AR-REGISTRY.md`; на ветке-источнике он
+> заменён указателем на блочные реестры `docs/ar/` (AR-1…AR-80). Не создавай
+> файлы спеки заново и не выводи требования из `main` — сначала переключи ветку.
 
 ---
 
