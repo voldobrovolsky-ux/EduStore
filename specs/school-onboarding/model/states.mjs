@@ -74,3 +74,26 @@ export const wizard = {
   // групп не больше, чем учеников: иначе класс получает группу без единого ученика
   groupsFit: (students, groups) => groups === null || (groups >= 2 && groups <= 4 && groups <= students),
 };
+
+// Полномочия ролей (AR-88). Модератор школы — полные права внутри своей школы:
+// любая мутация версии, включая отметки в чужих уроках. Остальные роли читают;
+// педагог пишет отметки и темы в уроках, к которым привязан.
+export const rights = {
+  moderator: 'all',
+  teacher: 'own-lessons',
+  founder: 'read',
+  director: 'read',
+  deputy_academic: 'read',
+  deputy_upbringing: 'read',
+};
+
+// Гейт отметки: сперва полномочия, затем гейт реальности. Полные права не
+// отменяют второго: непроведённый урок закрыт для всех, потому что это факт
+// календаря, а не уровень доступа (AR-74).
+export const markGate = (roles, userId, lesson, today) => {
+  const may = roles.some((r) => rights[r] === 'all')
+    || (roles.includes('teacher') && rights.teacher === 'own-lessons' && lesson.teacherId === userId);
+  if (!may) return 'FORBIDDEN';
+  if (lesson.date > today) return 'LESSON_NOT_HELD';
+  return 'ok';
+};

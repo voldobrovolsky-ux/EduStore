@@ -235,6 +235,22 @@ if (wizard && typeof wizard.groupsFit === 'function') {
   if (one.every(s=>s.group===1)) ok('класс из одного ученика без деления: единственная группа непуста'); else bad('разбиение сломалось на классе из одного ученика');
 } else bad('правило «групп не больше, чем учеников» не объявлено: wizard.groupsFit отсутствует в states.mjs');
 
+// ---------- P11. Права: модератор против педагога (AR-88) ----------
+console.log('P11. Полномочия модератора и гейты реальности');
+const st = await import('./states.mjs');
+if (typeof st.markGate === 'function') {
+  const lesson = { date:'2027-02-25', teacherId:'t-anna' };
+  const future = { date:'2027-03-02', teacherId:'t-anna' };
+  if (st.markGate(['moderator'],'u-mod', lesson, today)==='ok') ok('модератор ставит отметку в чужом уроке — права полные (AR-88)');
+  else bad('модератор не может поставить отметку в чужом уроке');
+  if (st.markGate(['teacher'],'t-anna', lesson, today)==='ok') ok('педагог ставит отметку в своём уроке'); else bad('педагог не может поставить отметку в своём уроке');
+  if (st.markGate(['teacher'],'t-oleg', lesson, today)==='FORBIDDEN') ok('педагог в чужом уроке — отказ'); else bad('чужой урок открыт педагогу на запись');
+  if (st.markGate(['director'],'u-dir', lesson, today)==='FORBIDDEN') ok('читающая роль отметку не ставит'); else bad('директор пишет в журнал');
+  if (st.markGate(['moderator'],'u-mod', future, today)==='LESSON_NOT_HELD')
+    ok('модератор не обходит гейт даты: непроведённый урок закрыт и для полных прав — это факт, а не право');
+  else bad('полные права обходят гейт непроведённого урока');
+} else bad('правила прав не объявлены: markGate отсутствует в states.mjs');
+
 console.log(fails? `\n❌ Свойства: ${fails} падений` : '\n✅ Свойства: все инварианты держатся.');
 if (notes.length){ console.log('\nЗаметки для 40-bench.md:'); notes.forEach(n=>console.log('  · '+n)); }
 process.exit(fails?1:0);
