@@ -10,14 +10,23 @@
  * доказывает не «страница открылась», а «на странице стоит то, что объявлено».
  * Статическую половину той же проверки делает G-52.
  *
+ * **Учебный день зафиксирован** (AR-117, `SCHOOL_TODAY`). Без этого смок
+ * зависел от календаря: школа заводится «сегодня», учебный год начинается
+ * 1 сентября, материализация идёт вперёд — значит все колонки журнала будущие,
+ * ни одна ячейка не кликается, и шаг ворот «отметка в журнале» недостижим. С
+ * фиксированным днём внутри первой четверти смок ставит отметку и заполняет
+ * тему так же, как это делает педагог, а колонки следующих дней остаются
+ * будущими и доказывают `S-50.col.future` на том же экране.
+ *
  * Запуск: node e2e/smoke-onboarding.mjs   (нужен Postgres; API/web поднимает сам)
- * Env: SMOKE_DATABASE_URL, CHROMIUM_PATH.
+ * Env: SMOKE_DATABASE_URL, SMOKE_SCHOOL_DAY, CHROMIUM_PATH.
  */
 import { chromium } from 'playwright';
 import { spawn, execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API = 'http://localhost:3000';
@@ -25,6 +34,34 @@ const WEB = 'http://localhost:5173';
 const DB = process.env.SMOKE_DATABASE_URL ?? 'postgresql://edustore:edustore@localhost:5432/edustore_onboarding?schema=public';
 const SHOTS = path.join(ROOT, 'e2e', 'screenshots-onboarding');
 const PHONE = '+79990001122';
+/**
+ * Учебный день смока: понедельник внутри первой четверти рекомендованного
+ * графика (2026-09-01…2026-10-26), не выходной по производственному календарю.
+ * Уроки этого дня уже прошли (`future` — строгое «позже сегодня»), уроки
+ * следующих дней — ещё нет, и на том же экране доказывают `S-50.col.future`.
+ *
+ * Пара «день × зерно» СВЯЗАНА: генератор распределяет часы по дням случайно в
+ * пределах зерна, и при другом `SMOKE_GEN_SEED` понедельник может оказаться
+ * пустым. Смок это не угадывает — он падает и печатает, какие дни сетка заняла.
+ */
+const SCHOOL_DAY = process.env.SMOKE_SCHOOL_DAY ?? '2026-09-14';
+/** Понедельник = 0 — та же нумерация, что у `TemplateSlotDto.dayNo`. */
+const SCHOOL_DAY_NO = (new Date(`${SCHOOL_DAY}T00:00:00.000Z`).getUTCDay() + 6) % 7;
+/**
+ * Четверти смок берёт из ЕДИНСТВЕННОГО источника рекомендации (AR-36) — из
+ * пакета контрактов, а не переписывает даты руками: список, разъехавшийся с
+ * продуктом, превратил бы ворота в проверку собственных констант.
+ */
+/**
+ * Зерно генератора фиксировано (AR-97): при свободном зерне сетка каждый прогон
+ * другая, и «есть ли урок во вторник» становится вопросом удачи. Ворота, у
+ * которых объём проверенного зависит от случайного числа, доказывают разное в
+ * разные дни — ровно та же болезнь, что и плавающий учебный день.
+ */
+const GEN_SEED = process.env.SMOKE_GEN_SEED ?? '20260915';
+const { recommendedTerms } = createRequire(import.meta.url)(
+  path.join(ROOT, 'packages/shared/dist/schoolium.js'),
+);
 
 const children = [];
 const kill = () => children.forEach((c) => { try { process.kill(-c.pid, 'SIGKILL'); } catch { /* */ } });
@@ -39,6 +76,19 @@ const spawnBg = (cmd, args, opts) => {
   children.push(c);
   return c;
 };
+
+/**
+ * Порт занят чужим процессом — не «сервер уже готов», а проверка не того сервера
+ * (диагностика этапа 2, Д10): `waitHttp` считает порт готовым, как только по нему
+ * кто-то ответил, и осиротевший процесс прошлого прогона молча подменяет предмет
+ * ворот. Падаем сразу и по имени.
+ */
+async function assertPortFree(url) {
+  try { await fetch(url, { signal: AbortSignal.timeout(2000) }); }
+  catch { return; } // никто не ответил — порт свободен, это и нужно
+  console.error(`порт занят: по ${url} уже кто-то отвечает. Смок поднимает свои API и веб — снимите чужой процесс`);
+  process.exit(1);
+}
 
 async function waitHttp(url, timeoutMs = 120_000) {
   const t0 = Date.now();
@@ -99,8 +149,11 @@ async function main() {
   console.log('▶ prisma migrate deploy');
   sh('npx prisma migrate deploy', { cwd: path.join(ROOT, 'apps/api'), env: { ...process.env, DATABASE_URL: DB } });
   console.log('▶ build api + web');
-  if (!fs.existsSync(path.join(ROOT, 'apps/api/dist/main.js'))) sh('npm run build', { cwd: path.join(ROOT, 'apps/api') });
-  if (!fs.existsSync(path.join(ROOT, 'apps/web/dist/index.html'))) sh('npm run build', { cwd: path.join(ROOT, 'apps/web') });
+  // Собираем ВСЕГДА. Условие «нет dist — собери» экономило десять секунд и
+  // тихо гоняло ворота по сборке прошлого прогона: правка в исходнике
+  // проверялась не она. Локально это читается как «мой фикс не работает».
+  sh('npm run build', { cwd: path.join(ROOT, 'apps/api') });
+  sh('npm run build', { cwd: path.join(ROOT, 'apps/web') });
 
   // ── платформа заводит школу: экрана у этой операции нет и не будет (AR-93) ──
   console.log('▶ bootstrap школы');
@@ -112,10 +165,13 @@ async function main() {
   if (!link) { console.error('bootstrap не напечатал ссылку:\n' + out); process.exit(1); }
   console.log(`  ссылка входа: ${link.slice(0, 48)}…`);
 
+  await assertPortFree(`${API}/api/v1/me`);
+  await assertPortFree(WEB);
+
   console.log('▶ старт api + web');
   spawnBg('node', ['dist/main.js'], {
     cwd: path.join(ROOT, 'apps/api'),
-    env: { ...process.env, DATABASE_URL: DB, PORT: '3000', AUTH_MODE: 'production', WEB_ORIGIN: WEB },
+    env: { ...process.env, DATABASE_URL: DB, PORT: '3000', AUTH_MODE: 'production', WEB_ORIGIN: WEB, SCHOOL_TODAY: SCHOOL_DAY, GEN_SEED: GEN_SEED },
   });
   spawnBg('npx', ['vite', 'preview', '--port', '5173', '--strictPort'], { cwd: path.join(ROOT, 'apps/web') });
   await waitHttp(`${API}/api/v1/me`);
@@ -157,7 +213,7 @@ async function main() {
 
     // ── S-10 · пустая школа ──
     console.log('▶ S-10 · классы (пусто)');
-    await hasAll(page, ['S-10.empty', 'S-10.btn.newClasses', 'L.sidebar', 'L.topbar.title']);
+    await hasAll(page, ['S-10.empty', 'S-10.btn.newClasses', 'L.sidebar', 'L.sidebar.logo', 'L.sidebar.item.admin', 'L.sidebar.user', 'L.sidebar.collapse', 'L.topbar.title']);
     await shot(page, 'S-10-empty');
 
     // ── S-11 · мастер создания классов: пять шагов в порядке реестра ──
@@ -357,12 +413,21 @@ async function main() {
     console.log('▶ S-41 · мастер расписания');
     await click(page, 'S-40.btn.setup');
     await page.waitForSelector('[data-testid="M-08"]');
+    // Панели приходят из календаря — у первого шага есть состояние загрузки
+    // (скелетоны той же геометрии), и утверждать до него значит ловить гонку.
+    await page.waitForSelector('[data-testid="S-41.panel.term1"]', { timeout: 20_000 });
     await hasAll(page, ['S-41.panel.term1', 'S-41.panel.term2', 'S-41.panel.term3', 'S-41.panel.term4']);
-    const dates = [['2026-09-01', '2026-10-25'], ['2026-11-05', '2026-12-28'], ['2027-01-11', '2027-03-21'], ['2027-04-01', '2027-05-26']];
+    // Реестр требует панели ПРЕДЗАПОЛНЕННЫМИ графиком ФООП, а не пустыми
+    // (`70-screens.md` S-41 экран 1): пустой ввод с нуля — дефект, а не мелочь.
+    const prefilled = await page.locator('[data-testid^="S-41.panel.term"] input[type="date"]').evaluateAll((n) => n.map((x) => x.value));
+    if (prefilled.length === 8 && prefilled.every(Boolean)) console.log(`    ✅ панели четвертей предзаполнены: ${prefilled[0]}…${prefilled[7]}`);
+    else { console.error(`    ❌ панели четвертей пришли пустыми: ${JSON.stringify(prefilled)}`); failures++; }
+    // Модератор правит рекомендацию — здесь под учебный год смока (AR-117).
+    const dates = recommendedTerms(SCHOOL_DAY);
     for (let i = 0; i < 4; i++) {
       const panel = page.locator('[data-testid^="S-41.panel.term"]').nth(i);
-      await panel.locator('input[type="date"]').nth(0).fill(dates[i][0]);
-      await panel.locator('input[type="date"]').nth(1).fill(dates[i][1]);
+      await panel.locator('input[type="date"]').nth(0).fill(dates[i].dateFrom);
+      await panel.locator('input[type="date"]').nth(1).fill(dates[i].dateTo);
     }
     await has(page, 'S-41.term.check', 'заполненная четверть отмечена галочкой');
     await shot(page, 'S-41-step1-terms');
@@ -403,8 +468,8 @@ async function main() {
       await click(page, 'S-42.btn.confirm');
       await page.waitForSelector('[data-testid="S-40.grid.week"]', { timeout: 60_000 });
       // Плашки «устарело» здесь нет и быть не должно: сетка только что
-      // подтверждена. `S-40.banner.stale` и кнопка регенерации в ней живут в
-      // состоянии `stale` — оно доказано воротами G-42 на контракте.
+      // подтверждена. Обратное состояние проверяется ниже, после журнала:
+      // правка нагрузки роняет сетку в `stale` и поднимает плашку (AR-85).
       await hasAll(page, ['S-40.grid.week', 'S-40.btn.setup']);
       const stale = await page.locator('[data-testid="S-40.banner.stale"]').count();
       if (stale === 0) console.log('    ✅ сразу после подтверждения плашки «устарело» нет');
@@ -412,16 +477,137 @@ async function main() {
       await shot(page, 'S-40-confirmed');
 
       // ── S-50 · журнал: колонки = материализованные уроки ──
+      // Пара «класс × предмет» выбирается не наугад: берётся та, у которой урок
+      // стоит В УЧЕБНЫЙ ДЕНЬ смока, — иначе первой колонкой окажется завтрашний
+      // урок, и «отметка в журнале» упрётся в честный `LESSON_NOT_HELD`.
       console.log('▶ S-50 · журнал');
-      await page.goto(`${WEB}/journal`);
+      const week = await api(page, 'GET', '/api/v1/schedule');
+      const usedDays = [...new Set(week.slots.map((sl) => sl.dayNo))].sort();
+      const slotToday = week.slots.find((sl) => sl.dayNo === SCHOOL_DAY_NO);
+      if (!slotToday) {
+        console.error(
+          `    ❌ в сетке нет ни одного урока на ${SCHOOL_DAY} (день недели ${SCHOOL_DAY_NO}); сетка занимает дни ${usedDays.join(', ')}.\n` +
+            '       Поправьте SMOKE_SCHOOL_DAY на дату из занятых дней внутри первой четверти либо SMOKE_GEN_SEED.',
+        );
+        failures++;
+        throw new Error('нет урока в учебный день смока — шаг «отметка в журнале» недостижим');
+      }
+      await page.goto(`${WEB}/journal?classId=${slotToday.classId}&subjectId=${slotToday.subjectId}`);
       await page.waitForSelector('[data-testid="S-50.table"], [data-testid="S-50.empty"], [data-testid="S-50.empty.holidays"]', { timeout: 30_000 });
       await hasAll(page, ['S-50.select.class', 'S-50.select.subject']);
-      if (await page.locator('[data-testid="S-50.table"]').count()) {
-        await hasAll(page, ['S-50.table', 'S-50.colhead.date', 'S-50.cell.mark', 'S-50.col.average']);
-      } else {
-        console.log('    · уроков в горизонте нет (каникулы либо пустая дата) — таблица не строится');
-      }
+      await hasAll(page, ['S-50.table', 'S-50.colhead.date', 'S-50.cell.mark', 'S-50.col.average']);
+      console.log(`    · ${slotToday.classLabel}, ${slotToday.subjectName} — урок в учебный день смока (${SCHOOL_DAY})`);
+
+      // Колонки следующих дней горизонта — будущие, и это видно на том же экране.
+      const futureCols = await page.locator('[data-testid="S-50.col.future"]').count();
+      if (futureCols > 0) console.log(`    ✅ S-50.col.future — колонок будущих уроков ${futureCols}`);
+      else { console.error('    ❌ S-50.col.future отсутствует: горизонт не содержит ни одного будущего урока'); failures++; }
       await shot(page, 'S-50-journal');
+
+      // ── S-52 · отметка: шаг ворот этапа 2, который делает журнал живым ──
+      console.log('▶ S-52 · выбор отметки');
+      // Колонка сегодняшнего урока — единственная непомеченная как будущая.
+      const todayCol = await page.locator('table[data-testid="S-50.table"] thead th').evaluateAll((ths) =>
+        ths.findIndex((th) => th.querySelector('[data-testid="S-50.colhead.date"]') && th.getAttribute('data-testid') !== 'S-50.col.future'),
+      );
+      if (todayCol < 1) { console.error('    ❌ колонки прошедшего урока на экране нет'); failures++; }
+      const cellOf = (row) => page.locator(`[data-cell="${row}:${todayCol - 1}"]`);
+      await cellOf(0).click();
+      await page.waitForSelector('[data-testid="S-52.chip.m5"]', { timeout: 20_000 });
+      await hasAll(page, ['S-52.chip.m5', 'S-52.chip.m4', 'S-52.chip.m3', 'S-52.chip.m2', 'S-52.chip.n', 'S-52.chip.b', 'S-52.btn.clear']);
+      // Порядок шкалы — часть смысла, а не оформления (AR-79): «б» после «н».
+      const order = await page.locator('[data-testid^="S-52.chip."]').evaluateAll((n) => n.map((x) => x.getAttribute('data-testid')));
+      const wantOrder = ['S-52.chip.m5', 'S-52.chip.m4', 'S-52.chip.m3', 'S-52.chip.m2', 'S-52.chip.n', 'S-52.chip.b'];
+      if (JSON.stringify(order) === JSON.stringify(wantOrder)) console.log('    ✅ шесть чипов в порядке 5 4 3 2 н б (AR-79)');
+      else { console.error(`    ❌ порядок чипов: ${order.join(' ')}`); failures++; }
+      await shot(page, 'S-52-mark-popover');
+
+      await click(page, 'S-52.chip.m5');
+      await page.waitForFunction((c) => {
+        const el = document.querySelector(`[data-cell="0:${c}"]`);
+        return el && el.textContent.trim().includes('5');
+      }, todayCol - 1, { timeout: 20_000 });
+      console.log('    ✅ отметка 5 выставлена через интерфейс');
+      const avg = (await page.locator('[data-testid="S-50.col.average"]').first().innerText()).trim();
+      if (avg.startsWith('5')) console.log(`    ✅ S-50.col.average пересчитан: ${avg} (AR-115)`);
+      else { console.error(`    ❌ средний балл после единственной пятёрки: «${avg}»`); failures++; }
+
+      // Перезагрузка — единственный честный ответ на вопрос «а записалось ли».
+      await page.reload();
+      await page.waitForSelector('[data-testid="S-50.table"]', { timeout: 30_000 });
+      const saved = (await cellOf(0).innerText()).trim();
+      if (saved.includes('5')) console.log('    ✅ отметка пережила перезагрузку — записана на сервере');
+      else { console.error(`    ❌ после перезагрузки в ячейке «${saved}»`); failures++; }
+      await shot(page, 'S-50-mark-saved');
+
+      // ── S-51 · тема урока ──
+      console.log('▶ S-51 · тема урока');
+      await page.locator('table[data-testid="S-50.table"] thead th').nth(todayCol).locator('[data-testid="S-50.colhead.date"]').click();
+      await page.waitForSelector('[data-testid="S-51.input.topic"]', { timeout: 20_000 });
+      await hasAll(page, ['S-51.input.topic', 'S-51.btn.save', 'S-51.meta']);
+      await fill(page, 'S-51.input.topic', 'Сложение и вычитание');
+      await shot(page, 'S-51-topic');
+      await click(page, 'S-51.btn.save');
+      await page.waitForSelector('[data-testid="S-51.input.topic"]', { state: 'detached', timeout: 20_000 });
+      await page.reload();
+      await page.waitForSelector('[data-testid="S-50.table"]', { timeout: 30_000 });
+      await page.locator('table[data-testid="S-50.table"] thead th').nth(todayCol).locator('[data-testid="S-50.colhead.date"]').click();
+      await page.waitForSelector('[data-testid="S-51.input.topic"]', { timeout: 20_000 });
+      const topic = await page.locator('[data-testid="S-51.input.topic"]').inputValue();
+      if (topic === 'Сложение и вычитание') console.log('    ✅ тема урока записана на сервере');
+      else { console.error(`    ❌ тема после перезагрузки: «${topic}»`); failures++; }
+      // §0: слой закрывается `Esc`. Проверяется здесь, а не «подразумевается»:
+      // обработчик висит на слое и срабатывает, только если фокус внутри него.
+      const focusInside = await page.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="S-51"]')));
+      if (focusInside) console.log('    ✅ фокус внутри поповера — ловушка фокуса и Esc имеют на чём работать');
+      else { console.error('    ❌ фокус остался снаружи поповера: Esc и Tab-ловушка не работают'); failures++; }
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('[data-testid="S-51"]', { state: 'detached', timeout: 10_000 });
+      console.log('    ✅ Esc закрывает поповер темы (§0)');
+
+      // ── S-52.btn.clear · снятие отметки — единственный способ её стереть ──
+      console.log('▶ S-52.btn.clear · снятие отметки');
+      await cellOf(0).click();
+      await page.waitForSelector('[data-testid="S-52.btn.clear"]', { timeout: 20_000 });
+      await click(page, 'S-52.btn.clear');
+      await page.waitForFunction((c) => {
+        const el = document.querySelector(`[data-cell="0:${c}"]`);
+        return el && el.textContent.trim() === '';
+      }, todayCol - 1, { timeout: 20_000 });
+      const avgAfter = (await page.locator('[data-testid="S-50.col.average"]').first().innerText()).trim();
+      if (avgAfter === '—') console.log('    ✅ отметка снята, средний балл вернулся к «—», а не к нулю (P7)');
+      else { console.error(`    ❌ средний балл после снятия единственной отметки: «${avgAfter}»`); failures++; }
+      await shot(page, 'S-52-mark-cleared');
+
+      // ── S-40.banner.stale · правка нагрузки после подтверждения ──
+      // Плашка «устарело» — не украшение: она отделяет подтверждённую сетку от
+      // той, под которой изменились входные данные (AR-85). Проверяется тем же
+      // путём, каким её увидит модератор: правкой часов в мастере.
+      console.log('▶ S-40.banner.stale · правка нагрузки роняет сетку в «устарело»');
+      await page.goto(`${WEB}/schedule`);
+      await page.waitForSelector('[data-testid="S-40.grid.week"]', { timeout: 30_000 });
+      await click(page, 'S-40.btn.setup');
+      await page.waitForSelector('[data-testid="M-08"]', { timeout: 20_000 });
+      await click(page, 'S-41.btn.next1');
+      await page.waitForSelector('[data-testid="S-41.input.hours"]', { timeout: 20_000 });
+      await page.locator('[data-testid="S-41.input.hours"]').first().fill('3');
+      await click(page, 'S-41.btn.next2');
+      await page.waitForSelector('[data-testid="S-41.chips.priority"]', { timeout: 20_000 });
+      // Выход из мастера с введёнными данными спрашивает подтверждение (M-14).
+      // `Esc` обязан работать и на ТРЕТЬЕМ шаге: кнопка, на которой был фокус,
+      // размонтировалась вместе с предыдущим шагом (§0, ловушка фокуса).
+      const focusInModal = await page.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="M-08"]')));
+      if (focusInModal) console.log('    ✅ фокус остался внутри мастера после смены шага');
+      else { console.error('    ❌ фокус ушёл из мастера при смене шага: Esc и Tab-ловушка не работают'); failures++; }
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('[data-testid="M-14"]', { timeout: 20_000 });
+      await has(page, 'M-14', 'выход из мастера с введёнными данными спрашивает подтверждение');
+      await shot(page, 'M-14-exit-wizard');
+      await page.locator('[data-testid="M-14"] button', { hasText: 'Закрыть без сохранения' }).click();
+      await page.goto(`${WEB}/schedule`);
+      await page.waitForSelector('[data-testid="S-40.banner.stale"]', { timeout: 30_000 });
+      await hasAll(page, ['S-40.banner.stale', 'S-40.btn.regenerate']);
+      await shot(page, 'S-40-stale');
     }
 
     // ── S-60 · кабинет модератора ──
@@ -438,10 +624,26 @@ async function main() {
     await has(page, 'S-80.list.sessions');
     await shot(page, 'S-80-devices');
 
+    // ── Оболочка глазами педагога: кнопка вне роли не рендерится (AR-69) ──
+    // Проверяется на ЖИВОЙ сессии второй роли, а не на словах: сессия педагога
+    // уже есть — её выдала регистрация по QR выше.
+    console.log('▶ оболочка педагога · права видны по составу элементов');
+    await phone.goto(`${WEB}/journal`);
+    await phone.waitForSelector('[data-testid="L.sidebar"]', { timeout: 30_000 });
+    const admin = await phone.locator('[data-testid="L.sidebar.item.admin"]').count();
+    if (admin === 0) console.log('    ✅ «Кабинет» у педагога ОТСУТСТВУЕТ, а не «серый и некликабельный» (AR-69)');
+    else { console.error('    ❌ педагог видит раздел «Кабинет»'); failures++; }
+    const scan = await phone.locator('[data-testid="L.topbar.scan"]').count();
+    if (scan === 1) console.log('    ✅ L.topbar.scan виден педагогу (модератор показывает коды, а не сканирует)');
+    else { console.error(`    ❌ кнопок сканера в шапке педагога ${scan}, ожидалась одна`); failures++; }
+    await hasAll(phone, ['L.sidebar', 'L.sidebar.logo', 'L.sidebar.user', 'L.sidebar.collapse', 'L.topbar.title']);
+    await shot(phone, 'shell-teacher');
+
     // ── S-70 · сканер: на десктопе — причина, а не заглушка ──
     console.log('▶ S-70 · сканер (десктоп)');
     await phone.goto(`${WEB}/scan`);
     await phone.waitForSelector('[data-testid="S-70.hint.desktop"], [data-testid="S-70.viewfinder"], [data-testid="S-70.error.denied"]');
+    await has(phone, 'S-70.hint.desktop', 'на десктопе сканер объясняет причину, а не показывает заглушку');
     await shot(phone, 'S-70-scan');
 
     await phoneCtx.close();

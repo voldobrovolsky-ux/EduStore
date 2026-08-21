@@ -31,6 +31,7 @@ const kill = () => children.forEach((c) => { try { process.kill(-c.pid, 'SIGKILL
 process.on('exit', kill);
 
 const sh = (cmd, opts = {}) => execSync(cmd, { stdio: 'inherit', cwd: ROOT, ...opts });
+const shOut = (cmd, opts = {}) => execSync(cmd, { cwd: ROOT, encoding: 'utf8', ...opts });
 const spawnBg = (cmd, args, opts) => {
   const c = spawn(cmd, args, { detached: true, stdio: ['ignore', 'pipe', 'pipe'], ...opts });
   c.stdout.on('data', (d) => process.env.SMOKE_VERBOSE && process.stdout.write(d));
@@ -38,6 +39,18 @@ const spawnBg = (cmd, args, opts) => {
   children.push(c);
   return c;
 };
+
+/**
+ * Порт занят чужим процессом — не «сервер готов», а проверка не того сервера:
+ * `waitHttp` принимает любой ответ, и осиротевший процесс прошлого прогона молча
+ * подменяет предмет ворот. Падаем сразу и по имени.
+ */
+async function assertPortFree(url) {
+  try { await fetch(url, { signal: AbortSignal.timeout(2000) }); }
+  catch { return; }
+  console.error(`порт занят: по ${url} уже кто-то отвечает. Смок поднимает свои API и веб — снимите чужой процесс`);
+  process.exit(1);
+}
 
 async function waitHttp(url, timeoutMs = 120_000) {
   const t0 = Date.now();
@@ -84,16 +97,33 @@ async function main() {
   fs.rmSync(STORAGE_DIR, { recursive: true, force: true });
 
   // ── инфраструктура: миграции → API (pilot-qr + local storage) → web (PROD-сборка: /me-гейт) ──
+  // ── чистая база: смок наливает свои данные и на своих же остатках падает ──
+  // Раньше база только мигрировалась: второй прогон подряд заставал приглашения,
+  // назначения и структуру прошлого — и `cabinet-state` отвечал по чужим строкам.
+  // Ворота, зелёные ровно один раз, не ворота (диагностика этапа 2, Д10).
+  const u = new URL(DB);
+  const dbName = u.pathname.replace(/^\//, '');
+  const admin = `${u.protocol}//${u.username}:${u.password}@${u.host}/postgres`;
+  console.log(`▶ пересоздание базы ${dbName}`);
+  const psql = (sql, url) => shOut(`psql "${url}" -v ON_ERROR_STOP=1 -c ${JSON.stringify(sql)}`);
+  try {
+    psql(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`, admin);
+    psql(`CREATE DATABASE "${dbName}"`, admin);
+  } catch (e) {
+    console.error('не удалось пересоздать базу:', e.message);
+    process.exit(1);
+  }
+
   console.log('▶ prisma migrate deploy');
   sh('npx prisma migrate deploy', { cwd: path.join(ROOT, 'apps/api'), env: { ...process.env, DATABASE_URL: DB } });
-  if (!fs.existsSync(path.join(ROOT, 'apps/api/dist/main.js'))) {
-    console.log('▶ build api');
-    sh('npm run build', { cwd: path.join(ROOT, 'apps/api') });
-  }
-  if (!fs.existsSync(path.join(ROOT, 'apps/web/dist/index.html'))) {
-    console.log('▶ build web');
-    sh('npm run build', { cwd: path.join(ROOT, 'apps/web') });
-  }
+  // Собираем ВСЕГДА: условная сборка тихо гоняла ворота по прошлому dist.
+  console.log('▶ build api');
+  sh('npm run build', { cwd: path.join(ROOT, 'apps/api') });
+  console.log('▶ build web');
+  sh('npm run build', { cwd: path.join(ROOT, 'apps/web') });
+  await assertPortFree(`${API}/api/v1/edu/ktp`);
+  await assertPortFree(WEB);
+
   console.log('▶ старт api + web');
   spawnBg('node', ['dist/main.js'], {
     cwd: path.join(ROOT, 'apps/api'),

@@ -7,8 +7,8 @@
  * Автоприменения по таймеру или «раз всё зелёное» здесь нет и быть не может:
  * материализация запускается только из `S-42.btn.confirm`.
  */
-import { useState } from "react";
-import { DAY_MINUTES_CAP, type SchedulePreviewDto, type TermDto } from "@edustore/shared";
+import { useEffect, useState } from "react";
+import { DAY_MINUTES_CAP, recommendedTerms, type SchedulePreviewDto, type TermDto } from "@edustore/shared";
 import { api, SchoolApiError, type LoadEntry } from "../api";
 import { useAsync } from "../hooks";
 import { Button, EmptyState, ErrorState, Field, Modal, Skeletons, Toast, useToast } from "../ui";
@@ -167,9 +167,16 @@ export function WeekGrid({ preview, testId }: { preview: SchedulePreviewDto; tes
 const emptyTerms = (): TermDto[] =>
   [1, 2, 3, 4].map((n) => ({ termNo: n as 1 | 2 | 3 | 4, dateFrom: "", dateTo: "" }));
 
+/** Четыре панели по порядку номеров — реестр требует именно четыре (`S-41.panel.term[1..4]`). */
+const byTermNo = (rows: TermDto[]): TermDto[] =>
+  [1, 2, 3, 4].map(
+    (n) => rows.find((t) => t.termNo === n) ?? { termNo: n as 1 | 2 | 3 | 4, dateFrom: "", dateTo: "" },
+  );
+
 export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; onGenerated: (p: SchedulePreviewDto) => void }) {
   const [step, setStep] = useState(1);
   const [terms, setTerms] = useState<TermDto[]>(emptyTerms);
+  const [termsReady, setTermsReady] = useState(false);
   const [load, setLoad] = useState<{ entries: LoadEntry[]; version: number } | null>(null);
   const [priorities, setPriorities] = useState<string[]>([]);
   const [noPriority, setNoPriority] = useState(false);
@@ -182,6 +189,32 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
   const { toast, showToast } = useToast();
 
   const [subjects] = useAsync(() => api.subjects());
+
+  /**
+   * Панели четвертей приходят заполненными, а не пустыми (`70-screens.md` S-41
+   * экран 1): у школы, которая уже задала четверти, — её собственные даты (иначе
+   * повторный вход в мастер стирал бы календарь рукой модератора); у новой —
+   * рекомендованный график ФООП (базис #5). Пустые панели с нуля — лишний ввод,
+   * и реестр их не разрешает.
+   */
+  useEffect(() => {
+    let alive = true;
+    api
+      .terms()
+      .then((rows) => {
+        if (!alive) return;
+        setTerms(rows.length ? byTermNo(rows) : recommendedTerms(new Date().toISOString().slice(0, 10)));
+        setTermsReady(true);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setTerms(recommendedTerms(new Date().toISOString().slice(0, 10)));
+        setTermsReady(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const dirty = terms.some((t) => t.dateFrom || t.dateTo) || day.slotsPerDay !== "";
   const close = () => (dirty ? setConfirmExit(true) : onClose());
@@ -325,7 +358,8 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
         </div>
 
         {/* Экран 1 — четверти. Даты уходят В КАЛЕНДАРЬ: модалка их не хранит (AR-68). */}
-        {step === 1 ? (
+        {step === 1 && !termsReady ? <Skeletons count={4} kind="row" /> : null}
+        {step === 1 && termsReady ? (
           <div className="sch-terms">
             {terms.map((t, i) => (
               <div className="sch-term-panel" key={t.termNo} data-testid={`S-41.panel.term${t.termNo}`} data-valid={Boolean(t.dateFrom && t.dateTo)}>

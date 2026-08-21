@@ -3,12 +3,16 @@
  * (§3, AR-82), три состояния экрана (§5) и мелкие элементы.
  *
  * Правила, которые здесь ЗАШИТЫ, а не оставлены на дисциплину экрана:
- *   · кнопка, недоступная роли, НЕ рендерится — `disabled` означает «нельзя
- *     сейчас», отсутствие означает «не ваша роль» (AR-69);
- *   · модалка закрывается крестиком, `Esc` и кликом по фону, держит фокус
- *     внутри и возвращает его открывателю;
- *   · пустое состояние показывает кнопку, только если право есть;
+ *   · модалка и поповер закрываются крестиком, `Esc` и кликом мимо, держат фокус
+ *     внутри и возвращают его открывателю;
+ *   · уровней вложенности слоя ровно два — третий не выразим типом (AR-82);
  *   · ни одного литерального цвета: всё через классы на CSS-переменных.
+ *
+ * Правило «кнопка, недоступная роли, НЕ рендерится» (AR-69) живёт НЕ здесь:
+ * библиотека не знает прав, их знает экран. Экран получает право из `session`
+ * и не передаёт кнопку в `action`/разметку — `disabled` означает «нельзя
+ * сейчас», отсутствие означает «не ваша роль». Держится это перечислением
+ * гейтов `can(...)` в экранах и живой проверкой смока G-53 на сессии педагога.
  */
 import {
   useCallback,
@@ -126,6 +130,29 @@ export function Modal({ title, width, onClose, children, footer, testId, level =
     };
   }, []);
 
+  /**
+   * Фокус не уходит из модалки, даже когда исчезает элемент, на котором он был.
+   * Мастер меняет шаг — кнопка «Далее» размонтируется вместе с содержимым, и
+   * фокус падает на `body`. `Esc` и `Tab`-ловушка висят на карточке и ждут
+   * события ИЗНУТРИ — а изнутри больше ничего не приходит. Дефект найден смоком
+   * G-53: со второго шага мастера расписания `Esc` переставал закрывать `M-08`.
+   *
+   * Проверка идёт ПОСЛЕ КАЖДОГО рендера, а не по событию: браузер не обещает
+   * `focusout`, когда сфокусированный узел удалён, — на это событие полагаться
+   * нельзя. Два условия, при которых модалка фокус НЕ отнимает: окно потеряло
+   * фокус целиком (человек ушёл в адресную строку) и открыт вложенный слой
+   * (AR-82) — забирает верхняя из открытых модалок.
+   */
+  useEffect(() => {
+    const card = ref.current;
+    if (!card || !document.hasFocus()) return;
+    const active = document.activeElement;
+    if (active && card.contains(active)) return;
+    const overlays = document.querySelectorAll('.sch-overlay');
+    if (overlays[overlays.length - 1] !== card.parentElement) return;
+    card.focus();
+  });
+
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -170,6 +197,7 @@ export function Modal({ title, width, onClose, children, footer, testId, level =
         aria-labelledby={titleId}
         data-testid={testId}
         ref={ref}
+        tabIndex={-1}
       >
         <div className="sch-modal-head">
           <h2 id={titleId}>{title}</h2>
@@ -219,12 +247,24 @@ export function Popover({
       const top = below + box.height > window.innerHeight ? Math.max(8, anchor.top - box.height - 8) : below;
       const left = Math.max(8, Math.min(anchor.left, window.innerWidth - box.width - 8));
       setPos({ top, left });
-      el.querySelector<HTMLElement>('button, input, [tabindex]:not([tabindex="-1"])')?.focus();
     }
     return () => {
       (opener.current as HTMLElement | null)?.focus?.();
     };
   }, [anchor]);
+
+  /**
+   * Фокус ставится ОТДЕЛЬНЫМ проходом — после того, как позиция посчитана и
+   * слой перестал быть `visibility: hidden`. Скрытый элемент сфокусировать
+   * нельзя: браузер молча отказывает, и вместе с фокусом пропадают обе гарантии
+   * §0 — `Esc` закрывает (обработчик висит на слое и ждёт события изнутри) и
+   * `Tab` не уводит наружу. Дефект найден смоком G-53: после сохранения темы
+   * `Esc` не закрывал `S-51`.
+   */
+  useEffect(() => {
+    if (!pos) return;
+    ref.current?.querySelector<HTMLElement>('button, input, [tabindex]:not([tabindex="-1"])')?.focus();
+  }, [pos]);
 
   useEffect(() => {
     const onDocDown = (e: MouseEvent) => {

@@ -100,7 +100,7 @@ jobs:
           npm --workspace apps/api run events:check
           npm --workspace apps/api run consent:check
           npm --workspace apps/api run timetable:check
-      - name: Ворота Schoolium 1.1.1 (G-24, G-33…G-36, G-41…G-51)
+      - name: Ворота Schoolium 1.1.1 (G-24, G-33…G-36, G-41…G-51, G-54)
         run: npm --workspace apps/api run schoolium:check
       - name: Chromium для смока
         run: npx playwright install --with-deps chromium

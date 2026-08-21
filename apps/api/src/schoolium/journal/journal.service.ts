@@ -14,6 +14,7 @@ import { OutboxService } from '../../common/outbox/outbox.service';
 import { newEvent } from '../../common/events/domain-event';
 import { SCHOOL_EVENTS, type MarkPostedV1, type MarkRemovedV1, type TopicSetV1 } from '../schoolium.contract';
 import { SchoolError } from '../schoolium.errors';
+import { schoolTodayIso as today } from '../calendar/school-day';
 
 export interface Actor {
   userId: string;
@@ -22,7 +23,6 @@ export interface Actor {
 }
 
 const isoDay = (d: Date): string => d.toISOString().slice(0, 10);
-const today = (): string => isoDay(new Date());
 
 /**
  * Журнал 1.1.1 (AR-74, AR-79, AR-83).

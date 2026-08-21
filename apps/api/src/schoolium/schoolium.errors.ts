@@ -11,6 +11,9 @@ import { ERROR_CODES, type ErrorCode } from '@edustore/shared';
  */
 type D = Record<string, unknown>;
 const n = (d: D, k: string): string => String(d[k] ?? '—');
+/** Номер четверти римским — так его называет реестр экранов (§9, §S-41). */
+const ROMAN = ['—', 'I', 'II', 'III', 'IV'];
+const roman = (v: unknown): string => ROMAN[Number(v)] ?? String(v ?? '—');
 
 const TEXTS: Record<ErrorCode, (d: D) => string> = {
   // страница входа перевыпускает QR сама — текстом отказ не показывается
@@ -19,15 +22,21 @@ const TEXTS: Record<ErrorCode, (d: D) => string> = {
   TOKEN_EXPIRED: () => 'Код погас, откройте карточку заново',
   PHONE_TAKEN_IN_SCHOOL: () => 'Этот номер уже зарегистрирован в школе',
   CLASSES_ALREADY_EXIST: () => 'Классы уже созданы; добавьте класс из списка',
-  TERM_OVERLAP: (d) => `Четверти пересекаются: ${n(d, 'termNo')} четверть начинается раньше, чем кончается предыдущая`,
-  TERM_REVERSED: (d) => `Дата конца раньше даты начала: ${n(d, 'termNo')} четверть`,
+  // §9 и §S-41 требуют римского номера и НАЗЫВАЮТ обе четверти: «II четверть
+  // начинается раньше, чем кончается I». Пара номеров и есть объект отказа.
+  TERM_OVERLAP: (d) => `${roman(d.termNo)} четверть начинается раньше, чем кончается ${roman(Number(d.termNo) - 1)}`,
+  // Объект здесь — сама панель, под которой стоит текст (§S-41): номер четверти
+  // приезжает в `details` и ставит ошибку на место, а в тексте его нет.
+  TERM_REVERSED: () => 'Дата конца раньше даты начала',
   LOAD_EXCEEDS_SANPIN: (d) => `${n(d, 'classLabel')} класс: ${n(d, 'total')} часа при потолке ${n(d, 'cap')} — СанПиН 1.2.3685-21`,
-  LOAD_EXCEEDS_GRID: (d) => `${n(d, 'classLabel')} класс: ${n(d, 'total')} часов при ${n(d, 'grid')} слотах недели`,
+  LOAD_EXCEEDS_GRID: (d) =>
+    `${n(d, 'classLabel')} класс: ${n(d, 'total')} часов при ${n(d, 'grid')} слотах недели (${n(d, 'perDay')} уроков в день × ${n(d, 'days')} дней — потолок параллели)`,
   GROUP_HOURS_UNEQUAL: (d) => `${n(d, 'subject')}, ${n(d, 'classLabel')} класс: ${n(d, 'hours')}`,
   TEACHER_OVERBOOKED: (d) => `${n(d, 'teacher')}: ${n(d, 'hours')} часов при ${n(d, 'grid')} слотах недели`,
   SUBJECT_UNCOVERED: (d) => `${n(d, 'subject')}, ${n(d, 'classLabel')} класс: ${n(d, 'groups')} без педагога`,
   GROUPS_UNASSIGNED: (d) => `${n(d, 'classLabel')} класс: группы объявлены, состав не назначен`,
-  DAY_EXCEEDS_SANPIN: (d) => `${n(d, 'classLabel')} класс: ${n(d, 'slotsPerDay')} уроков в день при потолке ${n(d, 'cap')} — СанПиН 1.2.3685-21`,
+  DAY_EXCEEDS_SANPIN: (d) =>
+    `${n(d, 'slotsPerDay')} уроков в день при потолке ${n(d, 'cap')} (старшая параллель школы — ${n(d, 'senior')} класс) — СанПиН 1.2.3685-21`,
   // текст НЕ ссылается на СанПиН: потолок 420 минут — продуктовый дефолт (AR-103)
   DAY_TOO_LONG: (d) => `Учебный день ${n(d, 'minutes')} минут при потолке ${n(d, 'cap')}: ${n(d, 'breakdown')}`,
   CONCURRENT_EDIT: (d) => `Пока вы заполняли, ${n(d, 'editor')} изменила эти данные. Обновите экран`,

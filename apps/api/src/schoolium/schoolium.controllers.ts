@@ -21,6 +21,7 @@ import { Public } from '../common/auth/public.decorator';
 import { SCHOOL_COOKIE } from '../common/auth/school-session.service';
 import type { SessionUser } from '../common/auth/flor.service';
 import { actorOf } from './actor';
+import { schoolToday } from './calendar/school-day';
 import { ContingentService } from './contingent/contingent.service';
 import { SubjectsService } from './subjects/subjects.service';
 import { StaffService } from './staff/staff.service';
@@ -448,7 +449,7 @@ export class SchoolJournalController {
   @Get('journal')
   async journal(@Query('classId') classId: string, @Query('subjectId') subjectId: string) {
     await this.schedule.materialize('journal-open');
-    const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+    const today = schoolToday();
     const holidays = await this.calendar.onHolidays(today);
     const nextDay = holidays ? await this.calendar.nextSchoolDay(today) : null;
     return this.svc.read(classId, subjectId, nextDay);

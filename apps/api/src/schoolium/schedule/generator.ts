@@ -149,7 +149,13 @@ export function arithmeticRefusal(input: GenInput): { code: GeneratorRefusal; de
     // школьным числом. Иначе первоклассник тянул бы вниз всю школу.
     const classGrid = params.days * classDayCap(c.parallel, params.slotsPerDay);
     if (total > classGrid) {
-      return { code: 'LOAD_EXCEEDS_GRID', details: { classLabel: c.label, total, grid: classGrid } };
+      return {
+        code: 'LOAD_EXCEEDS_GRID',
+        // Текст §9 объясняет, ОТКУДА взялось число слотов: «(6 уроков в день × 5
+        // дней — потолок параллели)». Без разбора модератор видит цифру, которую
+        // не может проверить, и не знает, какой из двух множителей менять.
+        details: { classLabel: c.label, total, grid: classGrid, perDay: classDayCap(c.parallel, params.slotsPerDay), days: params.days },
+      };
     }
   }
 
@@ -205,12 +211,15 @@ export function arithmeticRefusal(input: GenInput): { code: GeneratorRefusal; de
   // осмысленно, потому что каждый класс всё равно ограничен своим потолком.
   const unknown = classes.find((c) => DAY_SLOTS_CAP[c.parallel] === undefined);
   if (unknown) {
-    return { code: 'DAY_EXCEEDS_SANPIN', details: { classLabel: unknown.label, slotsPerDay: params.slotsPerDay, cap: '—' } };
+    return { code: 'DAY_EXCEEDS_SANPIN', details: { senior: unknown.parallel, slotsPerDay: params.slotsPerDay, cap: '—' } };
   }
   const dayCap = schoolDayCap(classes.map((c) => c.parallel));
   if (classes.length > 0 && params.slotsPerDay > dayCap) {
     const senior = classes.reduce((a, c) => (DAY_SLOTS_CAP[c.parallel] > DAY_SLOTS_CAP[a.parallel] ? c : a), classes[0]);
-    return { code: 'DAY_EXCEEDS_SANPIN', details: { classLabel: senior.label, slotsPerDay: params.slotsPerDay, cap: dayCap } };
+    // Отказ про ШКОЛУ, а не про класс: число выше потолка старшей параллели —
+    // значит текст обязан назвать эту параллель, иначе он указывает не на тот
+    // объект (§9, AR-114).
+    return { code: 'DAY_EXCEEDS_SANPIN', details: { senior: senior.parallel, slotsPerDay: params.slotsPerDay, cap: dayCap } };
   }
 
   const minutes = dayLength(params);

@@ -367,6 +367,50 @@ export interface TermDto {
   dateTo: string;
 }
 
+/**
+ * Рекомендованный график четвертей — ФООП (базис #5): 34 учебные недели, четыре
+ * четверти по **8 / 8 / 11 / 7** недель, каникулы между ними 1 / 2 / 1 неделя.
+ * Учебный год начинается 1 сентября.
+ *
+ * Это ПРЕДЗАПОЛНЕНИЕ панелей `S-41.panel.term[1..4]`, а не хранимый период:
+ * владелец периодов — календарь (AR-68), и в него даты попадают только тем,
+ * что модератор нажал «Далее». Числа взяты из базиса, а не выдуманы: сумма
+ * недель ровно 34, «школа вправе сдвигать даты» — поэтому панели редактируемы.
+ */
+export const FOOP_TERM_WEEKS = [8, 8, 11, 7] as const;
+/** Каникулы между четвертями, недель: осенние, зимние, весенние. */
+export const FOOP_BREAK_WEEKS = [1, 2, 1] as const;
+
+const addDays = (iso: string, n: number): string => {
+  const d = new Date(`${iso}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/**
+ * Учебный год дня. Сентябрь-декабрь — год начала; январь-май — год предыдущий
+ * (учебный год ещё идёт). **Июнь-август принадлежат наступающему году**: школа,
+ * которая заводит расписание в августе, готовит сентябрь, а не пересобирает
+ * прошлый май — предзаполнить её панели ушедшим годом значило бы предложить
+ * даты, которые она обязана стереть.
+ */
+export const academicYearOf = (isoDay: string): number => {
+  const [y, m] = isoDay.split('-').map(Number);
+  return m >= 6 ? y : y - 1;
+};
+
+/** Четыре панели, предзаполненные графиком ФООП от 1 сентября учебного года. */
+export function recommendedTerms(isoDay: string): TermDto[] {
+  let cursor = `${academicYearOf(isoDay)}-09-01`;
+  const out: TermDto[] = [];
+  for (let i = 0; i < 4; i += 1) {
+    const dateTo = addDays(cursor, FOOP_TERM_WEEKS[i] * 7 - 1);
+    out.push({ termNo: (i + 1) as 1 | 2 | 3 | 4, dateFrom: cursor, dateTo });
+    if (i < 3) cursor = addDays(dateTo, FOOP_BREAK_WEEKS[i] * 7 + 1);
+  }
+  return out;
+}
+
 export interface SetTermsDto {
   terms: TermDto[];
 }

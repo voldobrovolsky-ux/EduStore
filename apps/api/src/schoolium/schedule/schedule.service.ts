@@ -24,6 +24,7 @@ import {
   type TemplateConfirmedV1,
 } from '../schoolium.contract';
 import { SchoolError } from '../schoolium.errors';
+import { schoolToday } from '../calendar/school-day';
 import { SchoolStateService, uncoveredGroups } from '../school-state.service';
 import { ContingentContractService } from '../contingent/contingent.service';
 import { SubjectsContractService } from '../subjects/subjects.service';
@@ -299,7 +300,7 @@ export class ScheduleService implements OnModuleInit {
     // года без данных календаря не бывает молча (AR-100): отказ ДО перебора
     const terms = await this.calendar.terms();
     for (const t of terms) this.calendar.assertYear(t.dateFrom.getUTCFullYear());
-    if (!terms.length) this.calendar.assertYear(new Date().getUTCFullYear());
+    if (!terms.length) this.calendar.assertYear(schoolToday().getUTCFullYear());
 
     const envSeed = Number(process.env.GEN_SEED);
     const seed = Number.isFinite(envSeed) && envSeed > 0 ? envSeed : Math.floor(Date.now() % 2_000_000_000);
@@ -487,7 +488,7 @@ export class ScheduleService implements OnModuleInit {
     if (!terms.length) return 0;
     for (const t of terms) this.calendar.assertYear(t.dateFrom.getUTCFullYear());
 
-    const from = new Date(`${isoDay(new Date())}T00:00:00.000Z`);
+    const from = schoolToday();
     const start = from < terms[0].dateFrom ? terms[0].dateFrom : from;
     const planned = plannedLessons({
       slots: tpl.slots.map<GenSlot>((s) => ({
