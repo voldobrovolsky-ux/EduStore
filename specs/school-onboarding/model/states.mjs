@@ -139,3 +139,27 @@ export const staffRemoval = (person, school) => {
     return { action: 'deactivate', keepsMarks: true, unbinds: true, staleSchedule: true };
   return { action: 'delete', keepsMarks: true, unbinds: true, staleSchedule: true };
 };
+
+// Маршруты входа сотрудника (AR-91, AR-92, AR-93). Вход — не одна дверь, а
+// решётка «устройство × состояние SMS-шлюза × наличие камеры × присутствие
+// модератора»; каждая клетка обязана иметь либо путь, либо названную причину
+// его отсутствия.
+export const loginRoute = (ctx) => {
+  const c = { justRegistered:false, ownDevice:true, smsUp:true, hasCamera:true,
+              moderatorPresent:false, deactivated:false, bootstrap:false, ...ctx };
+  if (c.deactivated)
+    return { route:'none', revokesSessions:true,
+             reason:'доступ закрыт деактивацией: активные сессии отозваны, новые маршруты не выдаются' };
+  if (c.bootstrap)
+    return { route:'bootstrap-link',
+             reason:'первый модератор школы заводится платформенной операцией и входит по одноразовой ссылке (24 часа)' };
+  if (c.justRegistered && c.ownDevice)
+    return { route:'session-from-registration',
+             reason:'регистрация прошла на устройстве сотрудника при живой сессии модератора — сессия выдаётся сразу' };
+  if (c.smsUp) return { route:'otp', reason:'штатный вход: номер телефона и код по SMS' };
+  if (c.moderatorPresent)
+    return { route:'login-code',
+             reason:'одноразовый код входа с карточки сотрудника: QR для камеры, шесть цифр — для набора руками' };
+  return { route:'none',
+           reason:'SMS-шлюз недоступен, модератора рядом нет — входа нет; человеку сообщается именно это, а не «попробуйте позже»' };
+};
