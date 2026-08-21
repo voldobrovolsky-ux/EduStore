@@ -8,5 +8,6 @@ import { AuditController } from './audit.controller';
   imports: [PrismaModule],
   controllers: [AuditController],
   providers: [AuditService],
+  exports: [AuditService], // читающий контракт для кабинета модератора (S-60)
 })
 export class AuditModule {}

@@ -16,7 +16,7 @@
  *
  * Запуск: npm --workspace apps/api run generator:check
  */
-import { ARITHMETIC_REFUSALS, GENERATOR_REFUSALS } from '@edustore/shared';
+import { ARITHMETIC_REFUSALS, DAY_SLOTS_CAP, GENERATOR_REFUSALS } from '@edustore/shared';
 import { arithmeticRefusal, generate, type GenInput, type GenPair, type GenSlot } from '../src/schoolium/schedule/generator';
 import { check, report } from './schoolium/harness';
 
@@ -44,10 +44,10 @@ function firstSchool(seed: number): GenInput {
   return {
     classes,
     pairs,
-    // «Уроков в день» — ОДНО число на школу, а дневной потолок — по параллелям
-    // (AR-103). В школе с первым классом побеждает его потолок: 4. Это следствие
-    // решения, а не ошибка стенда — вынесено находкой владельцу в отчёте этапа 1.
-    params: { days: 5, slotsPerDay: 4, lessonMin: 45, breakMin: 10, bigBreakAfter: 2, bigBreakMin: 30 },
+    // «Уроков в день» — ВЕРХНЯЯ ГРАНИЦА школьного дня (AR-114); день каждого
+    // класса ограничен потолком его параллели: первоклассник получит 4, а
+    // восьмиклассник — 7, и оба живут в одной сетке.
+    params: { days: 5, slotsPerDay: 7, lessonMin: 45, breakMin: 10, bigBreakAfter: 2, bigBreakMin: 30 },
     seed,
     classesWithUnassignedGroups: [],
     uncovered: [],
@@ -74,6 +74,10 @@ function violations(slots: GenSlot[], input: GenInput): string[] {
 
       let lastBusy = 0;
       for (let n = 1; n <= slotsPerDay; n += 1) if (perSlot[n].length) lastBusy = n;
+      // 7. день класса не длиннее потолка ЕГО параллели (AR-114)
+      const capForClass = Math.min(slotsPerDay, DAY_SLOTS_CAP[c.parallel] ?? 0);
+      if (lastBusy > capForClass)
+        v.push(`день длиннее потолка параллели: класс ${c.label}, день ${d + 1} — ${lastBusy} уроков при потолке ${capForClass}`);
 
       for (let n = 1; n <= slotsPerDay; n += 1) {
         const cell = perSlot[n];
@@ -152,7 +156,7 @@ const cases: [string, GenInput][] = [
       pair({ classId: 'c5', teacherId: 't2', hours: 1, subjectId: 'eng', scope: 'group', groupNos: [2] }),
     ],
   })],
-  ['DAY_EXCEEDS_SANPIN', mk({ params: { ...P, slotsPerDay: 9 } })],
+  ['DAY_EXCEEDS_SANPIN', mk({ params: { ...P, slotsPerDay: 9 } })], // выше потолка старшей параллели школы
   ['DAY_TOO_LONG', mk({ classes: [cls('c11', 11)], params: { ...P, slotsPerDay: 7, breakMin: 90 } })],
 ];
 

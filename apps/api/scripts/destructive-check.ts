@@ -106,9 +106,8 @@ async function main(): Promise<void> {
     // ученик с отметками тоже не удаляется — подмена решается сервером
     const withMarks = await contingent.getStudent(s.studentIds[0]);
     check(withMarks.hasMarks, 'у ученика есть отметки — экран покажет «Деактивировать» вместо «Удалить» (AR-78)');
-    await refuses(() => contingent.deleteStudent(s.studentIds[0], s.moderator),
-      'У ученика есть выставленные отметки — запись деактивируется, а не удаляется (AR-78)',
-      'удаление ученика с отметками отклонено гейтом контракта');
+    await refuses(() => contingent.deleteStudent(s.studentIds[0], s.moderator), 'STUDENT_HAS_MARKS',
+      'удаление ученика с отметками отклонено гейтом контракта именованным кодом (AR-113)');
 
     // ─── 4. удаление предмета: карточка уходит с часами и историей привязок ───
     const subject = (await subjects.list())[0];

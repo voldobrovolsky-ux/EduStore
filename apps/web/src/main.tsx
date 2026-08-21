@@ -21,6 +21,8 @@ import { Home } from "@/home/Home";
 import { BindConfirm } from "@/home/BindConfirm";
 import { PilotOwner } from "@/pilot/PilotOwner";
 import { PilotLogin } from "@/pilot/PilotLogin";
+import { SchooliumApp } from "@/schoolium/SchooliumApp";
+import { isAppPath, PUBLIC_PATHS } from "@/schoolium/router";
 
 // Роутинг кабинета по роли (ADR-0005). teacher и admin — готовые кабинеты,
 // остальные роли — минимальные кабинеты (навигация + главная).
@@ -93,6 +95,27 @@ function useAuthGate(): Gate {
 
 const PENDING_BIND = "edustore-pending-bind";
 
+/**
+ * Граница двух контуров (AR-83, AR-84): Schoolium 1.1.1 и вытесняемый кабинет
+ * КТП/КПП живут в одном приложении, но не в одном сценарии. Правило разделения
+ * ОДНО и проверяется здесь, а не в каждом экране:
+ *
+ *   1. пилотные и legacy query-маршруты (`?pilot=`, `?bind=`, `?screen=`)
+ *      принадлежат старому контуру — он появился первым и его смок (G-9) их
+ *      использует;
+ *   2. пути Schoolium — контуру 1.1.1;
+ *   3. корень `/` — контуру 1.1.1 (AR-95: первая точка входа на сайт), кроме
+ *      браузера с ЖИВОЙ legacy-сессией: его владелец пришёл в свой кабинет, а
+ *      не на лендинг. Различить контуры даёт `GET /api/v1/me`, который
+ *      отвечает только сессии 1.1.1.
+ */
+function isSchooliumRoute(): boolean {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("pilot") || params.get("bind") || params.get("screen")) return false;
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  return isAppPath(path) || PUBLIC_PATHS.includes(path) || path.startsWith("/join/") || path.startsWith("/bootstrap/");
+}
+
 function Root() {
   const gate = useAuthGate();
   const params = new URLSearchParams(window.location.search);
@@ -102,6 +125,9 @@ function Root() {
   const pilot = params.get("pilot");
   if (pilot === "owner") return <PilotOwner />;
   if (pilot === "login") return <PilotLogin token={params.get("token") ?? ""} />;
+
+  // Маршруты Schoolium, КРОМЕ корня: он решается ниже, после ответа гейта.
+  if (isSchooliumRoute() && window.location.pathname.replace(/\/+$/, "") !== "") return <SchooliumApp />;
 
   // DEV-превью главной без входа.
   if (!import.meta.env.PROD && params.get("screen") === "home") return <Home />;
@@ -129,10 +155,13 @@ function Root() {
       /* ignore */
     }
     if (pending) return <BindConfirm code={pending} />;
+    // Живая legacy-сессия на корне — её кабинет; лендинг Schoolium ей не нужен.
     return <AuthedApp initialUser={gate.user} />;
   }
 
-  return <Home />;
+  // Корень без legacy-сессии принадлежит Schoolium: лендинг `S-00` для анонима,
+  // стартовый экран роли — для того, у кого есть сессия 1.1.1.
+  return <SchooliumApp />;
 }
 
 createRoot(document.getElementById("root")!).render(

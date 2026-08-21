@@ -142,6 +142,40 @@ export const EVENT_CONTRACT: EventContractRow[] = [
 ];
 
 /**
+ * Человекочитаемые подписи строк аудита для `S-60.audit` (AR-116): «дата ·
+ * действие · объект». Аудит хранит конверт события, а не доменную нагрузку
+ * (AR-30), поэтому имя объекта берётся оттуда, где аудит его действительно
+ * держит: ФИО субъекта ПДн, если событие о человеке, иначе — тип объекта из
+ * имени события. Полнота карты проверяется воротами G-41 перечислением по
+ * `EVENT_CONTRACT`: событие без подписи роняет ворота, а не показывает
+ * человеку `school.mark.posted.v1`.
+ */
+export const AUDIT_LABELS: Record<SchoolEventType, { action: string; object: string }> = {
+  [SCHOOL_EVENTS.classCreated]: { action: 'создан класс', object: 'класс' },
+  [SCHOOL_EVENTS.classDeleted]: { action: 'удалён класс', object: 'класс' },
+  [SCHOOL_EVENTS.studentUpserted]: { action: 'заполнен профиль ученика', object: 'ученик' },
+  [SCHOOL_EVENTS.studentDeactivated]: { action: 'ученик деактивирован', object: 'ученик' },
+  [SCHOOL_EVENTS.studentReactivated]: { action: 'ученик восстановлен', object: 'ученик' },
+  [SCHOOL_EVENTS.studentDeleted]: { action: 'удалён ученик', object: 'ученик' },
+  [SCHOOL_EVENTS.subjectDeleted]: { action: 'удалена карточка предмета', object: 'предмет' },
+  [SCHOOL_EVENTS.teacherBound]: { action: 'педагог привязан к предмету', object: 'сотрудник' },
+  [SCHOOL_EVENTS.teacherUnbound]: { action: 'педагог откреплён от предмета', object: 'сотрудник' },
+  [SCHOOL_EVENTS.staffRegistered]: { action: 'сотрудник активировал карточку', object: 'сотрудник' },
+  [SCHOOL_EVENTS.staffDeactivated]: { action: 'сотрудник деактивирован', object: 'сотрудник' },
+  [SCHOOL_EVENTS.staffReactivated]: { action: 'сотрудник восстановлен', object: 'сотрудник' },
+  [SCHOOL_EVENTS.staffDeleted]: { action: 'удалён сотрудник', object: 'сотрудник' },
+  [SCHOOL_EVENTS.sessionStarted]: { action: 'вход в систему', object: 'сессия' },
+  [SCHOOL_EVENTS.sessionRevoked]: { action: 'сессия завершена', object: 'сессия' },
+  [SCHOOL_EVENTS.termSet]: { action: 'заданы учебные периоды', object: 'календарь' },
+  [SCHOOL_EVENTS.templateConfirmed]: { action: 'подтверждено расписание', object: 'расписание' },
+  [SCHOOL_EVENTS.lessonMaterialized]: { action: 'урок поставлен в календарь', object: 'урок' },
+  [SCHOOL_EVENTS.lessonDetached]: { action: 'урок выведен из расписания', object: 'урок' },
+  [SCHOOL_EVENTS.markPosted]: { action: 'выставлена отметка', object: 'ученик' },
+  [SCHOOL_EVENTS.markRemoved]: { action: 'снята отметка', object: 'ученик' },
+  [SCHOOL_EVENTS.topicSet]: { action: 'записана тема урока', object: 'урок' },
+};
+
+/**
  * Правки, делающие подтверждённую сетку устаревшей (AR-85). Перечисление, а не
  * догадка исполнителя: численность класса на сетку не влияет, поэтому приём
  * ученика в середине четверти плашку «расписание устарело» не поднимает.

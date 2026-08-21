@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../common/prisma/prisma.module';
 import { EventsModule } from '../common/events/events.module';
 import { AuthzModule } from '../common/authz/authz.module';
+import { AuditModule } from '../common/audit/audit.module';
 import { SchoolStateService } from './school-state.service';
 import { AccessService } from './access/access.service';
 import { MeController, SchoolAuthController } from './access/access.controller';
@@ -36,7 +37,7 @@ import {
  * AR-84, AR-104): ни одна модель здесь не переиспользует его таблиц.
  */
 @Module({
-  imports: [PrismaModule, EventsModule, AuthzModule],
+  imports: [PrismaModule, EventsModule, AuthzModule, AuditModule],
   controllers: [
     SchoolAuthController,
     MeController,

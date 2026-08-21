@@ -105,7 +105,7 @@ export const MARK_TOKENS: Record<MarkValue, string> = {
   'б': 'mark.b',
 };
 
-// ─────────────────────────── коды ошибок (27, `70-screens.md` §9) ───────────────────────────
+// ─────────────────────────── коды ошибок (29, `70-screens.md` §9) ───────────────────────────
 
 export const ERROR_CODES = [
   'LINK_CODE_EXPIRED',
@@ -135,6 +135,10 @@ export const ERROR_CODES = [
   'LOGIN_CODE_EXPIRED',
   'ACCESS_REVOKED',
   'STUDENT_INACTIVE',
+  // AR-113: подмена кнопки решает сервер, но гейт живёт в контракте — между
+  // открытием карточки и нажатием педагог мог поставить отметку.
+  'STUDENT_HAS_MARKS',
+  'STAFF_HAS_HISTORY',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -188,6 +192,19 @@ export const DAY_MINUTES_CAP = 420;
 export const DAY_SLOTS_CAP: Record<number, number> = {
   1: 4, 2: 5, 3: 5, 4: 5, 5: 6, 6: 6, 7: 7, 8: 7, 9: 7, 10: 7, 11: 7,
 };
+
+/**
+ * AR-114: «уроков в день» — ВЕРХНЯЯ ГРАНИЦА школьного дня, одна на школу, а
+ * потолок СанПиН нормирует параллель. День класса — `min(число, потолок его
+ * параллели)`; отказ `DAY_EXCEEDS_SANPIN` — только когда число выше потолка
+ * самой старшей параллели школы. Иначе школа с первым и восьмым классом обязана
+ * поставить 4 урока в день всем и не собирается вовсе.
+ */
+export const classDayCap = (parallel: number, slotsPerDay: number): number =>
+  Math.min(slotsPerDay, DAY_SLOTS_CAP[parallel] ?? 0);
+
+export const schoolDayCap = (parallels: number[]): number =>
+  Math.max(0, ...parallels.map((p) => DAY_SLOTS_CAP[p] ?? 0));
 
 /** Недельный потолок часов по параллелям — СанПиН, 5-дневка (базис #3). */
 export const WEEK_HOURS_CAP: Record<number, number> = {
@@ -455,6 +472,29 @@ export interface PostMarkDto {
 
 export interface SetTopicDto {
   topic: string;
+}
+
+// ─────────────────────────── кабинет модератора ───────────────────────────
+
+/**
+ * Строка `S-60.audit`: «дата · действие · объект» (AR-30, AR-116). Подписи
+ * готовит сервер — каталог событий живёт на сервере, и вторая его копия на
+ * клиенте разошлась бы с первой.
+ */
+export interface AuditEntryDto {
+  id: string;
+  at: string;
+  /** Тип события — техническое имя, показывается подсказкой, а не строкой. */
+  action: string;
+  actionLabel: string;
+  objectKind: string;
+  /** ФИО субъекта, если аудит его держит; иначе `null` — придумывать нечего. */
+  objectName: string | null;
+}
+
+export interface AdminCabinetDto {
+  state: SchoolState;
+  audit: AuditEntryDto[];
 }
 
 // ─────────────────────────── сессии и устройства ───────────────────────────

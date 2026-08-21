@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { ClassDto, CreateClassesDto, StudentDto, UpsertStudentDto } from '@edustore/shared';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -302,16 +302,10 @@ export class ContingentService {
     const s = await this.prisma.schoolStudent.findUnique({ where: { id } });
     if (!s) throw new NotFoundException('ученик не найден');
     // Гейт живёт в контракте, а не в интерфейсе (красная линия 3): подмена кнопки
-    // на экране не заменяет проверки на сервере. Именованного кода у этого отказа
-    // в §9 нет — реестр кодов знает только `CLASS_HAS_MARKS`, который про класс, а
-    // не про ученика. Это дефект спеки, вынесенный вопросом владельцу (см. отчёт
-    // этапа 1); до его закрытия отказ честный, но безымянный, а не подменённый
-    // чужим кодом с неверным текстом.
-    if (await this.journal.studentHasMarks(id)) {
-      throw new ForbiddenException(
-        'У ученика есть выставленные отметки — запись деактивируется, а не удаляется (AR-78)',
-      );
-    }
+    // на экране не заменяет проверки на сервере. Между открытием карточки
+    // (`hasMarks: false`) и нажатием педагог мог поставить отметку — это штатная
+    // конкурентность (AR-109), и у отказа есть своё имя (AR-113).
+    if (await this.journal.studentHasMarks(id)) throw new SchoolError('STUDENT_HAS_MARKS');
     const ws = TenantContext.require();
     await this.prisma.$transaction(async (tx) => {
       await tx.schoolStudent.delete({ where: { id } });

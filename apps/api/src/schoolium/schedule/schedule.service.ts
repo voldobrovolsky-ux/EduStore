@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   DAY_MINUTES_CAP,
   DAY_SLOTS_CAP,
+  schoolDayCap,
   type ConfirmScheduleDto,
   type DayParamsDto,
   type SchedulePreviewDto,
@@ -205,11 +206,13 @@ export class ScheduleService implements OnModuleInit {
     await this.state.checkVersion('schedule', dto.version);
     const ws = TenantContext.require();
     const classes = await this.contingent.classes();
-    for (const c of classes) {
-      const cap = DAY_SLOTS_CAP[c.parallel];
-      if (cap === undefined || dto.slotsPerDay > cap) {
-        throw new SchoolError('DAY_EXCEEDS_SANPIN', { classLabel: c.label, slotsPerDay: dto.slotsPerDay, cap: cap ?? '—' });
-      }
+    // AR-114: число — верхняя граница школьного дня; отказ только когда оно выше
+    // потолка самой старшей параллели. День каждого класса генератор ограничит
+    // потолком его собственной параллели.
+    const cap = schoolDayCap(classes.map((c) => c.parallel));
+    if (classes.length > 0 && dto.slotsPerDay > cap) {
+      const senior = classes.reduce((a, c) => (DAY_SLOTS_CAP[c.parallel] > DAY_SLOTS_CAP[a.parallel] ? c : a), classes[0]);
+      throw new SchoolError('DAY_EXCEEDS_SANPIN', { classLabel: senior.label, slotsPerDay: dto.slotsPerDay, cap });
     }
     const minutes = dayLength(dto);
     if (minutes > DAY_MINUTES_CAP) {

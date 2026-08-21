@@ -7,7 +7,8 @@
  *   · педагог проходит только отметки и темы, и только в своих уроках;
  *   · каждое действие модератора попадает в аудит С ИДЕНТИЧНОСТЬЮ;
  *   · гейт реальности `LESSON_NOT_HELD` срабатывает и для модератора: полные
- *     права не отменяют факта календаря (AR-74).
+ *     права не отменяют факта календаря (AR-74);
+ *   · у каждого события есть подпись для строки кабинета (AR-116).
  *
  * Запуск: npm --workspace apps/api run moderator:check
  */
@@ -20,7 +21,7 @@ import { REQUIRE_PERMISSION } from '../src/common/authz/require-permission.decor
 import { AuthzService } from '../src/common/authz/authz.service';
 import { AUDITED_TYPES } from '../src/common/audit/audit.service';
 import { TenantContext } from '../src/common/tenant/tenant-context';
-import { EVENT_CONTRACT } from '../src/schoolium/schoolium.contract';
+import { AUDIT_LABELS, EVENT_CONTRACT } from '../src/schoolium/schoolium.contract';
 import { JournalService } from '../src/schoolium/journal/journal.service';
 import { bench, check, ensurePastLesson, inSchool, readySchool, refuses, report } from './schoolium/harness';
 
@@ -138,6 +139,19 @@ async function main(): Promise<void> {
   check(missing.length === 0, missing.length === 0
     ? `все ${EVENT_CONTRACT.length} событий версии попадают в аудит-леджер`
     : `вне аудита остались: ${missing.map((m) => m.type).join(', ')}`);
+
+  // ─── 6. каждое событие имеет подпись для строки S-60.audit (AR-116) ───
+  const unlabelled = EVENT_CONTRACT.filter((r) => !AUDIT_LABELS[r.type]);
+  check(unlabelled.length === 0, unlabelled.length === 0
+    ? `у всех ${EVENT_CONTRACT.length} событий есть человекочитаемая подпись действия — модератор не читает в кабинете имена типов`
+    : `без подписи остались: ${unlabelled.map((m) => m.type).join(', ')}`);
+  const namelessObject = EVENT_CONTRACT.filter((r) => !AUDIT_LABELS[r.type]?.object);
+  check(namelessObject.length === 0, 'у каждой подписи назван тип объекта — строка аудита не бывает без объекта');
+  const labelKeys = Object.keys(AUDIT_LABELS);
+  const extra = labelKeys.filter((t) => !EVENT_CONTRACT.some((r) => r.type === t));
+  check(extra.length === 0, extra.length === 0
+    ? 'подписей ровно столько, сколько событий: карта не пережила удаление события'
+    : `подписи без события: ${extra.join(', ')}`);
 
   await b.close();
   report('G-41 · ПРАВА МОДЕРАТОРА И АУДИТ ДОКАЗАНЫ');

@@ -2,7 +2,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { ERROR_CODES, type ErrorCode } from '@edustore/shared';
 
 /**
- * Двадцать семь кодов отказа версии с текстами из `70-screens.md` §9.
+ * Двадцать девять кодов отказа версии с текстами из `70-screens.md` §9.
  *
  * Правило: текст называет **объект и цифры**, а не «произошла ошибка». Поэтому
  * шаблоны здесь — функции от деталей отказа, а не константные строки: сообщение
@@ -42,6 +42,8 @@ const TEXTS: Record<ErrorCode, (d: D) => string> = {
   LOGIN_CODE_EXPIRED: () => 'Код истёк, попросите модератора открыть карточку заново',
   ACCESS_REVOKED: () => 'Доступ закрыт. Обратитесь к модератору школы',
   STUDENT_INACTIVE: () => 'Ученик деактивирован',
+  STUDENT_HAS_MARKS: () => 'У ученика есть выставленные отметки — запись деактивируется, а не удаляется',
+  STAFF_HAS_HISTORY: () => 'У сотрудника есть привязки к предметам или выставленные отметки — карточка деактивируется, а не удаляется',
 };
 
 /** HTTP-статус отказа: 409 у конфликтов состояния, 403 у отзыва доступа, иначе 400. */
@@ -50,6 +52,8 @@ const STATUS: Partial<Record<ErrorCode, HttpStatus>> = {
   CLASSES_ALREADY_EXIST: HttpStatus.CONFLICT,
   PHONE_TAKEN_IN_SCHOOL: HttpStatus.CONFLICT,
   CLASS_HAS_MARKS: HttpStatus.CONFLICT,
+  STUDENT_HAS_MARKS: HttpStatus.CONFLICT,
+  STAFF_HAS_HISTORY: HttpStatus.CONFLICT,
   LAST_MODERATOR: HttpStatus.CONFLICT,
   LAST_ROLE: HttpStatus.CONFLICT,
   TOKEN_USED: HttpStatus.GONE,
@@ -76,5 +80,5 @@ export class SchoolError extends HttpException {
 
 export const errorText = (code: ErrorCode, details: D = {}): string => TEXTS[code](details);
 
-/** Перечисление для ворот: у каждого из 27 кодов есть непустой текст. */
+/** Перечисление для ворот: у каждого из 29 кодов есть непустой текст. */
 export const ALL_ERROR_CODES = ERROR_CODES;

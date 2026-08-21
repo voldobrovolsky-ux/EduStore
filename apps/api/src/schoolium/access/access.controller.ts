@@ -150,14 +150,19 @@ export class MeController {
     private readonly state: SchoolStateService,
   ) {}
 
+  /**
+   * `GET /api/v1/me` отвечает ТОЛЬКО сессии контура 1.1.1 (AR-94): массив ролей
+   * заполняет он, а у вытесненного OIDC-контура он пуст. Без этого различения
+   * корень сайта не смог бы решить, чей браузер к нему пришёл, и увёл бы
+   * пользователя legacy-кабинета в Schoolium (AR-83: два контура живут в одной
+   * базе, но не в одном сценарии).
+   */
   @Get('me')
   async me(@Req() req: Req0): Promise<MeDto> {
     const u = req.user;
-    if (!u?.workspaceId) throw new SchoolError('ACCESS_REVOKED');
-    const roles = (u.roles ?? []) as SchoolRole[];
-    const access = roles.length
-      ? await this.authz.resolveForRoles(roles)
-      : await this.authz.resolveAccess(u.role, u.subRole);
+    if (!u?.workspaceId || !u.roles?.length) throw new SchoolError('ACCESS_REVOKED');
+    const roles = u.roles as SchoolRole[];
+    const access = await this.authz.resolveForRoles(roles);
     const [user, ws] = await TenantContext.runAsSystem(() =>
       Promise.all([
         this.prisma.user.findUnique({ where: { id: u.florusUserId } }),

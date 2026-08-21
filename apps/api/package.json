@@ -6,7 +6,7 @@
   "scripts": {
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "build": "nest build",
+    "build": "npm run shared:build && nest build",
     "seed": "ts-node prisma/seed.ts",
     "cascade:demo": "ts-node scripts/cascade-demo.ts",
     "tenant:check": "ts-node scripts/tenant-isolation-check.ts",
@@ -39,7 +39,8 @@
     "secondschool:check": "ts-node scripts/second-school-check.ts",
     "subscribers:check": "ts-node scripts/event-subscribers-check.ts",
     "concurrent:check": "ts-node scripts/concurrent-edit-check.ts",
-    "schoolium:check": "npm run schemafit:check && npm run daygrid:check && npm run generator:check && npm run subscribers:check && npm run access:check && npm run login:check && npm run qr:check && npm run onboarding:check && npm run calendar:check && npm run schooljournal:check && npm run regen:check && npm run reversal:check && npm run destructive:check && npm run moderator:check && npm run secondschool:check && npm run concurrent:check"
+    "schoolium:check": "npm run shared:build && npm run schemafit:check && npm run daygrid:check && npm run generator:check && npm run subscribers:check && npm run access:check && npm run login:check && npm run qr:check && npm run onboarding:check && npm run calendar:check && npm run schooljournal:check && npm run regen:check && npm run reversal:check && npm run destructive:check && npm run moderator:check && npm run secondschool:check && npm run concurrent:check",
+    "shared:build": "npm --workspace @edustore/shared run build"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1077.0",

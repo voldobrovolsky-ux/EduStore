@@ -44,5 +44,38 @@ console.log('  примечание: пары различимости —');
 for (const [name,a,b] of distinct){
   console.log(`    · ${name}: ${ratio(a,b).toFixed(2)}:1 (информативно; различаются формой/контекстом, не только цветом)`);
 }
-if (fails){ console.error(`❌ G-37: ${fails} пар ниже порога WCAG`); process.exit(1); }
-console.log('✅ G-37: все пары токенов проходят WCAG 2.1 (текст ≥4.5, UI ≥3.0).');
+
+// ─── Токены имеют смысл только там, где нет обхода (AR-42) ───
+// Литеральный цвет в компоненте выводит пиксель из-под этой проверки: он не
+// участвует ни в одной паре выше и меняется мимо `tokens.json`. Поэтому вторая
+// половина ворот — перечисление по исходникам контура: цвет объявляется в
+// `tokens.css` (он ГЕНЕРИРУЕТСЯ из токенов) и нигде больше.
+const HEX = /#[0-9a-fA-F]{3,8}\b/g;
+const scan = (dir) => {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = `${dir}/${e.name}`;
+    if (e.isDirectory()) out.push(...scan(p));
+    else if (/\.(tsx?|css)$/.test(e.name) && e.name !== 'tokens.css') out.push(p);
+  }
+  return out;
+};
+const SCH = 'apps/web/src/schoolium';
+let literals = 0;
+if (fs.existsSync(SCH)) {
+  for (const file of scan(SCH)) {
+    const src = fs.readFileSync(file, 'utf8');
+    for (const line of src.split('\n')) {
+      // `#` в пути, в якоре и в комментарии-ссылке цветом не является.
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
+      for (const m of line.match(HEX) ?? []) {
+        console.error(`  ❌ литеральный цвет ${m} в ${file}: цвет объявляется токеном, а не в компоненте (AR-42)`);
+        literals++;
+      }
+    }
+  }
+  console.log(`  ✅ литеральных цветов в компонентах Schoolium: ${literals} (проверено файлов: ${scan(SCH).length})`);
+}
+
+if (fails || literals){ console.error(`❌ G-37: ${fails} пар ниже порога WCAG, литеральных цветов ${literals}`); process.exit(1); }
+console.log('✅ G-37: все пары токенов проходят WCAG 2.1 (текст ≥4.5, UI ≥3.0), литеральных цветов в компонентах нет.');

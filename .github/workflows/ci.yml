@@ -46,6 +46,10 @@ jobs:
         run: node tools/method/lint-screens.mjs
       - name: G-40 — инструкции агентов
         run: node tools/method/lint-agents.mjs
+      - name: G-37 — CSS-переменные сверены с токенами
+        run: node tools/design/tokens-to-css.mjs --check
+      - name: G-52 — экранный реестр реализован поимённо
+        run: node tools/method/check-testids.mjs
 
   # Сквозной поток «учебник → КТП → КПП → содержание уроков»:
   # flow:check — интеграционные проверки на живом Postgres (25 шт.);
@@ -108,10 +112,16 @@ jobs:
         run: PGPASSWORD=edustore psql -h localhost -U edustore -d edustore -c 'CREATE DATABASE edustore_smoke;'
       - name: Chromium-смок сквозного потока
         run: node e2e/smoke-textbook.mjs
-      - name: Скриншоты смока — артефакт
+      - name: Смок-БД онбординга
+        run: PGPASSWORD=edustore psql -h localhost -U edustore -d edustore -c 'CREATE DATABASE edustore_onboarding;'
+      - name: G-53 — Chromium-смок полного онбординга школы
+        run: npm --workspace apps/web run smoke:onboarding
+      - name: Скриншоты смоков — артефакт
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-screenshots
-          path: e2e/screenshots/
+          path: |
+            e2e/screenshots/
+            e2e/screenshots-onboarding/
           if-no-files-found: ignore

@@ -259,10 +259,22 @@ export const dayGrid = {
     const big = bigBreakAfter && bigBreakAfter < slotsPerDay ? 1 : 0;
     return slotsPerDay * lessonMin + (breaks - big) * breakMin + big * bigBreakMin;
   },
+  // AR-114: «уроков в день» — ВЕРХНЯЯ ГРАНИЦА школьного дня, одна на школу, а
+  // дневной потолок СанПиН применяется к КАЖДОЙ параллели отдельно. Иначе школа,
+  // где есть и первый класс, и восьмой, получает потолок первоклассника на всех:
+  // 4 урока в день × 5 дней = 20 слотов против 33 часов нагрузки восьмого класса,
+  // и LOAD_EXCEEDS_GRID становится неустранимым.
+  classCap: (parallel, slotsPerDay) => Math.min(slotsPerDay, DAY_CAP[parallel] ?? 0),
+  // Отказ по числу уроков — только когда оно выше потолка САМОЙ СТАРШЕЙ параллели
+  // школы: ниже него число осмысленно, потому что каждый класс всё равно
+  // ограничен своим потолком.
+  schoolCap: (parallels) => Math.max(0, ...parallels.map((p) => DAY_CAP[p] ?? 0)),
   validate: (p) => {
-    const cap = DAY_CAP[p.parallel];
-    if (cap === undefined) return { code: 'DAY_EXCEEDS_SANPIN', reason: 'unknown-parallel', parallel: p.parallel };
-    if (p.slotsPerDay > cap) return { code: 'DAY_EXCEEDS_SANPIN', parallel: p.parallel, slotsPerDay: p.slotsPerDay, cap };
+    const parallels = p.parallels ?? [p.parallel];
+    if (parallels.some((x) => DAY_CAP[x] === undefined))
+      return { code: 'DAY_EXCEEDS_SANPIN', reason: 'unknown-parallel', parallel: parallels.find((x) => DAY_CAP[x] === undefined) };
+    const cap = dayGrid.schoolCap(parallels);
+    if (p.slotsPerDay > cap) return { code: 'DAY_EXCEEDS_SANPIN', parallels, slotsPerDay: p.slotsPerDay, cap };
     const minutes = dayGrid.length(p);
     if (minutes > DAY_MINUTES_CAP) return { code: 'DAY_TOO_LONG', minutes, cap: DAY_MINUTES_CAP };
     return null;

@@ -4,6 +4,8 @@ import {
   DAY_SLOTS_CAP,
   GENERATOR_BUDGET,
   WEEK_HOURS_CAP,
+  classDayCap,
+  schoolDayCap,
   type GeneratorRefusal,
 } from '@edustore/shared';
 
@@ -112,6 +114,21 @@ interface Unit {
 }
 
 /**
+ * Часы класса за неделю: класс-часы плюс максимум по группам — группы учатся
+ * ПАРАЛЛЕЛЬНО, в одном слоте, поэтому их часы не складываются (AR-75).
+ */
+export function classWeekHours(classId: string, pairs: GenPair[]): number {
+  const own = pairs.filter((p) => p.classId === classId);
+  const classHours = own.filter((p) => p.scope === 'class').reduce((a, p) => a + p.hours, 0);
+  const groupSubjects = [...new Set(own.filter((p) => p.scope === 'group').map((p) => p.subjectId))];
+  const groupHours = groupSubjects.reduce((a, sid) => {
+    const hs = own.filter((p) => p.subjectId === sid && p.scope === 'group').map((p) => p.hours);
+    return a + Math.max(0, ...hs);
+  }, 0);
+  return classHours + groupHours;
+}
+
+/**
  * Восемь арифметических отказов ДО перебора. Порядок — из `30-spec.md`; первый
  * сработавший и есть ответ: человеку показывают одну причину с цифрами, а не
  * список гипотез.
@@ -121,24 +138,18 @@ export function arithmeticRefusal(input: GenInput): { code: GeneratorRefusal; de
   const grid = params.days * params.slotsPerDay;
 
   for (const c of classes) {
-    const own = pairs.filter((p) => p.classId === c.id);
-    // часы класса: класс-часы + максимум по группам (группы учатся параллельно)
-    const classHours = own.filter((p) => p.scope === 'class').reduce((a, p) => a + p.hours, 0);
-    const groupSubjects = [...new Set(own.filter((p) => p.scope === 'group').map((p) => p.subjectId))];
-    const groupHours = groupSubjects.reduce((a, sid) => {
-      const hs = own.filter((p) => p.subjectId === sid && p.scope === 'group').map((p) => p.hours);
-      return a + Math.max(0, ...hs);
-    }, 0);
-    const total = classHours + groupHours;
+    const total = classWeekHours(c.id, pairs);
 
-    const cap = WEEK_HOURS_CAP[c.parallel];
-    if (cap !== undefined && total > cap) {
-      return { code: 'LOAD_EXCEEDS_SANPIN', details: { classLabel: c.label, total, cap } };
+    const weekCap = WEEK_HOURS_CAP[c.parallel];
+    if (weekCap !== undefined && total > weekCap) {
+      return { code: 'LOAD_EXCEEDS_SANPIN', details: { classLabel: c.label, total, cap: weekCap } };
     }
-    // «уроков в день» — второй множитель «слотов недели»: без него этот отказ
-    // и TEACHER_OVERBOOKED не считаются вовсе (AR-103)
-    if (total > grid) {
-      return { code: 'LOAD_EXCEEDS_GRID', details: { classLabel: c.label, total, grid } };
+    // «уроков в день» — второй множитель «слотов недели» (AR-103), но считается он
+    // ПОКЛАССНО: день класса ограничен потолком ЕГО параллели (AR-114), а не
+    // школьным числом. Иначе первоклассник тянул бы вниз всю школу.
+    const classGrid = params.days * classDayCap(c.parallel, params.slotsPerDay);
+    if (total > classGrid) {
+      return { code: 'LOAD_EXCEEDS_GRID', details: { classLabel: c.label, total, grid: classGrid } };
     }
   }
 
@@ -189,14 +200,17 @@ export function arithmeticRefusal(input: GenInput): { code: GeneratorRefusal; de
     }
   }
 
-  for (const c of classes) {
-    const cap = DAY_SLOTS_CAP[c.parallel];
-    if (cap === undefined || params.slotsPerDay > cap) {
-      return {
-        code: 'DAY_EXCEEDS_SANPIN',
-        details: { classLabel: c.label, slotsPerDay: params.slotsPerDay, cap: cap ?? '—' },
-      };
-    }
+  // Число с экрана 4 — ВЕРХНЯЯ ГРАНИЦА школьного дня (AR-114): отказ срабатывает
+  // только когда оно выше потолка самой старшей параллели школы. Ниже него число
+  // осмысленно, потому что каждый класс всё равно ограничен своим потолком.
+  const unknown = classes.find((c) => DAY_SLOTS_CAP[c.parallel] === undefined);
+  if (unknown) {
+    return { code: 'DAY_EXCEEDS_SANPIN', details: { classLabel: unknown.label, slotsPerDay: params.slotsPerDay, cap: '—' } };
+  }
+  const dayCap = schoolDayCap(classes.map((c) => c.parallel));
+  if (classes.length > 0 && params.slotsPerDay > dayCap) {
+    const senior = classes.reduce((a, c) => (DAY_SLOTS_CAP[c.parallel] > DAY_SLOTS_CAP[a.parallel] ? c : a), classes[0]);
+    return { code: 'DAY_EXCEEDS_SANPIN', details: { classLabel: senior.label, slotsPerDay: params.slotsPerDay, cap: dayCap } };
   }
 
   const minutes = dayLength(params);
@@ -258,6 +272,8 @@ export function generate(input: GenInput): GenResult {
 
   const units = buildUnits(input);
   const { days, slotsPerDay } = input.params;
+  // Дневной потолок КАЖДОГО класса: min(школьное число, потолок его параллели).
+  const classCaps = new Map(input.classes.map((c) => [c.id, classDayCap(c.parallel, slotsPerDay)]));
 
   for (let restart = 0; ; restart += 1) {
     if (Date.now() - started > budget.seconds * 1000 || attempts >= budget.attempts) {
@@ -275,10 +291,11 @@ export function generate(input: GenInput): GenResult {
     let failed = false;
 
     for (const u of order) {
+      const cap = classCaps.get(u.classId) ?? slotsPerDay;
       const options: [number, number][] = [];
       for (let d = 0; d < days; d += 1) {
         const s = dayLen.get(`${u.classId}:${d}`) ?? 0; // без окон: следующий подряд
-        if (s >= slotsPerDay) continue;
+        if (s >= cap) continue; // день класса ограничен потолком ЕГО параллели (AR-114)
         if (u.parts.some((p) => busyTeacher.has(`${d}:${s}:${p.teacherId}`))) continue;
         options.push([d, s]);
       }

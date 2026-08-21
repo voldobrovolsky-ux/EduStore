@@ -18,7 +18,7 @@
  *
  * Запуск: npm --workspace apps/api run daygrid:check
  */
-import { DAY_MINUTES_CAP, DAY_SLOTS_CAP, GENERATOR_BUDGET } from '@edustore/shared';
+import { DAY_MINUTES_CAP, DAY_SLOTS_CAP, GENERATOR_BUDGET, classDayCap, schoolDayCap } from '@edustore/shared';
 import { arithmeticRefusal, dayLength, generate, type GenInput } from '../src/schoolium/schedule/generator';
 import { check, report } from './schoolium/harness';
 
@@ -103,6 +103,43 @@ const overbooked = arithmeticRefusal(
 );
 check(overbooked?.code === 'TEACHER_OVERBOOKED',
   `один педагог на 40 часов при 30 слотах → ${overbooked?.code} (${overbooked?.details.hours} ч при ${overbooked?.details.grid}) — арифметикой, без перебора`);
+
+// ─── 3а. поклассный потолок: школа с первым и восьмым классом собирается (AR-114) ───
+const mixedSchool = base({
+  classes: [cls('c1', 1), cls('c8', 8)],
+  pairs: [
+    { subjectId: 'a', subjectName: 'математика', classId: 'c1', teacherId: 't1', teacherName: 'Мария И.', scope: 'class', groupNos: [], hours: 18, priority: false },
+    { subjectId: 'b', subjectName: 'математика', classId: 'c8', teacherId: 't2', teacherName: 'Ольга П.', scope: 'class', groupNos: [], hours: 33, priority: false },
+  ],
+  params: { days: 5, slotsPerDay: 7, lessonMin: 45, breakMin: 10, bigBreakAfter: 2, bigBreakMin: 30 },
+});
+check(schoolDayCap([1, 2, 5, 8]) === 7,
+  `потолок школы — потолок самой старшей параллели: ${schoolDayCap([1, 2, 5, 8])} (AR-114)`);
+check(classDayCap(1, 7) === 4 && classDayCap(8, 7) === 7,
+  `день класса — min(число, потолок параллели): 1 класс — ${classDayCap(1, 7)}, 8 класс — ${classDayCap(8, 7)}`);
+check(arithmeticRefusal(mixedSchool) === null,
+  '7 уроков в день в школе с первым и восьмым классом проходят: первоклассник получит 4, восьмиклассник 7');
+const senior = generate(mixedSchool);
+if (senior.ok) {
+  const perDay = new Map<string, number>();
+  for (const sl of senior.slots) {
+    const k = `${sl.classId}:${sl.dayNo}`;
+    perDay.set(k, Math.max(perDay.get(k) ?? 0, sl.slotNo));
+  }
+  const c1Max = Math.max(...[...perDay].filter(([k]) => k.startsWith('c1:')).map(([, v]) => v));
+  const c8Max = Math.max(...[...perDay].filter(([k]) => k.startsWith('c8:')).map(([, v]) => v));
+  check(c1Max <= 4, `в собранной сетке день первого класса не длиннее ${c1Max} уроков (потолок 4)`);
+  check(c8Max <= 7 && c8Max > 4, `день восьмого класса — ${c8Max} уроков: он не ограничен потолком первоклассника`);
+} else {
+  check(false, `сетка смешанной школы не собрана: ${senior.code}`);
+}
+const tooManyForSchool = arithmeticRefusal(base({
+  classes: [cls('c1', 1), cls('c8', 8)],
+  params: { days: 5, slotsPerDay: 8, lessonMin: 45, breakMin: 10, bigBreakAfter: 2, bigBreakMin: 30 },
+  pairs: [],
+}));
+check(tooManyForSchool?.code === 'DAY_EXCEEDS_SANPIN',
+  `8 уроков в день выше потолка старшей параллели (${tooManyForSchool?.details.cap}) → ${tooManyForSchool?.code}`);
 
 // ─── 4. бюджет перебора назван числом и исчерпывается честным NO_SOLUTION ───
 check(GENERATOR_BUDGET.seconds === 20 && GENERATOR_BUDGET.attempts === 200_000,

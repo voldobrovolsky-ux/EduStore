@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import type {
+  AdminCabinetDto,
+  AuditEntryDto,
   BindTeacherDto,
   ConfirmScheduleDto,
   CreateClassesDto,
@@ -26,6 +28,9 @@ import { CalendarContractService, CalendarService } from './calendar/calendar.se
 import { ScheduleService } from './schedule/schedule.service';
 import { JournalService } from './journal/journal.service';
 import { SchoolStateService } from './school-state.service';
+import { AUDIT_LABELS, type SchoolEventType } from './schoolium.contract';
+import { AuditService } from '../common/audit/audit.service';
+import { PrismaService } from '../common/prisma/prisma.service';
 
 type Req0 = Request & { user?: SessionUser };
 
@@ -478,15 +483,52 @@ export class SchoolJournalController {
 
 @Controller('v1/admin')
 export class SchoolAdminController {
-  constructor(private readonly state: SchoolStateService) {}
+  constructor(
+    private readonly state: SchoolStateService,
+    private readonly audit: AuditService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * `S-60`. Роли, кроме модератора, получают 403 — не пустую страницу и не
    * молчаливый редирект (`70-screens.md`, `S-60`).
+   *
+   * Аудит здесь — не украшение, а противовес полным правам (AR-88): модератор
+   * видит собственный след теми же словами, какими его увидит проверяющий.
    */
   @RequirePermission('school.manage')
   @Get()
-  async cabinet() {
-    return { state: await this.state.resolve() };
+  async cabinet(@Req() req: Req0): Promise<AdminCabinetDto> {
+    const actor = actorOf(req);
+    const [state, rows] = await Promise.all([this.state.resolve(), this.audit.listByActor(actor.userId, 100)]);
+    const subjectIds = [...new Set(rows.map((r) => r.subjectUserId).filter((v): v is string => Boolean(v)))];
+    const names = await this.resolveNames(subjectIds);
+    const audit: AuditEntryDto[] = rows.map((r) => {
+      const label = AUDIT_LABELS[r.action as SchoolEventType];
+      return {
+        id: r.id,
+        at: r.occurredAt.toISOString(),
+        action: r.action,
+        // Событие вне каталога версии (легаси-контур) не прячется и не
+        // подписывается выдумкой — показывается своим техническим именем.
+        actionLabel: label?.action ?? r.action,
+        objectKind: label?.object ?? 'запись',
+        objectName: r.subjectUserId ? (names.get(r.subjectUserId) ?? null) : null,
+      };
+    });
+    return { state, audit };
+  }
+
+  /** Субъект ПДн — либо ученик, либо сотрудник: аудит хранит идентификатор, имя живёт в своём контуре. */
+  private async resolveNames(ids: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (ids.length === 0) return out;
+    const [students, users] = await Promise.all([
+      this.prisma.schoolStudent.findMany({ where: { id: { in: ids } } }),
+      this.prisma.user.findMany({ where: { id: { in: ids } } }),
+    ]);
+    for (const s of students) out.set(s.id, [s.lastName, s.firstName, s.middleName].filter(Boolean).join(' '));
+    for (const u of users) out.set(u.id, [u.lastName, u.firstName, u.middleName].filter(Boolean).join(' ') || u.displayName);
+    return out;
   }
 }

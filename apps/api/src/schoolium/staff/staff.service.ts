@@ -380,13 +380,9 @@ export class StaffService {
     if (membership.roles.includes('moderator') && (await this.activeModerators(workspaceId)) <= 1) {
       throw new SchoolError('LAST_MODERATOR');
     }
-    if (await this.hasHistory(userId)) {
-      // Гейт живёт в контракте, а не в интерфейсе (красная линия 3). Именованного
-      // кода у этого отказа в §9 нет — вопрос вынесен владельцу (отчёт этапа 1).
-      throw new ForbiddenException(
-        'У сотрудника есть история — карточка деактивируется, а не удаляется (AR-89)',
-      );
-    }
+    // Гейт живёт в контракте, а не в интерфейсе (красная линия 3): карточка могла
+    // показать «Удалить» до того, как сотрудник выставил отметку (AR-113).
+    if (await this.hasHistory(userId)) throw new SchoolError('STAFF_HAS_HISTORY');
     const unboundSubjects = await this.cascadeUnbind(userId, workspaceId, actor);
     await this.sessions.revokeAllForUser(userId, 'deleted');
     await TenantContext.runAsSystem(async () => {

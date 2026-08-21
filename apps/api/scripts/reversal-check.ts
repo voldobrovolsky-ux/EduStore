@@ -74,8 +74,8 @@ async function main(): Promise<void> {
     const card = await staff.get(s.teacher.cardId);
     check(card.hasHistory, 'сервер вернул hasHistory: true — экран покажет «Деактивировать», а не «Удалить» (AR-89)');
 
-    await refuses(() => staff.remove(s.teacher.cardId, s.moderator), 'У сотрудника есть история — карточка деактивируется, а не удаляется (AR-89)',
-      'удаление сотрудника с историей отклонено гейтом контракта, а не только подменой кнопки');
+    await refuses(() => staff.remove(s.teacher.cardId, s.moderator), 'STAFF_HAS_HISTORY',
+      'удаление сотрудника с историей отклонено гейтом контракта именованным кодом (AR-113)');
 
     await staff.deactivate(s.teacher.cardId, s.moderator);
     await drain();

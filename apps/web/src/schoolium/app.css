@@ -1,0 +1,449 @@
+/*
+ * Schoolium 1.1.1 — визуальный слой десктопа (`60-design.md`, `75-adaptive.md`).
+ *
+ * Ни одного литерального цвета, размера, радиуса или тени: всё из
+ * `tokens.css`, сгенерированного из `docs/design/tokens.json`. Иначе проверка
+ * контраста G-37 доказывает пары токенов, которых на экране нет.
+ *
+ * Раскладка здесь ДЕСКТОПНАЯ (≥768px) — этап 2. Мобильная (<768px) приходит
+ * этапом 3 и живёт отдельным блоком медиазапросов, а не обрезкой этой.
+ */
+
+/* ─────────────────────────── основа ─────────────────────────── */
+
+.sch {
+  font-family: var(--font-family);
+  color: var(--c-ink-primary);
+  background: var(--c-surface-page);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+.sch *,
+.sch *::before,
+.sch *::after { box-sizing: border-box; }
+
+.sch h1, .sch h2, .sch h3 { font-family: var(--font-display); margin: 0; }
+.sch h1 { font-size: var(--fs-h1); font-weight: var(--fw-bold); }
+.sch h2 { font-size: var(--fs-h2); font-weight: var(--fw-semibold); }
+.sch h3 { font-size: var(--fs-xl); font-weight: var(--fw-semibold); }
+.sch p { margin: 0; }
+
+/* Видимая фокус-рамка на ВС�ём интерактивном (`70-screens.md` §0): человек,
+   работающий с клавиатуры, обязан видеть, где он находится. */
+.sch :focus-visible {
+  outline: 2px solid var(--c-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.sch-muted { color: var(--c-ink-secondary); font-size: var(--fs-sm); }
+.sch-danger-text { color: var(--c-state-danger); }
+.sch-success-text { color: var(--c-state-success); }
+.sch-warning-text { color: var(--c-state-warning); }
+
+/* ─────────────────────────── оболочка (§2.1) ─────────────────────────── */
+
+.sch-shell { display: flex; min-height: 100vh; }
+
+.sch-sidebar {
+  width: 240px;
+  flex: 0 0 240px;
+  background: var(--c-surface-canvas);
+  border-right: 1px solid var(--c-border-default);
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-16) var(--sp-12);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.sch-sidebar[data-collapsed='true'] { width: 72px; flex-basis: 72px; }
+.sch-sidebar[data-collapsed='true'] .sch-nav-label,
+.sch-sidebar[data-collapsed='true'] .sch-user-text { display: none; }
+
+.sch-logo {
+  display: flex; align-items: center; gap: var(--sp-8);
+  font-family: var(--font-display);
+  font-size: var(--fs-lg); font-weight: var(--fw-bold);
+  background: linear-gradient(90deg, var(--c-brand-violet-600), var(--c-brand-pink-500));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  padding: var(--sp-8); border: 0; cursor: pointer; text-align: left;
+}
+.sch-sidebar-sep { height: 1px; background: var(--c-border-default); margin: var(--sp-12) var(--sp-8); }
+
+.sch-nav { display: flex; flex-direction: column; gap: var(--sp-4); }
+.sch-nav-item {
+  display: flex; align-items: center; gap: var(--sp-12);
+  height: var(--tap-min); padding: 0 var(--sp-12);
+  border: 0; border-left: 3px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent; color: var(--c-ink-secondary);
+  font-size: var(--fs-md); font-family: inherit; cursor: pointer; text-align: left;
+}
+.sch-nav-item:hover { background: var(--c-brand-violet-050); }
+.sch-nav-item[aria-current='page'] {
+  background: var(--c-brand-violet-100);
+  color: var(--c-brand-violet-700);
+  border-left-color: var(--c-brand-violet-700);
+  font-weight: var(--fw-medium);
+}
+.sch-nav-icon { width: var(--sp-20); text-align: center; flex: 0 0 auto; }
+
+.sch-user {
+  margin-top: auto; display: flex; align-items: center; gap: var(--sp-12);
+  padding: var(--sp-8); border-radius: var(--r-md);
+  background: transparent; border: 0; cursor: pointer; font-family: inherit;
+  color: var(--c-ink-primary); text-align: left; width: 100%;
+}
+.sch-user:hover { background: var(--c-brand-violet-050); }
+.sch-user-text { min-width: 0; }
+.sch-user-name { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+.sch-user-roles { font-size: var(--fs-xs); color: var(--c-ink-secondary); }
+
+.sch-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+
+.sch-topbar {
+  height: 64px; flex: 0 0 64px;
+  display: flex; align-items: center; gap: var(--sp-16);
+  padding: 0 var(--sp-32);
+  border-bottom: 1px solid var(--c-border-default);
+  background: var(--c-surface-page);
+  position: sticky; top: 0; z-index: 5;
+}
+.sch-topbar-title { font-family: var(--font-display); font-size: var(--fs-xl); font-weight: var(--fw-semibold); }
+.sch-breadcrumb { color: var(--c-ink-secondary); font-size: var(--fs-sm); }
+.sch-breadcrumb button {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--c-brand-violet-700); font: inherit;
+}
+.sch-topbar-spacer { flex: 1 1 auto; }
+
+/* Контент 1200px, сетка 12 колонок, gutter 24 (`60-design.md` §2). */
+.sch-content { padding: var(--sp-32); }
+.sch-page { max-width: 1200px; margin: 0 auto; }
+.sch-grid12 { display: grid; grid-template-columns: repeat(12, 1fr); gap: var(--sp-24); }
+
+.sch-page-head { display: flex; align-items: flex-start; gap: var(--sp-16); margin-bottom: var(--sp-24); }
+.sch-page-head h1 { flex: 1 1 auto; }
+
+/* ─────────────────────────── кнопки (§4) ─────────────────────────── */
+
+.sch-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-8);
+  height: var(--tap-min); padding: 0 var(--sp-20);
+  border-radius: var(--r-md); border: 1px solid transparent;
+  font-family: inherit; font-size: var(--fs-md); font-weight: var(--fw-medium);
+  cursor: pointer; transition: background-color 120ms, transform 80ms;
+  white-space: nowrap;
+}
+.sch-btn:active:not(:disabled) { transform: scale(0.98); }
+.sch-btn:disabled { cursor: not-allowed; background: var(--c-state-disabled-bg); color: var(--c-state-disabled-ink); border-color: transparent; }
+
+.sch-btn--primary { background: var(--c-brand-violet-700); color: var(--c-ink-on-violet); }
+.sch-btn--primary:hover:not(:disabled) { background: var(--c-brand-violet-900); }
+
+/* Одна `B-accent` на экран — ключевое действие шага (AR-80). */
+.sch-btn--accent { background: var(--c-brand-pink-600); color: var(--c-ink-on-pink); }
+.sch-btn--accent:hover:not(:disabled) { background: var(--c-brand-pink-700); }
+
+.sch-btn--secondary { background: var(--c-surface-card); border-color: var(--c-border-default); color: var(--c-brand-violet-700); }
+.sch-btn--secondary:hover:not(:disabled) { background: var(--c-brand-violet-050); }
+
+.sch-btn--ghost { background: transparent; color: var(--c-ink-secondary); }
+.sch-btn--ghost:hover:not(:disabled) { background: var(--c-brand-violet-050); }
+
+.sch-btn--danger { background: transparent; color: var(--c-state-danger); }
+.sch-btn--danger:hover:not(:disabled) { background: var(--c-mark-m2-bg); }
+
+/* Явный отказ «⌀ Без литер» — выбранный получает заливку (AR-77). */
+.sch-btn--off { background: var(--c-surface-card); border-color: var(--c-border-default); color: var(--c-ink-primary); }
+.sch-btn--off:hover:not(:disabled) { background: var(--c-brand-violet-050); }
+.sch-btn--off[aria-pressed='true'] { background: var(--c-brand-violet-100); border-color: var(--c-brand-violet-500); color: var(--c-brand-violet-700); }
+
+.sch-btn--icon { width: 40px; height: 40px; padding: 0; border-radius: var(--r-md); background: transparent; color: var(--c-ink-secondary); }
+.sch-btn--icon:hover:not(:disabled) { background: var(--c-brand-violet-050); }
+
+.sch-btn--fab { width: 40px; height: 40px; padding: 0; border-radius: var(--r-pill); background: var(--c-brand-pink-600); color: var(--c-ink-on-pink); font-size: var(--fs-xl); }
+.sch-btn--fab:hover:not(:disabled) { background: var(--c-brand-pink-700); }
+
+.sch-btn--chip {
+  height: 32px; padding: 0 var(--sp-12); border-radius: var(--r-pill);
+  background: var(--c-surface-card); border-color: var(--c-border-default);
+  color: var(--c-ink-primary); font-size: var(--fs-sm); font-weight: var(--fw-regular);
+}
+.sch-btn--chip:hover:not(:disabled) { background: var(--c-brand-violet-050); }
+.sch-btn--chip[aria-pressed='true'] { background: var(--c-brand-violet-100); border-color: var(--c-brand-violet-500); color: var(--c-brand-violet-700); }
+.sch-btn--chip[data-warning='true'] { border-color: var(--c-state-warning); border-style: dashed; color: var(--c-state-warning); }
+
+/* Пара кнопок: десктоп — в ряд справа, primary СПРАВА от secondary (§4). */
+.sch-actions { display: flex; gap: var(--sp-12); justify-content: flex-end; align-items: center; }
+.sch-actions--start { justify-content: flex-start; }
+
+.sch-spinner {
+  width: 16px; height: 16px; border-radius: var(--r-pill);
+  border: 2px solid currentColor; border-top-color: transparent;
+  animation: sch-spin 700ms linear infinite;
+}
+@keyframes sch-spin { to { transform: rotate(360deg); } }
+
+/* ─────────────────────────── карточки (AR-77) ─────────────────────────── */
+
+.sch-card {
+  background: var(--c-surface-card);
+  border: 1px solid var(--c-border-default);
+  border-radius: var(--r-card);
+  box-shadow: var(--sh-card);
+  padding: var(--sp-20);
+  transition: box-shadow 120ms, transform 120ms;
+}
+.sch-card--clickable { cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit; }
+.sch-card--clickable:hover { box-shadow: var(--sh-modal); transform: translateY(-2px); }
+.sch-card--locked { color: var(--c-ink-muted); }
+.sch-card-title { font-family: var(--font-display); font-size: var(--fs-xl); font-weight: var(--fw-semibold); }
+.sch-card-sub { color: var(--c-ink-secondary); font-size: var(--fs-sm); margin-top: var(--sp-4); }
+
+/* Карточки классов — 4 в ряд, предметов — 3 в ряд (`60-design.md` §2). */
+.sch-cards--4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-24); }
+.sch-cards--3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-24); }
+
+.sch-progress { height: 4px; border-radius: var(--r-pill); background: var(--c-state-disabled-bg); margin-top: var(--sp-12); overflow: hidden; }
+.sch-progress > span { display: block; height: 100%; background: var(--c-brand-violet-500); }
+
+/* ─────────────────────────── поля ввода ─────────────────────────── */
+
+.sch-field { display: flex; flex-direction: column; gap: var(--sp-4); margin-bottom: var(--sp-16); }
+.sch-field-label { font-size: var(--fs-sm); color: var(--c-ink-secondary); }
+.sch-input {
+  height: 48px; padding: 0 var(--sp-12);
+  border: 1px solid var(--c-border-default); border-radius: var(--r-md);
+  background: var(--c-surface-card); color: var(--c-ink-primary);
+  font-family: inherit; font-size: var(--fs-md); width: 100%;
+}
+.sch-input:hover { border-color: var(--c-brand-violet-500); }
+.sch-input:focus { border-color: var(--c-border-focus); box-shadow: 0 0 0 3px var(--c-brand-violet-100); outline: none; }
+.sch-input:disabled { background: var(--c-state-disabled-bg); color: var(--c-state-disabled-ink); }
+.sch-input[aria-invalid='true'] { border-color: var(--c-state-danger); }
+.sch-field-error { color: var(--c-state-danger); font-size: var(--fs-sm); }
+.sch-radio { display: flex; gap: var(--sp-16); align-items: center; }
+.sch-radio label { display: flex; align-items: center; gap: var(--sp-8); cursor: pointer; }
+
+/* ─────────────────────────── модалки (§3, AR-82) ─────────────────────────── */
+
+.sch-overlay {
+  position: fixed; inset: 0; z-index: 40;
+  background: var(--c-surface-overlay-blur);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--sp-24);
+  animation: sch-fade 150ms ease-out;
+}
+@keyframes sch-fade { from { opacity: 0; } to { opacity: 1; } }
+.sch-modal {
+  background: var(--c-surface-card);
+  border-radius: var(--r-card);
+  box-shadow: var(--sh-modal);
+  width: 100%; max-height: 90vh; display: flex; flex-direction: column;
+  animation: sch-pop 150ms ease-out;
+}
+@keyframes sch-pop { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+.sch-modal-head { display: flex; align-items: center; gap: var(--sp-12); padding: var(--sp-20) var(--sp-24); border-bottom: 1px solid var(--c-border-default); }
+.sch-modal-head h2 { flex: 1 1 auto; font-size: var(--fs-xl); }
+.sch-modal-body { padding: var(--sp-24); overflow-y: auto; }
+.sch-modal-foot { padding: var(--sp-16) var(--sp-24); border-top: 1px solid var(--c-border-default); }
+
+/* Поповер — второй способ показать слой; ловушка фокуса та же (§3). */
+.sch-popover {
+  position: fixed; z-index: 45;
+  background: var(--c-surface-card);
+  border: 1px solid var(--c-border-default);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-modal);
+  padding: var(--sp-16);
+}
+
+/* ─────────────────────────── состояния экрана (§5) ─────────────────────────── */
+
+.sch-state { display: flex; flex-direction: column; align-items: center; gap: var(--sp-12); padding: var(--sp-56) var(--sp-24); text-align: center; }
+.sch-state-illustration {
+  width: 96px; height: 96px; border-radius: var(--r-card);
+  border: 2px dashed var(--c-brand-violet-100);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--c-brand-violet-500); font-size: var(--fs-h1);
+}
+.sch-state h2 { font-size: var(--fs-xl); }
+
+/* Скелетоны — блоки ТОЙ ЖЕ геометрии, а не спиннер по центру (§0). */
+.sch-skeleton { background: var(--c-state-disabled-bg); border-radius: var(--r-md); animation: sch-pulse 1.2s ease-in-out infinite; }
+@keyframes sch-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.sch-skeleton--card { height: 132px; border-radius: var(--r-card); }
+.sch-skeleton--row { height: 44px; margin-bottom: var(--sp-8); }
+.sch-skeleton--qr { width: 240px; height: 240px; }
+
+.sch-error-card {
+  border: 1px solid var(--c-state-danger); border-radius: var(--r-card);
+  background: var(--c-mark-m2-bg); color: var(--c-mark-m2-ink);
+  padding: var(--sp-20); display: flex; flex-direction: column; gap: var(--sp-12); align-items: flex-start;
+}
+
+.sch-banner {
+  background: var(--c-state-stale-bg); color: var(--c-state-warning);
+  border-radius: var(--r-lg); padding: var(--sp-16) var(--sp-20);
+  display: flex; align-items: center; gap: var(--sp-16); margin-bottom: var(--sp-24);
+}
+.sch-banner span { flex: 1 1 auto; }
+
+/* ─────────────────────────── таблицы ─────────────────────────── */
+
+/* Железное правило прокрутки: `body` не скроллится по горизонтали НИКОГДА —
+   широкое содержимое скроллится внутри собственного контейнера (§6). */
+.sch-tablewrap { overflow-x: auto; border: 1px solid var(--c-border-default); border-radius: var(--r-lg); background: var(--c-surface-card); }
+.sch-table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+.sch-table th, .sch-table td { padding: var(--sp-12); text-align: left; border-bottom: 1px solid var(--c-border-default); }
+.sch-table th { color: var(--c-ink-secondary); font-weight: var(--fw-medium); background: var(--c-surface-canvas); position: sticky; top: 0; z-index: 1; }
+.sch-table tbody tr { cursor: pointer; }
+.sch-table tbody tr:hover td { box-shadow: inset 0 0 0 999px var(--c-brand-violet-050); }
+
+/* Заливка строки по полу — и текст, и позиция строки, а не один оттенок (AR-80). */
+.sch-row--boy td { background: var(--c-sex-boy-bg); color: var(--c-sex-boy-ink); }
+.sch-row--girl td { background: var(--c-sex-girl-bg); color: var(--c-sex-girl-ink); }
+.sch-row--empty td { border-bottom: 1px dashed var(--c-border-default); color: var(--c-ink-muted); font-style: italic; }
+.sch-row--inactive td { opacity: 0.6; }
+
+.sch-badge {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 var(--sp-8);
+  border-radius: var(--r-pill); background: var(--c-brand-violet-100); color: var(--c-brand-violet-700);
+  font-size: var(--fs-xs); font-weight: var(--fw-medium);
+}
+.sch-badge--muted { background: var(--c-state-disabled-bg); color: var(--c-state-disabled-ink); }
+
+.sch-avatar {
+  width: 40px; height: 40px; border-radius: var(--r-pill);
+  background: var(--c-brand-violet-100); color: var(--c-brand-violet-700);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: var(--fs-sm); font-weight: var(--fw-semibold); flex: 0 0 auto;
+  object-fit: cover;
+}
+.sch-avatar--lg { width: 120px; height: 120px; font-size: var(--fs-h1); }
+
+/* ─────────────────────────── журнал (S-50) ─────────────────────────── */
+
+.sch-journal { overflow: auto; max-height: 70vh; border: 1px solid var(--c-border-default); border-radius: var(--r-lg); background: var(--c-surface-card); }
+.sch-journal table { border-collapse: separate; border-spacing: 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.sch-journal th, .sch-journal td { border-bottom: 1px solid var(--c-border-default); border-right: 1px solid var(--c-border-default); padding: var(--sp-8); white-space: nowrap; }
+.sch-journal thead th { position: sticky; top: 0; z-index: 2; background: var(--c-surface-canvas); }
+.sch-journal .sch-j-name { position: sticky; left: 0; z-index: 1; background: var(--c-surface-card); min-width: 220px; text-align: left; }
+.sch-journal thead .sch-j-name { z-index: 3; background: var(--c-surface-canvas); }
+.sch-journal .sch-j-col--future { background: var(--c-state-disabled-bg); color: var(--c-state-disabled-ink); }
+.sch-journal .sch-j-col--detached { background: var(--c-state-disabled-bg); color: var(--c-state-disabled-ink); }
+.sch-journal .sch-j-cell { text-align: center; cursor: pointer; min-width: 56px; }
+.sch-journal .sch-j-cell:hover { box-shadow: inset 0 0 0 999px var(--c-brand-violet-050); }
+.sch-j-colhead { background: none; border: 0; font: inherit; cursor: pointer; color: inherit; padding: 0; }
+.sch-j-detach-note { font-size: var(--fs-xs); color: var(--c-state-warning); display: block; }
+/* Средний балл (AR-115) — только чтение, поэтому колонка отбита фоном канвы. */
+.sch-journal .sch-j-avg { background: var(--c-surface-canvas); text-align: center; font-weight: var(--fw-semibold); min-width: 72px; border-right: 0; }
+.sch-journal .sch-row--inactive th, .sch-journal .sch-row--inactive td { opacity: 0.6; }
+.sch-journal .sch-j-cell:focus-visible { outline: 2px solid var(--c-border-focus); outline-offset: -2px; }
+
+.sch-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: var(--r-pill);
+  font-weight: var(--fw-semibold);
+}
+.sch-mark--m5 { background: var(--c-mark-m5-bg); color: var(--c-mark-m5-ink); }
+.sch-mark--m4 { background: var(--c-mark-m4-bg); color: var(--c-mark-m4-ink); }
+.sch-mark--m3 { background: var(--c-mark-m3-bg); color: var(--c-mark-m3-ink); }
+.sch-mark--m2 { background: var(--c-mark-m2-bg); color: var(--c-mark-m2-ink); }
+.sch-mark--n  { background: var(--c-mark-n-bg);  color: var(--c-mark-n-ink); }
+.sch-mark--b  { background: var(--c-mark-b-bg);  color: var(--c-mark-b-ink); }
+.sch-mark--btn { border: 2px solid transparent; cursor: pointer; font-size: var(--fs-md); }
+.sch-mark--btn.is-current { border-color: var(--c-ink-primary); }
+.sch-mark--btn:disabled { cursor: default; }
+.sch-markrow { display: flex; gap: var(--sp-8); }
+.sch-pop-form { min-width: 260px; }
+
+/* ─────────────────────────── расписание (S-40, S-42) ─────────────────────────── */
+
+.sch-week { overflow-x: auto; border: 1px solid var(--c-border-default); border-radius: var(--r-lg); background: var(--c-surface-card); }
+.sch-week table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+.sch-week th, .sch-week td { border: 1px solid var(--c-border-default); padding: var(--sp-8); vertical-align: top; min-width: 132px; }
+.sch-week th { background: var(--c-surface-canvas); color: var(--c-ink-secondary); font-weight: var(--fw-medium); }
+.sch-slot { display: block; }
+.sch-slot-subject { font-weight: var(--fw-medium); }
+.sch-slot-teacher { color: var(--c-ink-secondary); font-size: var(--fs-xs); }
+/* Спаренный групповой час — ячейка, разделённая по диагонали (`60-design.md`). */
+.sch-cell--paired { background: linear-gradient(to bottom right, var(--c-brand-violet-050) 0 49.5%, var(--c-border-default) 49.5% 50.5%, var(--c-surface-card) 50.5% 100%); }
+
+/* ─────────────────────────── контур входа (без оболочки, §2.3) ─────────────────────────── */
+
+.sch-auth { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-24); padding: var(--sp-24); background: var(--c-surface-page); }
+.sch-auth-card { width: 420px; max-width: 100%; }
+.sch-auth-card--wide { width: 480px; }
+.sch-qr { display: flex; flex-direction: column; align-items: center; gap: var(--sp-12); }
+.sch-qr-frame { padding: var(--sp-12); border: 1px solid var(--c-border-default); border-radius: var(--r-lg); background: var(--c-surface-card); }
+.sch-code-cells { display: flex; gap: var(--sp-8); justify-content: center; }
+.sch-code-cell {
+  width: 56px; height: 56px; text-align: center;
+  font-size: var(--fs-h2); font-family: inherit;
+  border: 1px solid var(--c-border-default); border-radius: var(--r-md);
+  background: var(--c-surface-card); color: var(--c-ink-primary);
+}
+.sch-code-cell:focus { border-color: var(--c-border-focus); outline: none; box-shadow: 0 0 0 3px var(--c-brand-violet-100); }
+.sch-shake { animation: sch-shake 320ms ease-in-out; }
+@keyframes sch-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+
+.sch-hero { text-align: center; max-width: 1200px; }
+.sch-hero p { color: var(--c-ink-secondary); margin-top: var(--sp-12); }
+
+/* ─────────────────────────── мастера ─────────────────────────── */
+
+.sch-steps { display: flex; gap: var(--sp-8); justify-content: center; padding: var(--sp-16) 0; }
+.sch-step-dot { width: 8px; height: 8px; border-radius: var(--r-pill); background: var(--c-state-disabled-bg); }
+.sch-step-dot[data-done='true'] { background: var(--c-brand-violet-700); }
+.sch-preview { background: var(--c-brand-violet-050); border-radius: var(--r-lg); padding: var(--sp-16); margin-top: var(--sp-16); }
+.sch-accordion { border: 1px solid var(--c-border-default); border-radius: var(--r-lg); margin-bottom: var(--sp-12); overflow: hidden; }
+.sch-accordion > summary { padding: var(--sp-12) var(--sp-16); cursor: pointer; background: var(--c-surface-canvas); font-weight: var(--fw-medium); }
+.sch-accordion > div { padding: var(--sp-16); }
+.sch-terms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-16); }
+.sch-term-panel { border: 1px solid var(--c-border-default); border-radius: var(--r-lg); padding: var(--sp-16); }
+.sch-term-panel[data-valid='true'] { border-color: var(--c-state-success); }
+.sch-hours-row { display: flex; align-items: center; gap: var(--sp-12); margin-bottom: var(--sp-12); }
+.sch-hours-row label { flex: 1 1 auto; font-size: var(--fs-sm); }
+.sch-hours-row .sch-input { width: 88px; }
+.sch-chips { display: flex; flex-wrap: wrap; gap: var(--sp-8); }
+
+.sch-fullscreen {
+  position: fixed; inset: 0; z-index: 50; background: var(--c-surface-page);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-24);
+}
+
+/* ─────────────────────────── тосты (§5) ─────────────────────────── */
+
+.sch-toast {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: var(--sp-32); z-index: 60;
+  background: var(--c-ink-primary); color: var(--c-ink-on-violet);
+  padding: var(--sp-12) var(--sp-20); border-radius: var(--r-pill);
+  box-shadow: var(--sh-modal); font-size: var(--fs-sm);
+}
+
+/* ─────────────────────────── мелочи ─────────────────────────── */
+
+.sch-list { display: flex; flex-direction: column; gap: var(--sp-12); }
+.sch-row { display: flex; align-items: center; gap: var(--sp-12); }
+.sch-row--between { justify-content: space-between; }
+.sch-stack { display: flex; flex-direction: column; gap: var(--sp-12); }
+.sch-sections { display: flex; flex-direction: column; gap: var(--sp-32); }
+.sch-section-title { font-family: var(--font-display); font-size: var(--fs-lg); font-weight: var(--fw-semibold); margin-bottom: var(--sp-12); }
+.sch-canvas { background: var(--c-surface-canvas); border-radius: var(--r-lg); padding: var(--sp-20); }
+.sch-inline-avatars { display: flex; gap: calc(var(--sp-4) * -1); }
+.sch-card--link { cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: var(--sp-8); font: inherit; color: inherit; border: 1px solid var(--c-border-default); }
+.sch-card--link:hover { border-color: var(--c-brand-violet-500); }
+
+/* Видоискатель (S-70) — мобильный сценарий: камера во весь экран (§7). */
+.sch-viewfinder { position: relative; border-radius: var(--r-card); overflow: hidden; background: var(--c-ink-primary); aspect-ratio: 3 / 4; }
+.sch-viewfinder video { width: 100%; height: 100%; object-fit: cover; }
+.sch-viewfinder-frame {
+  position: absolute; inset: 18%; border: 3px solid var(--c-ink-on-violet); border-radius: var(--r-lg);
+}
+
+.sch-toolbar { display: flex; gap: var(--sp-16); align-items: flex-end; margin-bottom: var(--sp-16); flex-wrap: wrap; }
+.sch-field--inline { min-width: 220px; margin-bottom: 0; }

@@ -108,4 +108,17 @@ export class AuditService implements OnModuleInit {
   list(limit = 100) {
     return this.prisma.auditLog.findMany({ orderBy: { occurredAt: 'desc' }, take: limit });
   }
+
+  /**
+   * ЧИТАЮЩИЙ КОНТРАКТ аудита для `S-60` (AR-45): «журнал собственных действий».
+   * Кабинет модератора спрашивает у аудита, а не ходит в его таблицу — красная
+   * линия 5 одинакова для доменных контуров и для платформенных.
+   */
+  listByActor(actor: string, limit = 100) {
+    return this.prisma.auditLog.findMany({
+      where: { actor },
+      orderBy: { occurredAt: 'desc' },
+      take: limit,
+    });
+  }
 }
