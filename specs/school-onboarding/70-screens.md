@@ -217,14 +217,22 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | `S-12.badge.inactive` | бейдж в строке | «деактивирован» | — | виден всем |
 | `S-12.btn.addStudent` | secondary | «Добавить ученика» | → `S-13` в режиме создания | `contingent.write` |
 | `S-12.btn.editStudent` | secondary | «Редактировать» | → `S-13` для выделенной строки | `contingent.write` |
-| `S-12.btn.deleteStudent` | danger-текст | «Удалить ученика» — **только если у ученика нет отметок** | `DELETE /api/v1/students/:id` | `contingent.write` |
+| `S-12.btn.deleteStudent` | danger-текст | «Удалить ученика» — **только если у ученика нет отметок** | `DELETE /api/v1/students/:id` → `contingent.student.deleted.v1` | `contingent.write` |
 | `S-12.btn.deactivateStudent` | danger-текст | «Деактивировать» — **заменяет** предыдущую, если отметки есть (AR-78) | `POST /api/v1/students/:id/deactivate` → `contingent.student.deactivated.v1` | `contingent.write` |
 | `S-12.btn.reactivateStudent` | secondary | «Вернуть в класс» — видна на строке с бейджем «деактивирован» | `POST /api/v1/students/:id/reactivate` → `contingent.student.reactivated.v1` | `contingent.write` |
-| `S-12.btn.deleteClass` | danger-текст | «Удалить класс» — только когда ни у одного ученика нет отметок; пустые профили удаляются вместе с классом (AR-89) | `DELETE /api/v1/classes/:id` → `contingent.class.deleted.v1`; иначе `CLASS_HAS_MARKS` | `contingent.write` |
+| `S-12.btn.deleteClass` | danger-текст | «Удалить класс» — только когда ни у одного ученика нет отметок; профили удаляются вместе с классом, **заполненные тоже** (AR-89, AR-105) | `DELETE /api/v1/classes/:id` → `contingent.class.deleted.v1` + `contingent.student.deleted.v1` ×N; иначе `CLASS_HAS_MARKS` | `contingent.write` |
 
 - **Правило подмены кнопки:** решение принимает сервер — ответ
   `GET /students/:id` содержит `hasMarks: boolean`; UI показывает ровно одну из
   двух кнопок. Показывать обе или спрашивать «точно удалить?» вместо подмены — дефект.
+  Подтверждение `M-13` подмену не заменяет, а следует за ней.
+- **Удаление класса называет объём потери (AR-105).** Условие удаления — «нет
+  отметок», а до состояния `ready` отметок не существует **вовсе**: весь
+  онбординг любой класс удаляется одной кнопкой вместе с заполненными профилями,
+  и обратной операции нет. Поэтому ответ `GET /classes/:id` несёт
+  `filledProfiles` и `totalProfiles`, а `M-13` называет первое число:
+  «Удалить 5А? Заполнено 15 профилей из 15 — они будут удалены». Текст
+  «15 пустых профилей» допустим ровно тогда, когда `filledProfiles === 0`.
 - **Сортировка:** после сохранения профиля список пересортировывается по
   Фамилия → Имя → Отчество, «ё» приравнивается к «е», сравнение `localeCompare('ru')`.
 - **empty:** не бывает — класс всегда создан с пустыми профилями.
@@ -413,12 +421,21 @@ primary-кнопка к следующему шагу), `error` (карточк�
 
 | Элемент | Тип | Границы (базис СанПиН) | Ошибка |
 |---|---|---|---|
+| `S-41.input.slotsPerDay` | число | ≤ дневного потолка параллели (базис #11: 1 кл — 4, 2–4 — 5, 5–6 — 6, 7–11 — 7) | `DAY_EXCEEDS_SANPIN` |
 | `S-41.input.lessonMin` | число | ≤45 (для 1 класса ≤40) | «Не более 45 минут — СанПиН 1.2.3685-21» |
 | `S-41.input.breakMin` | число | ≥10 | «Не менее 10 минут — СанПиН 1.2.3685-21» |
 | `S-41.input.days` | сегмент 5 / 6 | учебных дней в неделю | — |
 | `S-41.select.bigBreakAfter` | выбор | после 2-го или 3-го урока | «Большая перемена ставится после 2-го или 3-го урока» |
 | `S-41.input.bigBreakMin` | число | 20…30 | «От 20 до 30 минут — СанПиН 1.2.3685-21» |
 | `S-41.btn.generate` | **accent** «Сгенерировать» | единственная розовая кнопка потока | — |
+| `S-41.calc.dayLength` | вычисляемая строка | «Учебный день: 395 минут из 420» — сумма `уроки × длина + перемены + большая перемена` | `DAY_TOO_LONG` |
+
+**Замечание для агента (AR-103):** «уроков в день» — не украшение экрана, а
+второй множитель «слотов недели»: без него не считаются ни `LOAD_EXCEEDS_GRID`,
+ни `TEACHER_OVERBOOKED`. До этого поля четыре временных параметра собирались и не
+влияли ни на один выход версии — строка `S-41.calc.dayLength` и есть их
+потребитель. Текст `DAY_TOO_LONG` **не** ссылается на СанПиН: потолок 420 минут —
+продуктовый дефолт владельца, а не норма (базис, «Не найдено»).
 
 ## S-42 · Генерация и предпросмотр
 
@@ -443,7 +460,18 @@ primary-кнопка к следующему шагу), `error` (карточк�
 
 **Отказы генерации:** `SUBJECT_UNCOVERED` и `GROUPS_UNASSIGNED` ведут кнопкой на
 `S-20` и `S-12` соответственно; `NO_SOLUTION` — на `S-41` экран 3 или 4;
-арифметические отказы сюда не доходят, они пойманы на экране 2.
+арифметические отказы сюда не доходят, они пойманы на экранах 2 и 4
+(`DAY_EXCEEDS_SANPIN`, `DAY_TOO_LONG` — на экране 4).
+
+**Бюджет перебора (AR-107):** 20 секунд либо 200 000 попыток размещения, что
+раньше. Исчерпание отвечает тем же `NO_SOLUTION` и той же кнопкой возврата —
+отдельного кода нет намеренно: «попробуйте ещё раз» не маршрут восстановления.
+Прогресс и «Отменить» доступны всё это время, школа остаётся в `day_params_set`.
+
+**Второй модератор изменил данные (AR-109):** подтверждение и правка нагрузки
+несут версию прочитанного состояния; расхождение — `CONCURRENT_EDIT` с именем
+второго модератора и кнопкой «Обновить экран». Молча победившая последняя запись
+здесь недопустима: она пересобрала бы сетку из данных, которых человек не видел.
 
 **Повторное подтверждение (регенерация после `ready`):** карточка
 `S-42.warn.detach` перечисляет уроки с отметками, которых нет в новом шаблоне:
@@ -518,7 +546,7 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | Элемент | Тип | Содержимое |
 |---|---|---|
 | `S-60.nav` | список разделов | Классы · Предметы · Персонал · Расписание (те же экраны в режиме ведения) |
-| `S-60.audit` | список | журнал собственных действий: дата, действие, объект (AR-30, AR-62); без фильтров в 1.1.1 |
+| `S-60.audit` | список | журнал собственных действий: дата, действие, объект (AR-30, AR-88); без фильтров в 1.1.1 |
 
 - Роли, кроме модератора, при заходе на `/admin` получают 403-экран
   «Раздел доступен модератору школы» — не пустую страницу и не редирект молча.
@@ -594,6 +622,9 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | `TEACHER_OVERBOOKED` | S-41.2 | Иванова М. И.: 48 часов при 35 слотах недели |
 | `SUBJECT_UNCOVERED` | S-42 | Английский, 7 класс: группа 2 без педагога |
 | `GROUPS_UNASSIGNED` | S-42 | 7 класс: группы объявлены, состав не назначен |
+| `DAY_EXCEEDS_SANPIN` | S-41.4 | 5 класс: 9 уроков в день при потолке 6 — СанПиН 1.2.3685-21 |
+| `DAY_TOO_LONG` | S-41.4 | Учебный день 795 минут при потолке 420: 7 уроков × 45 + перемены 5 × 90 + большая 30 |
+| `CONCURRENT_EDIT` | S-41.2, S-42, S-11 | Пока вы заполняли, Петрова А. В. изменила эти данные. Обновите экран |
 | `NO_SOLUTION` | S-42 | Не удалось собрать сетку. Ослабьте приоритеты или добавьте учебный день |
 | `LESSON_NOT_HELD` | S-50 | Урок ещё не прошёл |
 | `LESSON_DETACHED` | S-50 | Урок вне расписания: отметки сохранены, изменить их нельзя |
@@ -624,28 +655,28 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | 2 | POST `/api/v1/auth/device-link/approve` | S-80 (скан с телефона) | сессия якорного устройства | `staff.session.started.v1` (via: device_link) | `TOKEN_USED`, `LINK_CODE_EXPIRED`, `ACCESS_REVOKED` |
 | 3 | POST `/api/v1/auth/logout` | M-15 | сессия | — | — |
 | 4 | POST `/api/v1/staff/:id/activation-token` | S-31 | `staff.manage` | — | — |
-| 5 | POST `/api/v1/staff/join/:token` | S-03 | аноним (токен) | `staff.member.registered.v1`, `staff.session.started.v1` (только если страницу открыл сам сотрудник — AR-91) | `TOKEN_USED`, `TOKEN_EXPIRED`, `PHONE_TAKEN_IN_SCHOOL` |
+| 5 | POST `/api/v1/staff/join/:token` | S-03 | аноним (токен) | `staff.member.registered.v1`, `staff.session.started.v1` (только если страницу открыл сам сотрудник — AR-91) | `TOKEN_USED`, `TOKEN_EXPIRED`, `PHONE_TAKEN_IN_SCHOOL` (только при членстве **в этой** школе — AR-106) |
 | 6 | POST `/api/v1/staff/me/avatar` | S-04 | `staff.self.write` | — | — |
 | 7 | POST `/api/v1/staff/:id/roles` | S-31 | `staff.manage` | — | — |
-| 8 | POST `/api/v1/classes/bulk` | S-11 | `contingent.write` | `contingent.class.created.v1` | `CLASSES_ALREADY_EXIST` |
+| 8 | POST `/api/v1/classes/bulk` | S-11 | `contingent.write` | `contingent.class.created.v1` | `CLASSES_ALREADY_EXIST`, `CONCURRENT_EDIT` |
 | 9 | POST `/api/v1/classes/:id/students` | S-12 | `contingent.write` | `contingent.student.upserted.v1` | — |
 | 10 | PUT `/api/v1/students/:id` | S-13 | `contingent.write` | `contingent.student.upserted.v1` | — |
-| 11 | DELETE `/api/v1/students/:id` | S-12 | `contingent.write` | — | — |
+| 11 | DELETE `/api/v1/students/:id` | S-12 | `contingent.write` | `contingent.student.deleted.v1` | — |
 | 12 | POST `/api/v1/students/:id/deactivate` | S-12 | `contingent.write` | `contingent.student.deactivated.v1` | — |
 | 13 | POST `/api/v1/subjects` | M-03 | `subject.write` | — | — |
 | 14 | POST `/api/v1/subjects/:id/bind-token` | S-22 | `subject.write` | — | — |
 | 15 | POST `/api/v1/subjects/:id/teachers` | S-22 | `subject.write` | `subject.teacher.bound.v1` | `TOKEN_EXPIRED` |
 | 16 | DELETE `/api/v1/subjects/:id/teachers/:tid` | S-21 | `subject.write` | `subject.teacher.unbound.v1` | — |
 | 17 | PUT `/api/v1/calendar/terms` | S-41.1 | `schedule.build` | `calendar.term.set.v1` | `TERM_OVERLAP`, `TERM_REVERSED` |
-| 18 | PUT `/api/v1/schedule/load` | S-41.2 | `schedule.build` | — | `LOAD_EXCEEDS_SANPIN`, `LOAD_EXCEEDS_GRID`, `TEACHER_OVERBOOKED`, `GROUP_HOURS_UNEQUAL` |
+| 18 | PUT `/api/v1/schedule/load` | S-41.2 | `schedule.build` | — | `LOAD_EXCEEDS_SANPIN`, `LOAD_EXCEEDS_GRID`, `TEACHER_OVERBOOKED`, `GROUP_HOURS_UNEQUAL`, `CONCURRENT_EDIT` |
 | 19 | PUT `/api/v1/schedule/priorities` | S-41.3 | `schedule.build` | — | — |
-| 20 | PUT `/api/v1/schedule/day-params` | S-41.4 | `schedule.build` | — | — |
+| 20 | PUT `/api/v1/schedule/day-params` | S-41.4 | `schedule.build` | — | `DAY_EXCEEDS_SANPIN`, `DAY_TOO_LONG`, `CONCURRENT_EDIT` |
 | 21 | POST `/api/v1/schedule/generate` | S-42 | `schedule.build` | — | `SUBJECT_UNCOVERED`, `GROUPS_UNASSIGNED`, `NO_SOLUTION` |
-| 22 | POST `/api/v1/schedule/confirm` | S-42 | `schedule.build` | `schedule.template.confirmed.v1`, `schedule.lesson.materialized.v1` ×N, `schedule.lesson.detached.v1` ×M | — |
+| 22 | POST `/api/v1/schedule/confirm` | S-42 | `schedule.build` | `schedule.template.confirmed.v1`, `schedule.lesson.materialized.v1` ×N, `schedule.lesson.detached.v1` ×M | `CONCURRENT_EDIT` |
 | 23 | PUT `/api/v1/lessons/:id/topic` | S-51 | `journal.topic.set` | `journal.topic.set.v1` | `LESSON_NOT_HELD` |
 | 24 | POST `/api/v1/lessons/:id/marks` | S-52 | `journal.mark.post` | `journal.mark.posted.v1` | `LESSON_NOT_HELD`, `STUDENT_INACTIVE` |
 | 25 | DELETE `/api/v1/lessons/:id/marks/:studentId` | S-52 | `journal.mark.post` | `journal.mark.removed.v1` | `LESSON_NOT_HELD`, `LESSON_DETACHED` |
-| 26 | DELETE `/api/v1/classes/:id` | S-12 | `contingent.write` | `contingent.class.deleted.v1` | `CLASS_HAS_MARKS` |
+| 26 | DELETE `/api/v1/classes/:id` | S-12 | `contingent.write` | `contingent.class.deleted.v1`, `contingent.student.deleted.v1` ×N | `CLASS_HAS_MARKS` |
 | 27 | POST `/api/v1/students/:id/reactivate` | S-12 | `contingent.write` | `contingent.student.reactivated.v1` | — |
 | 28 | DELETE `/api/v1/subjects/:id` | S-21 | `subject.write` | `subject.deleted.v1` | — |
 | 29 | POST `/api/v1/staff/:id/deactivate` | S-31 | `staff.manage` | `staff.member.deactivated.v1`, `subject.teacher.unbound.v1` ×N | `LAST_MODERATOR` |
@@ -666,7 +697,13 @@ primary-кнопка к следующему шагу), `error` (карточк�
 
 Роль в колонке «Право» — минимальная. Модератор проходит **каждую** строку
 таблицы (AR-88); отказ по праву он получить не может, отказ по факту
-(`LESSON_NOT_HELD`, `TOKEN_USED`, `TERM_OVERLAP`) — может, и это разные вещи.
+(`LESSON_NOT_HELD`, `TOKEN_USED`, `TERM_OVERLAP`, `CONCURRENT_EDIT`) — может, и
+это разные вещи.
+
+**Условная запись (AR-109).** Четыре строки — 8, 18, 20, 22 — несут версию
+прочитанного состояния и отвечают `CONCURRENT_EDIT`, если второй модератор
+изменил его первым. Остальные мутации адресны либо идемпотентны, и последняя
+запись побеждает — это записанный выбор, а не умолчание.
 
 Чтение, у которого нет своей мутации, но есть контракт: поллинг статуса токена
 (`GET /api/v1/staff/:id/activation-token`, `GET /api/v1/subjects/:id/bind-token`,

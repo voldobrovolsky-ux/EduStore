@@ -128,6 +128,10 @@ export const reversals = [
   ['материализовать урок',         '', 'обратной операции у человека нет: уроки материализует движок, отвязка происходит внутри регенерации (AR-85)'],
   ['удалить ученика',              '', 'необратимо по построению: удаление доступно только для записи без отметок — цена ошибки равна повторному вводу ФИО'],
   ['удалить сотрудника',           '', 'необратимо по построению: удаление доступно только сотруднику без привязок и без выставленных отметок; сотрудник с историей деактивируется, а деактивация обратима'],
+  ['снять роль',                   'добавить роль', ''],
+  ['открепить педагога',           'привязать педагога заново', ''],
+  ['удалить класс',                '', 'необратимо: вместе с классом удаляются профили его учеников. Цена ошибки не равна повторному вводу одной строки — это весь контингент класса, поэтому подтверждение обязано называть, сколько профилей ЗАПОЛНЕНО, а не сколько создано (AR-105)'],
+  ['удалить предмет',              '', 'необратимо: карточка предмета удаляется вместе с часами нагрузки и историей привязок; педагоги при этом остаются. Восстановление — создать карточку заново и привязать педагога (AR-105)'],
 ];
 
 // Удаление и деактивация сотрудника (AR-89): что решает сервер до показа кнопки.
@@ -235,4 +239,65 @@ export const roleChange = ({ op, role, person, school }) => {
   if (role === 'moderator' && school.moderators <= 1) return { code: 'LAST_MODERATOR' };
   if (roles.length <= 1) return { code: 'LAST_ROLE' };
   return { ok: true, roles: roles.filter((r) => r !== role) };
+};
+
+// Дневная сетка (AR-103). «Уроков в день» — вход генератора, а не украшение:
+// LOAD_EXCEEDS_GRID и TEACHER_OVERBOOKED считаются как дни × слоты, и без
+// второго множителя оба отказа несчитаемы. Дневной потолок — СанПиН
+// 1.2.3685-21 табл. 6.6 (базис #11), длина дня — [дефолт] владельца.
+const DAY_CAP = { 1: 4, 2: 5, 3: 5, 4: 5, 5: 6, 6: 6, 7: 7, 8: 7, 9: 7, 10: 7, 11: 7 };
+const DAY_MINUTES_CAP = 420; // [дефолт]: учебный день одной смены — не длиннее 7 часов
+
+export const dayGrid = {
+  cap: (parallel) => DAY_CAP[parallel],
+  minutesCap: DAY_MINUTES_CAP,
+  // Что потребляет каждый из четырёх временных параметров экрана 4: до AR-103
+  // они собирались и не влияли ни на что.
+  consumes: ['lessonMin', 'breakMin', 'bigBreakAfter', 'bigBreakMin'],
+  length: ({ slotsPerDay, lessonMin, breakMin, bigBreakAfter, bigBreakMin }) => {
+    const breaks = Math.max(0, slotsPerDay - 1);
+    const big = bigBreakAfter && bigBreakAfter < slotsPerDay ? 1 : 0;
+    return slotsPerDay * lessonMin + (breaks - big) * breakMin + big * bigBreakMin;
+  },
+  validate: (p) => {
+    const cap = DAY_CAP[p.parallel];
+    if (cap === undefined) return { code: 'DAY_EXCEEDS_SANPIN', reason: 'unknown-parallel', parallel: p.parallel };
+    if (p.slotsPerDay > cap) return { code: 'DAY_EXCEEDS_SANPIN', parallel: p.parallel, slotsPerDay: p.slotsPerDay, cap };
+    const minutes = dayGrid.length(p);
+    if (minutes > DAY_MINUTES_CAP) return { code: 'DAY_TOO_LONG', minutes, cap: DAY_MINUTES_CAP };
+    return null;
+  },
+};
+
+// Стык спеки с ФИЗИЧЕСКОЙ схемой (AR-104). Спека 1.1.1 описывает 11 доменных
+// таблиц и 8 таблиц контура доступа так, будто база пуста. База не пуста:
+// apps/api/prisma/schema.prisma несёт 72 модели контура КТП/КПП. Три доменных
+// имени заняты, три «переиспользуемые» таблицы доступа не несут полей, которые
+// им приписаны. Ниже — инвентарь, из которого пишется миграция.
+export const schemaFit = {
+  domain: [
+    { table: 'SchoolClass',      collides: false, legacyOwner: 'Class',               plan: 'новая таблица; legacy Class остаётся движку КТП, прецедент AR-83' },
+    { table: 'Student',          collides: true,  legacyOwner: 'движок КТП/КПП',      plan: 'ИМЯ ЗАНЯТО: legacy Student (classId→Class, без отчества, пола и деактивации). Новая таблица получает имя SchoolStudent; legacy не трогается' },
+    { table: 'StudentGroup',     collides: false, legacyOwner: 'SubGroup',            plan: 'новая таблица; legacy SubGroup остаётся движку' },
+    { table: 'Subject',          collides: true,  legacyOwner: 'движок КТП/КПП',      plan: 'ИМЯ ЗАНЯТО: legacy Subject (fgosDocUrl, textbookUrl, color, assignments). Новая таблица — SchoolSubject: карточка на пару «предмет × класс»' },
+    { table: 'TeacherBinding',   collides: false, legacyOwner: 'TeachingAssignment',  plan: 'новая таблица; legacy TeachingAssignment остаётся движку' },
+    { table: 'Term',             collides: false, legacyOwner: null,                  plan: 'новая таблица' },
+    { table: 'ScheduleTemplate', collides: false, legacyOwner: 'Timetable',           plan: 'новая таблица; legacy Timetable вытеснена AR-84 и остаётся до вывода движка' },
+    { table: 'TemplateSlot',     collides: false, legacyOwner: 'TimetableSlot',       plan: 'новая таблица' },
+    { table: 'Lesson',           collides: true,  legacyOwner: 'движок КТП/КПП',      plan: 'ИМЯ ЗАНЯТО: legacy Lesson несёт СВОЙ автомат (LessonState idle|running|done, LessonMode) и предметное содержание урока. Новая таблица — SchoolLesson: материализованный слот с detachedAt (AR-85). Два разных автомата не сливаются' },
+    { table: 'Mark',             collides: false, legacyOwner: 'JournalCell',         plan: 'новая таблица; сосуществование с JournalCell разведено AR-83' },
+    { table: 'LessonTopic',      collides: false, legacyOwner: null,                  plan: 'новая таблица' },
+  ],
+  access: [
+    { table: 'User',       status: 'существующая', missing: ['phone (уникальный, ключ входа и bootstrap)', 'middleName (отчество, S-03/S-13)', 'avatarUrl'], blockers: ['id документирован как = florus_user_id — семантика развязывается вместе с AR-58'] },
+    { table: 'Membership', status: 'существующая', missing: ['roles[] (массив ролей AR-60 вместо florusRole:String)', 'userId (сейчас florusUserId)'], blockers: ['florusRole несёт словарь teacher|student|parent|staff — шести ролей 1.1.1 в нём нет'] },
+    { table: 'Workspace',  status: 'существующая', missing: [], blockers: ['orgId — обязательная связь с Organization; bootstrap (AR-93) обязан создавать или выбирать Organization, иначе школа не создаётся'] },
+    { table: 'AppSession',      status: 'новая', missing: [], blockers: [] },
+    { table: 'DeviceLinkToken', status: 'новая', missing: [], blockers: [] },
+    { table: 'LoginCode',       status: 'новая', missing: [], blockers: [] },
+    { table: 'ActivationToken', status: 'новая', missing: [], blockers: [] },
+    { table: 'BootstrapLink',   status: 'новая', missing: [], blockers: [] },
+  ],
+  // Legacy-таблицы, которые 1.1.1 НЕ переиспользует и не удаляет.
+  untouched: ['Session', 'Device', 'JournalCell', 'Timetable', 'TimetableSlot', 'Class', 'SubGroup', 'TeachingAssignment', 'Teacher'],
 };

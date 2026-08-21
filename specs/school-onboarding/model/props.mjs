@@ -261,6 +261,12 @@ if (Array.isArray(st.reversals) && st.reversals.length) {
   const missing = need.filter((n) => !st.reversals.some(([op]) => op === n));
   if (!missing.length) ok('каждая создающая операция версии присутствует в таблице обратимости');
   else bad('операции вне таблицы обратимости: ' + missing.join(', '));
+  // Второй детектор L-9: разрушающая операция опаснее создающей, и именно её
+  // легче забыть — она попадает в реестр только как «обратная» к созданию.
+  const destructive = ['удалить класс','удалить предмет','удалить ученика','удалить сотрудника','снять роль','открепить педагога'];
+  const gone = destructive.filter((n) => !st.reversals.some(([op]) => op === n));
+  if (!gone.length) ok('каждая разрушающая операция версии присутствует в таблице обратимости своей строкой');
+  else bad('разрушающие операции вне таблицы обратимости: ' + gone.join(', '));
 } else bad('таблица обратимости не объявлена: reversals отсутствует в states.mjs');
 
 // ---------- P13. Удаление сотрудника: каскад и защита школы ----------
@@ -362,6 +368,63 @@ if (typeof st.roleChange === 'function') {
   const last = st.roleChange({ op:'remove', role:'teacher', person:{roles:['teacher']}, school:{moderators:2} });
   if (last.code === 'LAST_ROLE') ok('последняя роль сотрудника не снимается — для закрытия доступа есть деактивация'); else bad('сотрудник остаётся без единой роли');
 } else bad('правила смены ролей не объявлены: roleChange отсутствует в states.mjs');
+
+// ---------- P18. Дневная сетка: число уроков в день и длина дня (AR-103) ----------
+console.log('P18. Дневная сетка: слоты и минуты (AR-103)');
+if (st.dayGrid && typeof st.dayGrid.validate === 'function') {
+  const dg = st.dayGrid;
+  // Уроков в день — вход генератора: без него не считаются ни LOAD_EXCEEDS_GRID,
+  // ни TEACHER_OVERBOOKED (оба про «слоты недели» = дни × слоты).
+  if (typeof dg.cap === 'function' && dg.cap(5) > 0 && dg.cap(11) >= dg.cap(5))
+    ok(`дневной потолок уроков задан по параллелям: 5 класс — ${dg.cap(5)}, 11 класс — ${dg.cap(11)}`);
+  else bad('дневной потолок уроков не задан по параллелям — ограничение 7 не с чем сверять');
+  const over = dg.validate({ parallel: 5, slotsPerDay: 9, lessonMin: 45, breakMin: 10, bigBreakAfter: 2, bigBreakMin: 30 });
+  if (over?.code === 'DAY_EXCEEDS_SANPIN') ok(`9 уроков в 5 классе → ${over.code} (потолок ${over.cap}) — отказ до перебора`);
+  else bad('дневной перегруз не пойман: ' + JSON.stringify(over));
+  // Минуты: четыре временных параметра экрана 4 обязаны хоть чем-то потребляться.
+  const longDay = dg.validate({ parallel: 11, slotsPerDay: 7, lessonMin: 45, breakMin: 90, bigBreakAfter: 2, bigBreakMin: 30 });
+  if (longDay?.code === 'DAY_TOO_LONG') ok(`перемена 90 мин → ${longDay.code} (${longDay.minutes} мин при потолке ${longDay.cap}) — длина дня проверяется арифметикой`);
+  else bad('учебный день неограниченной длины проходит валидацию: ' + JSON.stringify(longDay));
+  const sane = dg.validate({ parallel: 7, slotsPerDay: 7, lessonMin: 45, breakMin: 10, bigBreakAfter: 2, bigBreakMin: 30 });
+  if (sane === null) ok('штатный день (7 уроков × 45 мин, перемены 10, большая 30) проходит'); else bad('ложный отказ на штатном дне: ' + JSON.stringify(sane));
+  if (Array.isArray(dg.consumes) && dg.consumes.length === 4)
+    ok('все четыре временных параметра экрана 4 названы потребителем: ' + dg.consumes.join(', '));
+  else bad('временные параметры экрана 4 не потребляются ничем — мёртвый ввод');
+} else bad('дневная сетка не объявлена: dayGrid отсутствует в states.mjs — «уроков в день» не имеет источника');
+
+// ---------- P19. Стык с физической схемой: домен (AR-104) ----------
+console.log('P19. Стык спеки с физической схемой (AR-104)');
+if (st.schemaFit && Array.isArray(st.schemaFit.domain)) {
+  const dom = st.schemaFit.domain;
+  const mute = dom.filter((t) => !t.plan);
+  if (!mute.length) ok(`11 доменных таблиц: у каждой назван план против физической схемы (${dom.length} строк)`);
+  else bad('доменные таблицы без плана против существующей схемы: ' + mute.map((t) => t.table).join(', '));
+  const collisions = dom.filter((t) => t.collides);
+  if (collisions.length >= 3) ok('коллизии имён названы поимённо: ' + collisions.map((t) => t.table).join(', '));
+  else bad('коллизии имён с legacy-схемой не перечислены — Prisma не допустит двух моделей с одним именем');
+  const named = collisions.every((t) => t.legacyOwner);
+  if (named) ok('у каждой коллизии назван владелец существующей таблицы — видно, чей контур трогаем');
+  else bad('коллизия без владельца: непонятно, чей код сломает переименование');
+} else bad('стык с физической схемой не объявлен: schemaFit.domain отсутствует в states.mjs');
+
+// ---------- P20. Стык с физической схемой: контур доступа (AR-104) ----------
+console.log('P20. Контур доступа против существующих таблиц (AR-104)');
+if (st.schemaFit && Array.isArray(st.schemaFit.access)) {
+  const acc = st.schemaFit.access;
+  const reused = acc.filter((t) => t.status === 'существующая');
+  const unnamed = reused.filter((t) => !Array.isArray(t.missing));
+  if (!unnamed.length) ok(`переиспользуемые таблицы (${reused.map((t) => t.table).join(', ')}): недостающие поля перечислены`);
+  else bad('таблица объявлена переиспользуемой без перечня недостающих полей: ' + unnamed.map((t) => t.table).join(', '));
+  const user = acc.find((t) => t.table === 'User');
+  if (user && user.missing.some((f) => /^phone/.test(f))) ok('User: телефон назван недостающим полем — вход по коду и bootstrap опираются на него');
+  else bad('User объявлен носителем телефона, а поля нет — вход по коду не на чем построить');
+  const mem = acc.find((t) => t.table === 'Membership');
+  if (mem && mem.missing.some((f) => /roles/.test(f))) ok('Membership: массив ролей назван недостающим — совмещение ролей (AR-60) одной строкой не выражается');
+  else bad('Membership объявлен носителем массива ролей, а физически несёт одну строку florusRole');
+  const ws = acc.find((t) => t.table === 'Workspace');
+  if (ws && Array.isArray(ws.blockers) && ws.blockers.length) ok('Workspace: обязательные связи названы (' + ws.blockers.join(', ') + ') — bootstrap знает, что создаёт');
+  else bad('Workspace создаётся bootstrap-ом, но обязательные связи не названы');
+} else bad('стык контура доступа с физической схемой не объявлен: schemaFit.access отсутствует в states.mjs');
 
 console.log(fails? `\n❌ Свойства: ${fails} падений` : '\n✅ Свойства: все инварианты держатся.');
 if (notes.length){ console.log('\nЗаметки для 40-bench.md:'); notes.forEach(n=>console.log('  · '+n)); }
