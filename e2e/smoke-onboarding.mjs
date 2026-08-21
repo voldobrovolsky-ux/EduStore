@@ -353,6 +353,32 @@ async function main() {
     if (MOBILE) await tapTargets(page, 'S-05');
     await shot(page, 'S-05-login-code');
 
+    // `S-05.btn.scan` ОТКРЫВАЕТ КАМЕРУ (реестр §S-05). До этапа 3 кнопка
+    // рендерилась без обработчика: G-52 видела идентификатор и была зелёной,
+    // потому что она проверяет наличие элемента, а не наличие поведения.
+    if (await page.locator('[data-testid="S-05.btn.scan"]').count()) {
+      await click(page, 'S-05.btn.scan');
+      /*
+       * Ветка детерминирована раскладкой, а не удачей: мобильному контексту
+       * выдано разрешение `camera`, десктопному — нет. Поэтому на телефоне
+       * доказывается видоискатель, а на десктопе — честный отказ. Обе ветки
+       * обязаны оставлять человеку путь назад: `S-05` это экран ВХОДА, и
+       * запереть его в сканере значит закрыть доступ вовсе.
+       */
+      const want = MOBILE ? 'S-05.viewfinder' : 'S-05.error.denied';
+      await page.waitForSelector(`[data-testid="${want}"]`, { timeout: 20_000 });
+      await has(page, want, MOBILE ? 'кнопка сканера действительно открывает камеру' : 'отказ в камере назван словами');
+      await shot(page, 'S-05-scanner');
+      const back = MOBILE
+        ? page.locator('[data-testid="S-05.viewfinder"] button', { hasText: 'Отмена' })
+        : page.locator('button', { hasText: 'Ввести код руками' });
+      await back.click();
+      await page.waitForSelector('[data-testid="S-05.code"]', { timeout: 20_000 });
+      console.log('    ✅ из сканера есть путь назад к вводу кода, а не только перезагрузка');
+    } else {
+      console.log('    · S-05.btn.scan скрыта — камеры в этом контексте нет (§6)');
+    }
+
     // ── bootstrap: первый модератор входит по одноразовой ссылке ──
     console.log('▶ /bootstrap/:token · первый модератор');
     await page.goto(link);
@@ -604,7 +630,13 @@ async function main() {
       `psql "${DB.replace(/\?.*$/, '')}" -qtAc "select token from \\"ActivationToken\\" where purpose='subject_bind' and state='waiting' order by \\"createdAt\\" desc limit 1"`,
     ).trim();
     if (!token) { console.error('    ❌ токен привязки не найден в хранилище'); failures++; }
-    await api(phone, 'POST', '/api/v1/subjects/scan', { token });
+    // Телефон открывает ССЫЛКУ из QR — ровно то, что делает штатная камера
+    // (В1). Это сильнее прежнего контрактного вызова: раньше смок доказывал
+    // контракт, теперь — маршрут, экран и контракт разом.
+    await phone.goto(`${WEB}/bind/${token}`);
+    await phone.waitForSelector('[data-testid="S-70.result"]', { timeout: 30_000 });
+    await has(phone, 'S-70.result', 'ссылка привязки из QR ведёт на экран результата');
+    await shot(phone, 'S-70-bind-result');
     // Экран узнаёт о скане поллингом (AR-87), после чего модератор выбирает
     // объём привязки: «весь класс» либо группы — они взаимоисключаемы (Д6).
     await page.locator('[data-testid="S-22.scope"] button', { hasText: 'Весь класс' }).waitFor({ timeout: 20_000 });

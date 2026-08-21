@@ -113,7 +113,13 @@ function isSchooliumRoute(): boolean {
   const params = new URLSearchParams(window.location.search);
   if (params.get("pilot") || params.get("bind") || params.get("screen")) return false;
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
-  return isAppPath(path) || PUBLIC_PATHS.includes(path) || path.startsWith("/join/") || path.startsWith("/bootstrap/");
+  return (
+    isAppPath(path) ||
+    PUBLIC_PATHS.includes(path) ||
+    path.startsWith("/join/") ||
+    path.startsWith("/bootstrap/") ||
+    path.startsWith("/login/code/")   // код входа ссылкой из QR (В1)
+  );
 }
 
 function Root() {

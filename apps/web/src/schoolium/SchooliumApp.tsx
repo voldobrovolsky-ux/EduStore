@@ -20,7 +20,7 @@ import { SubjectsScreen } from "./screens/subjects";
 import { StaffScreen } from "./screens/staff";
 import { ScheduleScreen } from "./screens/schedule";
 import { JournalScreen } from "./screens/journal";
-import { AdminScreen, DevicesScreen, ScanScreen } from "./screens/misc";
+import { AdminScreen, BindScreen, DevicesScreen, ScanScreen } from "./screens/misc";
 
 export function SchooliumApp() {
   return (
@@ -65,6 +65,15 @@ function Routes() {
       return null;
     }
     return <LoginCodeScreen />;
+  }
+  // Код входа, пришедший ссылкой из QR (В1). Вошедшему он не нужен — он уже
+  // внутри, и второй вход по чужому коду тут был бы дырой, а не удобством.
+  if (path === "/login/code/:code") {
+    if (authed) {
+      navigate(state.me.startScreen);
+      return null;
+    }
+    return <LoginCodeScreen code={params.code} />;
   }
   if (path === "/") return <LandingScreen authed={authed} startScreen={authed ? state.me.startScreen : "/login"} />;
 
@@ -157,6 +166,19 @@ function AppScreen({
       return (
         <Shell active="" title="Устройства и сессии">
           <DevicesScreen />
+        </Shell>
+      );
+    // ─── маршруты QR-ссылок (В1) ───
+    case "/link/:token":
+      return (
+        <Shell active="" title="Подключение устройства">
+          <DevicesScreen linkToken={params.token} />
+        </Shell>
+      );
+    case "/bind/:token":
+      return (
+        <Shell active="" title="Привязка к предмету">
+          <BindScreen token={params.token} />
         </Shell>
       );
     default:

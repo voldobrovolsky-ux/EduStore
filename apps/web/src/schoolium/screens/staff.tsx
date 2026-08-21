@@ -307,7 +307,7 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
 
                 {loginCode ? (
                   <div className="sch-canvas sch-qr" data-testid="S-31.loginCode">
-                    <QRCodeSVG value={`schoolium:code:${loginCode.code}`} size={160} />
+                    <QRCodeSVG value={`${window.location.origin}/login/code/${loginCode.code}`} size={160} />
                     <strong style={{ fontSize: "var(--fs-h2)", letterSpacing: "0.2em" }}>{loginCode.code}</strong>
                     <p className="sch-muted">
                       Код живёт {ACCESS_PARAMS.loginCodeTtlMinutes} минут, одноразовый

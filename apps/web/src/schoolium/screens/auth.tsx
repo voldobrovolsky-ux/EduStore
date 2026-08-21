@@ -135,7 +135,14 @@ export function LoginScreen({ next }: { next: string | null }) {
         ) : (
           <>
             <div className="sch-qr-frame" data-testid="S-01.qr">
-              {token ? <QRCodeSVG value={`schoolium:link:${token.token}`} size={240} /> : <div className="sch-skeleton sch-skeleton--qr" />}
+              {token ? (
+                /* Ссылка своего origin, а не схема `schoolium:` (В1): штатная
+                   камера iPhone открывает ссылку сама, а схему без
+                   обработчика открыть нечем. */
+                <QRCodeSVG value={`${window.location.origin}/link/${token.token}`} size={240} />
+              ) : (
+                <div className="sch-skeleton sch-skeleton--qr" />
+              )}
             </div>
             <p data-testid="S-01.caption" className="sch-muted">
               Откройте Schoolium на телефоне: Настройки → Подключить устройство — и наведите камеру
@@ -156,8 +163,10 @@ export function LoginScreen({ next }: { next: string | null }) {
 
 // ─────────────────────────── S-05 · вход по коду ───────────────────────────
 
-export function LoginCodeScreen() {
-  const [digits, setDigits] = useState<string[]>(Array(ACCESS_PARAMS.loginCodeDigits).fill(""));
+export function LoginCodeScreen({ code }: { code?: string }) {
+  const [digits, setDigits] = useState<string[]>(
+    code ? code.split("") : Array(ACCESS_PARAMS.loginCodeDigits).fill(""),
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -178,6 +187,19 @@ export function LoginCodeScreen() {
       setBusy(false);
     }
   };
+
+  /*
+   * Код, пришедший ССЫЛКОЙ из QR (`/login/code/123456`), отправляется сам —
+   * человек уже подтвердил намерение, наведя камеру. Просить его нажать ещё
+   * раз значит попросить дважды сделать одно.
+   */
+  const sent = useRef(false);
+  useEffect(() => {
+    if (!code || sent.current) return;
+    sent.current = true;
+    void submit(code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
 
   const setAt = (i: number, v: string) => {
     const d = v.replace(/\D/g, "").slice(-1);
@@ -202,7 +224,20 @@ export function LoginCodeScreen() {
    * экран, требующий доступа, значит закрыть ему единственный путь внутрь.
    */
   if (scanning) {
-    if (denied) return <AuthFrame><CameraDenied testId="S-05.error.denied" /></AuthFrame>;
+    /* Отказ в камере не должен запирать человека в сканере: `S-05` — это
+       экран ВХОДА, и ручной ввод кода остаётся рабочим путём. Без возврата
+       единственным выходом была бы перезагрузка страницы. */
+    if (denied)
+      return (
+        <AuthFrame>
+          <div className="sch-stack sch-auth-card">
+            <CameraDenied testId="S-05.error.denied" />
+            <Button kind="primary" onClick={() => { setDenied(false); setScanning(false); }}>
+              Ввести код руками
+            </Button>
+          </div>
+        </AuthFrame>
+      );
     return (
       <QrCamera
         testId="S-05.viewfinder"

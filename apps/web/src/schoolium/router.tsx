@@ -13,7 +13,14 @@ export interface Route {
 }
 
 /** Маршруты приложения — те, что требуют сессии. */
-export const APP_PREFIXES = ["/classes", "/subjects", "/staff", "/schedule", "/journal", "/admin", "/scan", "/settings"];
+/*
+ * `/link` и `/bind` — маршруты QR-кодов, и они ТРЕБУЮТ сессии: код привязки
+ * устройства сканирует уже вошедший телефон, код привязки к предмету —
+ * педагог со своей сессией. Аноним, открывший такую ссылку, уходит на
+ * `/login?next=…` и возвращается сюда после входа — а не упирается в белый
+ * экран с непонятной ошибкой.
+ */
+export const APP_PREFIXES = ["/classes", "/subjects", "/staff", "/schedule", "/journal", "/admin", "/scan", "/settings", "/link", "/bind"];
 
 /** Публичные маршруты контура входа — показываются БЕЗ оболочки (§2.3). */
 export const PUBLIC_PATHS = ["/", "/login", "/login/code", "/join", "/bootstrap"];
@@ -27,6 +34,28 @@ export function parse(pathname: string, search: string): Route {
   if (join) {
     params.token = join[1];
     path = join[2] ? "/join/:token/photo" : "/join/:token";
+  }
+  /*
+   * Маршруты QR-кодов. Код — это ССЫЛКА своего origin, а не схема
+   * `schoolium:` (В1): штатная камера iPhone распознаёт QR сама и открывает
+   * ссылку, а схему без зарегистрированного обработчика открыть нечем. Это
+   * единственный путь входа по QR на iOS: `BarcodeDetector` отсутствует во
+   * всём WebKit, и наш сканер там работает только запасным декодером.
+   */
+  const linkTok = path.match(/^\/link\/([^/]+)$/);
+  if (linkTok) {
+    params.token = linkTok[1];
+    path = "/link/:token";
+  }
+  const bindTok = path.match(/^\/bind\/([^/]+)$/);
+  if (bindTok) {
+    params.token = bindTok[1];
+    path = "/bind/:token";
+  }
+  const loginCode = path.match(/^\/login\/code\/([0-9]{6})$/);
+  if (loginCode) {
+    params.code = loginCode[1];
+    path = "/login/code/:code";
   }
   const boot = path.match(/^\/bootstrap\/([^/]+)$/);
   if (boot) {

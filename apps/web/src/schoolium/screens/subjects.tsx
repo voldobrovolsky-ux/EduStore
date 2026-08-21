@@ -370,7 +370,12 @@ function BindQr({ subject, onClose, onBound }: { subject: SubjectDto; onClose: (
     >
       <div className="sch-qr">
         <div className="sch-qr-frame" data-testid="S-22.qr">
-          {token ? <QRCodeSVG value={`schoolium:bind:${token}`} size={240} /> : <div className="sch-skeleton sch-skeleton--qr" />}
+          {token ? (
+            /* Ссылка своего origin (В1) — читается штатной камерой iPhone. */
+            <QRCodeSVG value={`${window.location.origin}/bind/${token}`} size={240} />
+          ) : (
+            <div className="sch-skeleton sch-skeleton--qr" />
+          )}
         </div>
         <p className="sch-muted" data-testid="S-22.caption">
           Одноразовый код · погаснет при закрытии карточки

@@ -133,6 +133,56 @@ function AuditList({ entries }: { entries: AuditEntryDto[] }) {
   );
 }
 
+/**
+ * `/bind/:token` — приём ссылки из QR привязки к предмету (`S-22.qr`, В1).
+ *
+ * Экран тот же `S-70`: тот же результат, тот же отказ, те же слова. Разница
+ * только в источнике кода — камера или ссылка, — и она не должна порождать
+ * второго экрана с другим текстом.
+ */
+export function BindScreen({ token }: { token: string }) {
+  const [state, setState] = useState<{ status: "run" } | { status: "ok"; subject: string; classLabel: string } | { status: "err"; message: string }>({ status: "run" });
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .scan(token)
+      .then((r) => alive && setState({ status: "ok", subject: r.subject, classLabel: r.classLabel }))
+      .catch((e: unknown) =>
+        alive && setState({ status: "err", message: e instanceof SchoolApiError ? e.message : "Код не распознан" }),
+      );
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  if (state.status === "run") return <Skeletons count={2} kind="row" />;
+  if (state.status === "err") {
+    // Причина СЛОВАМИ сервера, а не «что-то пошло не так»: истёкший код и
+    // чужой код — разные ответы, и человек должен понять, какой у него.
+    return (
+      <div className="sch-card sch-stack" data-testid="S-70.result">
+        <h2>Привязка не удалась</h2>
+        <p>{state.message}</p>
+        <Button kind="primary" onClick={() => navigate("/journal")}>
+          К журналу
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="sch-card sch-stack" data-testid="S-70.result">
+      <h2>Вы привязаны к предмету</h2>
+      <p>
+        {state.subject} · {state.classLabel}
+      </p>
+      <Button kind="primary" onClick={() => navigate("/journal")}>
+        К журналу
+      </Button>
+    </div>
+  );
+}
+
 // ─────────────────────────── S-70 · сканер QR ───────────────────────────
 
 export function ScanScreen() {
@@ -195,10 +245,14 @@ export function ScanScreen() {
 
 // ─────────────────────────── S-80 · устройства и сессии ───────────────────────────
 
-export function DevicesScreen() {
+export function DevicesScreen({ linkToken }: { linkToken?: string } = {}) {
   const [state, reload] = useAsync(() => api.sessions());
   const { toast, showToast } = useToast();
-  const [pending, setPending] = useState<{ token: string; hint: string } | null>(null);
+  /* Токен из ССЫЛКИ (`/link/:token`, В1) ведёт себя ровно как отсканированный:
+     подтверждение обязательно, привязка не бывает молчаливой (AR-18). */
+  const [pending, setPending] = useState<{ token: string; hint: string } | null>(
+    linkToken ? { token: linkToken, hint: "новое устройство" } : null,
+  );
   const [scanning, setScanning] = useState(false);
   const [denied, setDenied] = useState(false);
   const mobile = useIsMobile();

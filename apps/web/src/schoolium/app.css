@@ -444,12 +444,28 @@
 .sch-card--link { cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: var(--sp-8); font: inherit; color: inherit; border: 1px solid var(--c-border-default); }
 .sch-card--link:hover { border-color: var(--c-brand-violet-500); }
 
-/* Видоискатель (S-70) — мобильный сценарий: камера во весь экран (§7). */
+/* Видоискатель (`S-05`, `S-70`, `S-80`): камера во весь экран.
+   Это СОСТОЯНИЕ компонента, а не раскладка — `S-05` открывает камеру и на
+   десктопе, если она есть (реестр §S-05: «скрыта, если камеры нет»). Пока эти
+   правила жили в мобильном медиазапросе, на десктопе полосу с кнопкой
+   «Отмена» обрезал `overflow: hidden` контейнера, и выйти из сканера было
+   нечем. Найдено смоком. */
 .sch-viewfinder { position: relative; border-radius: var(--r-card); overflow: hidden; background: var(--c-ink-primary); aspect-ratio: 3 / 4; }
 .sch-viewfinder video { width: 100%; height: 100%; object-fit: cover; }
 .sch-viewfinder-frame {
   position: absolute; inset: 18%; border: 3px solid var(--c-ink-on-violet); border-radius: var(--r-lg);
 }
+.sch-viewfinder--full { position: fixed; inset: 0; z-index: 50; border-radius: 0; aspect-ratio: auto; }
+.sch-viewfinder-bar {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: var(--sp-16);
+  padding-bottom: calc(var(--sp-16) + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; gap: var(--sp-12); align-items: center;
+  background: var(--c-surface-overlay-blur);
+  color: var(--c-ink-on-violet);
+  text-align: center;
+}
+.sch-viewfinder-bar .sch-btn { max-width: 320px; }
 
 .sch-toolbar { display: flex; gap: var(--sp-16); align-items: flex-end; margin-bottom: var(--sp-16); flex-wrap: wrap; }
 .sch-field--inline { min-width: 220px; margin-bottom: 0; }
@@ -657,17 +673,6 @@
     color: var(--c-ink-primary);
   }
 
-  /* S-70/S-80 · камера во весь экран, таб-бар скрыт (§6). */
-  .sch-viewfinder--full { position: fixed; inset: 0; z-index: 50; border-radius: 0; aspect-ratio: auto; }
-  .sch-viewfinder-bar {
-    position: absolute; left: 0; right: 0; bottom: 0;
-    padding: var(--sp-16);
-    padding-bottom: calc(var(--sp-16) + env(safe-area-inset-bottom, 0px));
-    display: flex; flex-direction: column; gap: var(--sp-12); align-items: stretch;
-    background: var(--c-surface-overlay-blur);
-    color: var(--c-ink-on-violet);
-    text-align: center;
-  }
 }
 
 /* Шаговые кнопки существуют только на мобайле (§7): на десктопе поле числовое
