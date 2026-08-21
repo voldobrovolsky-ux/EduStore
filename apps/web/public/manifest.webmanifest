@@ -1,25 +1,17 @@
 {
-  "name": "EduStore — Кабинет учителя",
-  "short_name": "EduStore",
-  "description": "Кабинет учителя EduStore: журнал, поурочное планирование, голосовой ввод оценок.",
+  "name": "Schoolium",
+  "short_name": "Schoolium",
+  "description": "Школа целиком: классы и контингент, предметы, персонал, расписание и журнал.",
   "lang": "ru",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#F8F9FA",
-  "theme_color": "#2563EB",
+  "background_color": "#FFFFFF",
+  "theme_color": "#6427C9",
   "icons": [
-    {
-      "src": "/icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "/icons/schoolium-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/schoolium-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/schoolium-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
   ]
 }
