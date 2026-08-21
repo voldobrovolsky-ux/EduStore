@@ -11,7 +11,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { ClassDto, JournalColumnDto, JournalRowDto, MarkValue, SubjectDto } from "@edustore/shared";
 import { api, SchoolApiError } from "../api";
-import { useAsync } from "../hooks";
+import { useAsync, useIsMobile } from "../hooks";
 import {
   Badge,
   Button,
@@ -19,7 +19,7 @@ import {
   ErrorState,
   MARK_ORDER,
   MarkChip,
-  Popover,
+  PopoverOrSheet,
   Skeletons,
   Toast,
   markKey,
@@ -39,6 +39,14 @@ const shortDate = (iso: string): string => `${Number(iso.slice(8, 10))}.${iso.sl
 const longDate = (iso: string): string => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
 
 const fio = (r: JournalRowDto): string => [r.lastName, r.firstName, r.middleName].filter(Boolean).join(" ");
+/**
+ * «Иванов И.» — ФИО в закреплённой колонке мобильного журнала (§6). Полное имя
+ * на 390px съедало бы половину ширины, и колонок дат не осталось бы вовсе;
+ * фамилии с инициалом хватает, чтобы найти строку глазами, а полное имя
+ * называет слой отметки, который открывается тапом по ячейке.
+ */
+const fioShort = (r: JournalRowDto): string =>
+  r.firstName ? `${r.lastName} ${r.firstName[0]}.` : r.lastName;
 
 /** Тексты отказов §9 — те же слова, что отдаёт сервер: расхождения быть не должно. */
 const LESSON_NOT_HELD = "Урок ещё не прошёл";
@@ -170,6 +178,7 @@ function JournalTable({
   showToast: (t: string) => void;
 }) {
   const me = useSession();
+  const mobile = useIsMobile();
   const userId = me.state.status === "authed" ? me.state.me.userId : "";
   const isModerator = me.can("school.manage");
   const mayMarkAt = (c: JournalColumnDto) => me.can("journal.mark.post") && (isModerator || c.teacherId === userId);
@@ -313,8 +322,9 @@ function JournalTable({
                 }
                 data-testid={r.deactivated ? "S-50.row.inactive" : undefined}
               >
-                <th className="sch-j-name" scope="row">
-                  {fio(r)} {r.deactivated ? <Badge muted>деактивирован</Badge> : null}
+                <th className="sch-j-name" scope="row" title={fio(r)}>
+                  {mobile ? fioShort(r) : fio(r)}{" "}
+                  {r.deactivated ? <Badge muted>деактивирован</Badge> : null}
                 </th>
                 {cols.map((c, ci) => (
                   <td
@@ -390,7 +400,7 @@ function TopicPopover({
   const [busy, setBusy] = useState(false);
 
   return (
-    <Popover anchor={anchor} onClose={onClose} label="Тема урока" testId="S-51">
+    <PopoverOrSheet anchor={anchor} onClose={onClose} label="Тема урока" testId="S-51" width={320}>
       <div className="sch-stack sch-pop-form">
         <label className="sch-field">
           <span className="sch-field-label">Тема урока</span>
@@ -427,7 +437,7 @@ function TopicPopover({
           Сохранить
         </Button>
       </div>
-    </Popover>
+    </PopoverOrSheet>
   );
 }
 
@@ -466,7 +476,7 @@ function MarkPopover({
   };
 
   return (
-    <Popover anchor={anchor} onClose={onClose} label={`Отметка · ${fio(row)}`} testId="S-52">
+    <PopoverOrSheet anchor={anchor} onClose={onClose} label={`Отметка · ${fio(row)}`} testId="S-52" width={280}>
       <div className="sch-stack sch-pop-form">
         <p className="sch-muted">
           {fio(row)} · {longDate(col.date)}
@@ -498,6 +508,6 @@ function MarkPopover({
           Убрать отметку
         </Button>
       </div>
-    </Popover>
+    </PopoverOrSheet>
   );
 }

@@ -15,8 +15,8 @@
 import { useState } from "react";
 import type { ClassDto, StudentDto } from "@edustore/shared";
 import { api, SchoolApiError } from "../api";
-import { useAsync } from "../hooks";
-import { Badge, Button, EmptyState, ErrorState, Field, Modal, Skeletons, useToast, Toast } from "../ui";
+import { useAsync, useIsMobile } from "../hooks";
+import { Badge, Button, EmptyState, ErrorState, Field, Modal, NumberField, Skeletons, useToast, Toast } from "../ui";
 import { useSession } from "../session";
 import { navigate } from "../router";
 
@@ -183,6 +183,8 @@ export function ClassesWizard({ version, onClose, onDone }: { version: number; o
         width={640}
         onClose={close}
         testId="M-01"
+        mobile="fullscreen"
+        onBack={step > 1 ? () => setStep(step - 1) : undefined}
         footer={
           <div className="sch-actions">
             {step > 1 ? (
@@ -209,12 +211,13 @@ export function ClassesWizard({ version, onClose, onDone }: { version: number; o
         </div>
 
         {step === 1 ? (
-          <Field
+          <NumberField
             label="Сколько параллелей создать"
             testId="S-11.input.parallels"
-            inputMode="numeric"
+            min={1}
+            max={11}
             value={w.parallels}
-            onChange={(e) => setW({ ...w, parallels: e.target.value })}
+            onValue={(v) => setW({ ...w, parallels: v })}
             error={w.parallels !== "" && !stepValid(1) ? "Укажите от 1 до 11" : null}
           />
         ) : null}
@@ -254,26 +257,28 @@ export function ClassesWizard({ version, onClose, onDone }: { version: number; o
         ) : null}
 
         {step === 3 ? (
-          <Field
+          <NumberField
             label="Учеников в каждом классе"
             testId="S-11.input.students"
-            inputMode="numeric"
+            min={1}
+            max={40}
             value={w.students}
-            onChange={(e) => setW({ ...w, students: e.target.value })}
+            onValue={(v) => setW({ ...w, students: v })}
             error={w.students !== "" && !stepValid(3) ? "Укажите от 1 до 40" : null}
           />
         ) : null}
 
         {step === 4 ? (
           <div className="sch-stack">
-            <Field
+            <NumberField
               label="Групп в классе"
               testId="S-11.input.groups"
-              inputMode="numeric"
+              min={2}
+              max={4}
               value={w.groups === null ? "" : String(w.groups)}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                setW({ ...w, groups: Number.isFinite(v) && e.target.value !== "" ? v : null, groupsChosen: e.target.value !== "" });
+              onValue={(raw) => {
+                const v = Number(raw);
+                setW({ ...w, groups: Number.isFinite(v) && raw !== "" ? v : null, groupsChosen: raw !== "" });
               }}
               error={
                 w.groups !== null && (w.groups < 2 || w.groups > 4)
@@ -319,12 +324,13 @@ export function ClassesWizard({ version, onClose, onDone }: { version: number; o
                 Указываю девочек
               </label>
             </div>
-            <Field
+            <NumberField
               label={w.sexKind === "boys" ? "Мальчиков в классе" : "Девочек в классе"}
               testId="S-11.input.sexCount"
-              inputMode="numeric"
+              min={0}
+              max={students || 0}
               value={w.sexCount}
-              onChange={(e) => setW({ ...w, sexCount: e.target.value })}
+              onValue={(v) => setW({ ...w, sexCount: v })}
               error={w.sexCount !== "" && sexCount > students ? "Не больше численности класса" : null}
             />
             {/* Второй пол вычисляется как разность и показывается ДО подтверждения. */}
@@ -352,6 +358,7 @@ export function ClassesWizard({ version, onClose, onDone }: { version: number; o
           width={400}
           onClose={() => setConfirmExit(false)}
           testId="M-14"
+        mobile="sheet"
           footer={
             <div className="sch-actions">
               <Button kind="ghost" onClick={() => setConfirmExit(false)}>
@@ -382,6 +389,7 @@ export function ClassScreen({ classId }: { classId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<null | { kind: "class" } | { kind: "student"; student: StudentDto }>(null);
   const { toast, showToast } = useToast();
+  const mobile = useIsMobile();
   const mayWrite = can("contingent.write");
 
   if (state.status === "loading") return <Skeletons count={10} kind="row" />;
@@ -409,7 +417,10 @@ export function ClassScreen({ classId }: { classId: string }) {
       </div>
 
       <div className="sch-tablewrap">
-        <table className="sch-table" data-testid="S-12.table.roster">
+        {/* На мобайле таблица скроллится ВНУТРИ контейнера, а колонка
+            «Фамилия» закреплена (§6): номер строки при этом уходит — он
+            производный от порядка, а фамилия и есть строка. */}
+        <table className="sch-table sch-table--roster" data-testid="S-12.table.roster">
           <thead>
             <tr>
               <th>№</th>
@@ -456,7 +467,13 @@ export function ClassScreen({ classId }: { classId: string }) {
       </div>
 
       {mayWrite ? (
-        <div className="sch-actions sch-actions--start" style={{ marginTop: "var(--sp-16)" }}>
+        /* Кнопки действий на мобайле — прилипающая панель снизу (§6): список
+           контингента длинный, и уводить действия за его конец значит прятать
+           их от человека, который до конца не долистает. */
+        <div
+          className={mobile ? "sch-sticky-actions" : "sch-actions sch-actions--start"}
+          style={mobile ? undefined : { marginTop: "var(--sp-16)" }}
+        >
           <Button kind="secondary" testId="S-12.btn.addStudent" onClick={() => setEditing("new")}>
             Добавить ученика
           </Button>
@@ -573,6 +590,7 @@ function StudentModal({
       width={480}
       onClose={onClose}
       testId="M-02"
+        mobile="fullscreen"
       footer={
         <div className="sch-actions">
           <Button kind="ghost" onClick={onClose}>
@@ -696,6 +714,7 @@ function ConfirmDelete({
       width={400}
       onClose={onClose}
       testId="M-13"
+        mobile="sheet"
       footer={
         <div className="sch-actions">
           <Button kind="ghost" onClick={onClose}>

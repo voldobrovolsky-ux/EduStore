@@ -12,7 +12,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { ACCESS_PARAMS, safeNext } from "@edustore/shared";
 import { api, SchoolApiError } from "../api";
 import { Button, Field } from "../ui";
-import { usePolling } from "../hooks";
+import { useIsMobile, usePolling } from "../hooks";
 import { navigate } from "../router";
 
 function AuthFrame({ children }: { children: React.ReactNode }) {
@@ -58,6 +58,7 @@ export function LandingScreen({ authed, startScreen }: { authed: boolean; startS
 // ─────────────────────────── S-01 · вход, привязка устройства ───────────────────────────
 
 export function LoginScreen({ next }: { next: string | null }) {
+  const mobile = useIsMobile();
   const [token, setToken] = useState<{ id: string; token: string } | null>(null);
   const [status, setStatus] = useState<"waiting" | "used" | "expired">("waiting");
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +92,32 @@ export function LoginScreen({ next }: { next: string | null }) {
     ACCESS_PARAMS.pollIntervalMs,
     status === "waiting",
   );
+
+  /*
+   * `S-01` на мобайле НЕ показывает QR (§6): телефон не сканирует сам себя, и
+   * код, который некому навести на камеру, — это тупик с картинкой. Вместо
+   * него — прямое объяснение, откуда берётся доступ, и ссылка на `S-05`.
+   * Поллинг при этом продолжается: если ноутбук рядом уже отсканировал код,
+   * телефон уйдёт внутрь сам.
+   */
+  if (mobile) {
+    return (
+      <AuthFrame>
+        <div className="sch-card sch-auth-card sch-stack">
+          <p data-testid="S-01.caption">
+            Вход по QR от модератора: попросите модератора открыть вашу карточку и наведите камеру на его экран
+          </p>
+          <p data-testid="S-01.status">{status === "used" ? "Устройство подключено" : "Ожидание сканирования…"}</p>
+          <Button kind="primary" testId="S-01.link.byCode" onClick={() => navigate("/login/code")}>
+            Войти по коду от модератора
+          </Button>
+          <p className="sch-muted" data-testid="S-01.note.help">
+            Первый раз здесь? Доступ выдаёт модератор школы — обратитесь к нему
+          </p>
+        </div>
+      </AuthFrame>
+    );
+  }
 
   return (
     <AuthFrame>

@@ -1,12 +1,14 @@
 /*
- * Schoolium 1.1.1 — визуальный слой десктопа (`60-design.md`, `75-adaptive.md`).
+ * Schoolium 1.1.1 — визуальный слой (`60-design.md`, `75-adaptive.md`).
  *
  * Ни одного литерального цвета, размера, радиуса или тени: всё из
  * `tokens.css`, сгенерированного из `docs/design/tokens.json`. Иначе проверка
  * контраста G-37 доказывает пары токенов, которых на экране нет.
  *
- * Раскладка здесь ДЕСКТОПНАЯ (≥768px) — этап 2. Мобильная (<768px) приходит
- * этапом 3 и живёт отдельным блоком медиазапросов, а не обрезкой этой.
+ * Раскладок ДВЕ. Основная часть файла — десктопная (≥768px, этап 2);
+ * мобильная (<768px, этап 3) живёт отдельным блоком в конце файла, а не
+ * обрезкой десктопной. Порядок именно такой: мобильные правила обязаны
+ * перекрывать десктопные, а не наоборот.
  */
 
 /* ─────────────────────────── основа ─────────────────────────── */
@@ -246,10 +248,14 @@
   animation: sch-pop 150ms ease-out;
 }
 @keyframes sch-pop { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
-.sch-modal-head { display: flex; align-items: center; gap: var(--sp-12); padding: var(--sp-20) var(--sp-24); border-bottom: 1px solid var(--c-border-default); }
+.sch-modal-head { display: flex; align-items: center; gap: var(--sp-12); padding: var(--sp-20) var(--sp-24); border-bottom: 1px solid var(--c-border-default); flex: 0 0 auto; }
 .sch-modal-head h2 { flex: 1 1 auto; font-size: var(--fs-xl); }
-.sch-modal-body { padding: var(--sp-24); overflow-y: auto; }
-.sch-modal-foot { padding: var(--sp-16) var(--sp-24); border-top: 1px solid var(--c-border-default); }
+/* `flex: 1 1 auto` + `min-height: 0` — иначе тело не сжимается ниже своего
+   содержимого (значение `min-height: auto` у флекс-элемента), карточка растёт
+   за свои `max-height`, а футер уезжает под контент и перестаёт нажиматься.
+   Найдено мобильным смоком: `S-31.btn.close` перекрывали кнопки тела. */
+.sch-modal-body { padding: var(--sp-24); overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.sch-modal-foot { padding: var(--sp-16) var(--sp-24); border-top: 1px solid var(--c-border-default); flex: 0 0 auto; }
 
 /* Поповер — второй способ показать слой; ловушка фокуса та же (§3). */
 .sch-popover {
@@ -447,3 +453,223 @@
 
 .sch-toolbar { display: flex; gap: var(--sp-16); align-items: flex-end; margin-bottom: var(--sp-16); flex-wrap: wrap; }
 .sch-field--inline { min-width: 220px; margin-bottom: 0; }
+
+/* ═══════════════════════ МОБАЙЛ (<768px) — этап 3 ═══════════════════════
+ *
+ * Отдельный блок, а не обрезка десктопа (`75-adaptive.md`, правило номер один).
+ * Всё, что ниже, — из реестра: §2.2 оболочка, §3 формы слоёв, §4 размеры
+ * кнопок, §6 адаптация экранов, §7 ввод. Скрытие элемента допустимо, только
+ * если оно названо там; молчаливое «не поместилось» — дефект.
+ *
+ * Слои (`.sch-overlay[data-shape]`) описаны ВНЕ медиазапроса: форма выбрана
+ * раскладкой в React по точке останова (`useIsMobile`), и CSS обязан
+ * подчиниться этому выбору, а не спорить с ним из второго источника правды.
+ */
+
+/* ─── полноэкранный поток и нижний лист (§3) ─── */
+
+.sch-overlay[data-shape='fullscreen'] { padding: 0; align-items: stretch; justify-content: stretch; }
+.sch-modal[data-shape='fullscreen'] {
+  width: 100%; max-width: none; max-height: none; height: 100%;
+  border-radius: 0; box-shadow: none;
+  /* Появление БЕЗ `scale`: карточка по центру подскакивает, поток во весь
+     экран — нет, ему неоткуда подскакивать. Побочный эффект тот же по сути:
+     пока шёл `scale(0.97)`, все размеры внутри были на 3% меньше заявленных,
+     и мишень 44px мерилась как 43px. Проверка тап-мишеней это и поймала. */
+  animation: sch-fade 150ms ease-out;
+}
+/* Кнопки полноэкранного потока прижаты к низу над safe-area (§3). Прижимает
+   их флекс-колонка карточки, а не `position: sticky`: липкий футер лежит в
+   одном потоке с телом и перекрывается его содержимым — мобильный смок ловил
+   это как «клик по «Закрыть» перехватывает кнопка удаления». */
+.sch-modal[data-shape='fullscreen'] .sch-modal-foot {
+  background: var(--c-surface-card);
+  padding-bottom: calc(var(--sp-16) + env(safe-area-inset-bottom, 0px));
+}
+
+.sch-overlay[data-shape='sheet'] { padding: 0; align-items: flex-end; }
+.sch-modal[data-shape='sheet'] {
+  width: 100%; max-width: none; max-height: 90vh;
+  border-radius: var(--r-card) var(--r-card) 0 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: sch-rise 150ms ease-out;
+}
+@keyframes sch-rise { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+/* Ручка-полоска 36×4 (§3): она же цель свайпа вниз — единственного жеста версии. */
+.sch-sheet-handle {
+  width: 36px; height: 4px; border-radius: var(--r-pill);
+  background: var(--c-border-default);
+  margin: var(--sp-8) auto 0;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 767px) {
+  /* ─── оболочка §2.2 ─── */
+
+  .sch-shell--mobile { display: flex; flex-direction: column; min-height: 100vh; }
+
+  .sch-header {
+    height: 56px; flex: 0 0 56px;
+    display: flex; align-items: center; gap: var(--sp-8);
+    padding: 0 var(--sp-16);
+    border-bottom: 1px solid var(--c-border-default);
+    background: var(--c-surface-page);
+    position: sticky; top: 0; z-index: 5;
+  }
+  .sch-header-title {
+    font-family: var(--font-display); font-size: var(--fs-lg); font-weight: var(--fw-semibold);
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .sch-header-title--back {
+    background: none; border: 0; padding: 0; color: inherit; cursor: pointer; text-align: left;
+    min-height: var(--tap-min);
+  }
+  .sch-header-user {
+    width: var(--tap-min); height: var(--tap-min); flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: none; border: 0; padding: 0; cursor: pointer;
+  }
+
+  /* Кнопка во всю ширину (§4) не помещается рядом с заголовком: шапка экрана
+     и строки «заголовок + действие» складываются в колонку, а не распирают
+     страницу вбок. Найдено мобильным смоком на `S-20` и `S-30`. */
+  .sch-page-head { flex-direction: column; align-items: stretch; gap: var(--sp-12); }
+  .sch-row--between { flex-wrap: wrap; }
+  .sch-row { min-width: 0; }
+
+  .sch-content { padding: var(--sp-16); flex: 1 1 auto; }
+  /* Нижний отступ контента учитывает таб-бар и safe-area (§2.2): иначе
+     последняя карточка списка вечно наполовину под панелью. */
+  .sch-shell--mobile .sch-content {
+    padding-bottom: calc(64px + var(--sp-16) + env(safe-area-inset-bottom, 0px));
+  }
+  .sch-page { max-width: none; }
+
+  .sch-tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    height: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    display: flex;
+    background: var(--c-surface-page);
+    border-top: 1px solid var(--c-border-default);
+  }
+  /* Полноэкранный поток прячет таб-бар и возвращает по завершении (§2.2).
+     Признак ставит сам слой — оболочка о слое ничего не знает. */
+  body[data-sch-flow] .sch-tabbar { display: none; }
+  .sch-tab {
+    flex: 1 1 0; min-width: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-4);
+    background: none; border: 0; cursor: pointer; font-family: inherit;
+    color: var(--c-ink-secondary);
+    padding: 0;
+  }
+  .sch-tab[aria-current='page'] { color: var(--c-brand-violet-700); }
+  .sch-tab-icon { font-size: var(--fs-lg); line-height: 1; }
+  .sch-tab-label { font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
+  /* ─── кнопки §4: высота 48, во всю ширину, кроме иконок, FAB и чипов ─── */
+
+  .sch-btn { height: 48px; width: 100%; }
+  /* `flex: 0 0 auto` и `min-*` — не украшение: иконка в шапке модалки и чип в
+     ряду это флекс-элементы, и без запрета сжатия соседний длинный заголовок
+     ужимал их до 37px при заявленных 44. Мишень меряется по МЕНЬШЕЙ стороне,
+     поэтому «высота 44» без ширины ничего не гарантирует. */
+  .sch-btn--icon, .sch-btn--fab {
+    width: var(--tap-min); height: var(--tap-min);
+    min-width: var(--tap-min); min-height: var(--tap-min);
+    flex: 0 0 auto;
+  }
+  .sch-btn--chip {
+    width: auto; height: var(--tap-min);
+    min-width: var(--tap-min); min-height: var(--tap-min);
+    flex: 0 0 auto;
+  }
+  /* Пара кнопок: колонкой, primary СВЕРХУ (§4). В разметке primary идёт
+     последним (десктоп ставит его справа), поэтому колонка развёрнутая. */
+  .sch-actions { flex-direction: column-reverse; align-items: stretch; gap: var(--sp-8); }
+  .sch-actions--start { flex-direction: column; }
+  /* Чипы и сегменты остаются рядами: это выбор из набора, а не действие. */
+  .sch-chips .sch-btn, .sch-markrow .sch-btn { width: auto; }
+
+  /* ─── чипы отметки 44px (§3, M-12) ─── */
+  .sch-mark--btn { width: var(--tap-min); height: var(--tap-min); }
+  .sch-markrow { flex-wrap: wrap; }
+
+  /* ─── экраны §6 ─── */
+
+  /* Карточки — одна колонка (S-10, S-20, S-30, S-60). */
+  .sch-cards--4, .sch-cards--3 { grid-template-columns: 1fr; gap: var(--sp-12); }
+  [data-testid='S-10.card.class'] { min-height: 88px; }
+  .sch-grid12 { grid-template-columns: 1fr; }
+  .sch-terms { grid-template-columns: 1fr; }
+  .sch-toolbar { flex-direction: column; align-items: stretch; }
+  .sch-field--inline { min-width: 0; }
+  .sch-auth-card, .sch-auth-card--wide { width: 100%; }
+  .sch-auth { padding: var(--sp-24); justify-content: flex-start; padding-top: var(--sp-40); }
+  .sch-avatar--lg { width: 96px; height: 96px; }               /* S-04 (§6) */
+  .sch-qr-frame svg { width: 100%; height: auto; max-width: 240px; }
+
+  /* Три широкие таблицы скроллятся ВНУТРИ контейнера — `body` по горизонтали
+     не скроллится никогда (§6). */
+  .sch-tablewrap, .sch-week, .sch-journal { max-width: 100%; }
+  .sch-journal { max-height: 60vh; }
+  /* S-12: закреплена колонка «Фамилия» (§6). Первая колонка — номер, вторая — фамилия. */
+  .sch-table--roster th:nth-child(2), .sch-table--roster td:nth-child(2) {
+    position: sticky; left: 0; z-index: 1; background: var(--c-surface-card);
+  }
+  .sch-table--roster tr.sch-row--boy td:nth-child(2) { background: var(--c-sex-boy-bg); }
+  .sch-table--roster tr.sch-row--girl td:nth-child(2) { background: var(--c-sex-girl-bg); }
+  .sch-table--roster th:first-child, .sch-table--roster td:first-child { display: none; }
+  /* Кнопки действий карточки класса — прилипающая панель снизу (§6). */
+  .sch-sticky-actions {
+    position: sticky; bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    background: var(--c-surface-page);
+    padding: var(--sp-12) 0;
+    border-top: 1px solid var(--c-border-default);
+    margin-top: var(--sp-16);
+    display: flex; flex-direction: column; gap: var(--sp-8);
+  }
+  /* S-50: ФИО закреплены и сокращены, даты скроллятся внутри контейнера (§6). */
+  .sch-journal .sch-j-name { min-width: 116px; }
+
+  /* ─── ввод §7: шаговые кнопки «−»/«+» рядом с числовым полем ─── */
+  .sch-stepper { display: flex; align-items: center; gap: var(--sp-8); }
+  .sch-stepper .sch-input { flex: 1 1 auto; min-width: 0; text-align: center; }
+  .sch-stepper .sch-btn { width: var(--tap-min); flex: 0 0 var(--tap-min); }
+
+  /* Тост — над таб-баром, а не под ним (§5). */
+  .sch-toast { bottom: calc(64px + var(--sp-16) + env(safe-area-inset-bottom, 0px)); }
+  body[data-sch-flow] .sch-toast { bottom: var(--sp-24); }
+
+  /* S-40 · закреплён столбец времени (§6). */
+  .sch-week-time {
+    position: sticky; left: 0; z-index: 1;
+    background: var(--c-surface-canvas);
+    min-width: 56px;
+  }
+
+  /* S-30 · сворачиваемые секции (§6). */
+  .sch-section-toggle {
+    display: flex; align-items: center; gap: var(--sp-8);
+    min-height: var(--tap-min);
+    background: none; border: 0; padding: 0; cursor: pointer;
+    font-family: var(--font-display); font-size: var(--fs-lg); font-weight: var(--fw-semibold);
+    color: var(--c-ink-primary);
+  }
+
+  /* S-70/S-80 · камера во весь экран, таб-бар скрыт (§6). */
+  .sch-viewfinder--full { position: fixed; inset: 0; z-index: 50; border-radius: 0; aspect-ratio: auto; }
+  .sch-viewfinder-bar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: var(--sp-16);
+    padding-bottom: calc(var(--sp-16) + env(safe-area-inset-bottom, 0px));
+    display: flex; flex-direction: column; gap: var(--sp-12); align-items: stretch;
+    background: var(--c-surface-overlay-blur);
+    color: var(--c-ink-on-violet);
+    text-align: center;
+  }
+}
+
+/* Шаговые кнопки существуют только на мобайле (§7): на десктопе поле числовое
+   и правится с клавиатуры, лишняя пара кнопок там — шум. */
+@media (min-width: 768px) { .sch-stepper .sch-btn--stepper { display: none; } }

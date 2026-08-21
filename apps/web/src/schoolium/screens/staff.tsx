@@ -17,8 +17,8 @@ import {
   type StaffCardDto,
 } from "@edustore/shared";
 import { api, SchoolApiError } from "../api";
-import { useAsync, usePolling } from "../hooks";
-import { Avatar, Badge, Button, EmptyState, ErrorState, Modal, Skeletons, Toast, useToast } from "../ui";
+import { useAsync, useIsMobile, usePolling } from "../hooks";
+import { Avatar, Badge, Button, EmptyState, ErrorState, Modal, PopoverOrSheet, Skeletons, Toast, useToast } from "../ui";
 import { useSession } from "../session";
 import { navigate } from "../router";
 
@@ -29,7 +29,10 @@ export function StaffScreen({ openId }: { openId?: string }) {
   const { can } = useSession();
   const [state, reload] = useAsync(() => api.staff());
   const [expanded, setExpanded] = useState(false);
+  /** Свёрнутые секции мобайла (§6). По умолчанию раскрыты все три. */
+  const [collapsed, setCollapsed] = useState<Set<number>>(() => new Set());
   const { toast, showToast } = useToast();
+  const mobile = useIsMobile();
   const mayManage = can("staff.manage");
 
   if (state.status === "loading") return <Skeletons count={6} />;
@@ -75,9 +78,34 @@ export function StaffScreen({ openId }: { openId?: string }) {
       ) : (
         <div className="sch-sections">
           {STAFF_SECTIONS.map((sec) => (
-            <section key={sec.level} data-testid={`S-30.section.level${sec.level}`}>
+            /* На мобайле секции сворачиваемые (§6): три раскрытых списка на
+               390px превращают экран в бесконечную ленту, в которой третья
+               секция — «Преподаватели», самая нужная, — всегда внизу.
+               На десктопе три колонки видны разом, и сворачивать нечего. */
+            <section
+              key={sec.level}
+              data-testid={`S-30.section.level${sec.level}`}
+              className={mobile ? "sch-section--collapsible" : undefined}
+            >
               <div className="sch-row sch-row--between">
-                <h2 className="sch-section-title">{sec.title}</h2>
+                {mobile ? (
+                  <button
+                    className="sch-section-toggle"
+                    aria-expanded={!collapsed.has(sec.level)}
+                    onClick={() =>
+                      setCollapsed((cur) => {
+                        const next = new Set(cur);
+                        if (next.has(sec.level)) next.delete(sec.level);
+                        else next.add(sec.level);
+                        return next;
+                      })
+                    }
+                  >
+                    <span aria-hidden="true">{collapsed.has(sec.level) ? "▸" : "▾"}</span> {sec.title}
+                  </button>
+                ) : (
+                  <h2 className="sch-section-title">{sec.title}</h2>
+                )}
                 {/* Только у множественных ролей (AR-60). */}
                 {mayManage && sec.addable ? (
                   <Button
@@ -89,13 +117,15 @@ export function StaffScreen({ openId }: { openId?: string }) {
                   </Button>
                 ) : null}
               </div>
-              <div className="sch-cards--3">
-                {cards
-                  .filter((c) => c.section === sec.level)
-                  .map((c) => (
-                    <PersonCard key={c.id} card={c} />
-                  ))}
-              </div>
+              {mobile && collapsed.has(sec.level) ? null : (
+                <div className="sch-cards--3">
+                  {cards
+                    .filter((c) => c.section === sec.level)
+                    .map((c) => (
+                      <PersonCard key={c.id} card={c} />
+                    ))}
+                </div>
+              )}
             </section>
           ))}
         </div>
@@ -141,10 +171,11 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
   const [status, setStatus] = useState<"waiting" | "scanned" | "used" | "expired">("waiting");
   const [registeredName, setRegisteredName] = useState<string | null>(card.name);
   const [loginCode, setLoginCode] = useState<{ code: string; expiresAt: string } | null>(null);
-  const [addRole, setAddRole] = useState(false);
+  const [addRole, setAddRole] = useState<DOMRect | null>(null);
   const [confirm, setConfirm] = useState<null | "delete" | "deactivate">(null);
   const { toast, showToast } = useToast();
   const mayManage = can("staff.manage");
+  const qrSize = useIsMobile() ? 200 : 240;
 
   // QR активации выпускается при открытии карточки; закрытие карточки его гасит.
   useEffect(() => {
@@ -194,6 +225,7 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
         width={480}
         onClose={close}
         testId="M-06"
+        mobile="fullscreen"
         footer={
           <div className="sch-actions">
             <Button kind="ghost" testId="S-31.btn.close" onClick={close}>
@@ -205,7 +237,13 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
         {!cur.registered ? (
           <div className="sch-qr">
             <div className="sch-qr-frame" data-testid="S-31.qr">
-              {token ? <QRCodeSVG value={`${window.location.origin}/join/${token}`} size={240} /> : <div className="sch-skeleton sch-skeleton--qr" />}
+              {token ? (
+                /* На мобайле QR 200px (§6): 240 не оставляют места подписи и
+                   сроку жизни кода, а без них человек не знает, что код гаснет. */
+                <QRCodeSVG value={`${window.location.origin}/join/${token}`} size={qrSize} />
+              ) : (
+                <div className="sch-skeleton sch-skeleton--qr" />
+              )}
             </div>
             <p data-testid="S-31.status">
               {registeredName ? `Зарегистрирован: ${registeredName}` : "Ожидание регистрации"}
@@ -245,7 +283,11 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
             {mayManage ? (
               <>
                 <div className="sch-actions sch-actions--start">
-                  <Button kind="secondary" testId="S-31.btn.addRole" onClick={() => setAddRole(true)}>
+                  <Button
+                    kind="secondary"
+                    testId="S-31.btn.addRole"
+                    onClick={(e) => setAddRole(e.currentTarget.getBoundingClientRect())}
+                  >
                     Добавить роль
                   </Button>
                   <Button
@@ -302,12 +344,19 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
         )}
       </Modal>
 
-      {/* M-07 — добавление роли: поповер 320px у кнопки (§3). */}
+      {/*
+        M-07 — добавление роли: поповер 320px У КНОПКИ на десктопе, нижний лист
+        на мобайле (§3). До этапа 3 здесь стояла центрированная модалка, хотя
+        комментарий рядом называл поповер: реестр говорил одно, экран делал
+        другое, и заметить это было нечем — идентификаторы модалок ворота не
+        проверяют, а смок до `M-07` не доходит.
+      */}
       {addRole ? (
-        <Modal
-          title="Добавить роль"
+        <PopoverOrSheet
+          label="Добавить роль"
           width={320}
-          onClose={() => setAddRole(false)}
+          anchor={addRole}
+          onClose={() => setAddRole(null)}
           testId="M-07"
           level={2}
         >
@@ -318,14 +367,14 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
                 kind="secondary"
                 onClick={async () => {
                   await act(() => api.addRole(cur.id, r));
-                  setAddRole(false);
+                  setAddRole(null);
                 }}
               >
                 {ROLE_LABELS[r]}
               </Button>
             ))}
           </div>
-        </Modal>
+        </PopoverOrSheet>
       ) : null}
 
       {/* M-13 — подтверждение разрушающего действия над сотрудником. */}
@@ -335,6 +384,7 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
           width={400}
           onClose={() => setConfirm(null)}
           testId="M-13"
+        mobile="sheet"
           level={2}
           footer={
             <div className="sch-actions">

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "smoke:onboarding": "node ../../e2e/smoke-onboarding.mjs"
+    "smoke:onboarding": "node ../../e2e/smoke-onboarding.mjs",
+    "smoke:onboarding:mobile": "SMOKE_VIEWPORT=mobile node ../../e2e/smoke-onboarding.mjs"
   },
   "dependencies": {
     "@edustore/shared": "*",

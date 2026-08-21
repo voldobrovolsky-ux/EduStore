@@ -10,8 +10,8 @@
 import { useEffect, useState } from "react";
 import { DAY_MINUTES_CAP, recommendedTerms, type SchedulePreviewDto, type TermDto } from "@edustore/shared";
 import { api, SchoolApiError, type LoadEntry } from "../api";
-import { useAsync } from "../hooks";
-import { Button, EmptyState, ErrorState, Field, Modal, Skeletons, Toast, useToast } from "../ui";
+import { useAsync, useIsMobile } from "../hooks";
+import { Button, EmptyState, ErrorState, Field, Modal, NumberField, Skeletons, Toast, useToast } from "../ui";
 import { useSession } from "../session";
 
 const DAY_NAMES = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
@@ -108,6 +108,15 @@ export function WeekGrid({ preview, testId }: { preview: SchedulePreviewDto; tes
   const classes = [...new Map(preview.slots.map((s) => [s.classId, s.classLabel])).entries()];
   const maxSlot = Math.max(1, ...preview.slots.map((s) => s.slotNo));
   const days = Math.max(1, ...preview.slots.map((s) => s.dayNo + 1));
+  const mobile = useIsMobile();
+
+  /*
+   * На мобайле сетка разворачивается (§6): переключатель классов сверху,
+   * закреплён столбец времени, дни — колонки. Десктопная ориентация
+   * «класс × (день · урок)» на 390px даёт под сотню колонок и остаётся
+   * нечитаемой при любом скролле — это не «то же самое, только уже».
+   */
+  if (mobile) return <WeekGridMobile preview={preview} testId={testId} classes={classes} maxSlot={maxSlot} days={days} />;
 
   return (
     // Широкое содержимое скроллится ВНУТРИ контейнера: `body` по горизонтали не
@@ -159,6 +168,91 @@ export function WeekGrid({ preview, testId }: { preview: SchedulePreviewDto; tes
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * `S-40`/`S-42` на мобайле: один класс за раз, строки — уроки дня, колонки —
+ * дни недели. Столбец времени закреплён, широкое содержимое скроллится ВНУТРИ
+ * контейнера — `body` по горизонтали не скроллится никогда (§6).
+ */
+function WeekGridMobile({
+  preview,
+  testId,
+  classes,
+  maxSlot,
+  days,
+}: {
+  preview: SchedulePreviewDto;
+  testId: string;
+  classes: [string, string][];
+  maxSlot: number;
+  days: number;
+}) {
+  const [classId, setClassId] = useState(classes[0]?.[0] ?? "");
+  const current = classes.some(([id]) => id === classId) ? classId : (classes[0]?.[0] ?? "");
+
+  return (
+    <>
+      {/* Переключатель классов сверху (§6): на телефоне все классы разом не
+          помещаются, и выбор класса — это выбор предмета разговора, а не фильтр. */}
+      <div className="sch-field" data-testid="S-40.select.class">
+        <span className="sch-field-label">Класс</span>
+        <select className="sch-input" value={current} onChange={(e) => setClassId(e.target.value)}>
+          {classes.map(([id, label]) => (
+            <option key={id} value={id}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="sch-week" data-testid={testId}>
+        <table>
+          <thead>
+            <tr>
+              <th className="sch-week-time">Урок</th>
+              {Array.from({ length: days }, (_, d) => (
+                <th key={d}>{DAY_NAMES[d]}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: maxSlot }, (_, s) => (
+              <tr key={s}>
+                <th className="sch-week-time" scope="row">
+                  {s + 1}
+                </th>
+                {Array.from({ length: days }, (_, d) => {
+                  const cell = preview.slots.filter(
+                    (x) => x.classId === current && x.dayNo === d && x.slotNo === s + 1,
+                  );
+                  const paired = cell.length > 1;
+                  return (
+                    <td
+                      key={d}
+                      className={paired ? "sch-cell--paired" : undefined}
+                      data-testid={paired ? "S-40.cell.paired" : undefined}
+                    >
+                      {cell.map((x, i) => (
+                        <span className="sch-slot" key={i}>
+                          <span className="sch-slot-subject">
+                            {x.subjectName}
+                            {x.groupNo ? ` · гр. ${x.groupNo}` : ""}
+                          </span>
+                          <br />
+                          <span className="sch-slot-teacher">{x.teacherName}</span>
+                        </span>
+                      ))}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -219,6 +313,14 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
   const dirty = terms.some((t) => t.dateFrom || t.dateTo) || day.slotsPerDay !== "";
   const close = () => (dirty ? setConfirmExit(true) : onClose());
 
+  /** Часы одной привязки: одно место правки — и для поля, и для шаговых кнопок. */
+  const setHours = (bindingId: string, hours: number) =>
+    setLoad((cur) =>
+      cur
+        ? { ...cur, entries: cur.entries.map((x) => (x.bindingId === bindingId ? { ...x, hoursPerWeek: Math.max(0, hours) } : x)) }
+        : cur,
+    );
+
   const termsValid = terms.every((t) => t.dateFrom && t.dateTo);
 
   const dayLength = (): number => {
@@ -262,6 +364,8 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
         width={720}
         onClose={close}
         testId="M-08"
+        mobile="fullscreen"
+        onBack={step > 1 ? () => setStep(step - 1) : undefined}
         footer={
           <div className="sch-actions">
             {step > 1 ? (
@@ -411,21 +515,36 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
                           {e.subjectName} · {e.classLabel} класс
                           {e.scope === "group" ? `, группа ${e.groupNos.join(", ")}` : ""}
                         </label>
-                        <input
-                          id={`h-${e.bindingId}`}
-                          className="sch-input"
-                          data-testid="S-41.input.hours"
-                          data-binding-id={e.bindingId}
-                          inputMode="numeric"
-                          value={e.hoursPerWeek || ""}
-                          onChange={(ev) => {
-                            const v = Number(ev.target.value) || 0;
-                            setLoad({
-                              ...load,
-                              entries: load.entries.map((x) => (x.bindingId === e.bindingId ? { ...x, hoursPerWeek: v } : x)),
-                            });
-                          }}
-                        />
+                        {/* Шаговые кнопки 44×44 рядом с полем часов (§7) —
+                            на мобайле; на десктопе CSS их не рендерит. */}
+                        <div className="sch-stepper">
+                          <Button
+                            kind="secondary"
+                            className="sch-btn--stepper"
+                            aria-label={`${e.subjectName}: меньше часов`}
+                            disabled={e.hoursPerWeek <= 0}
+                            onClick={() => setHours(e.bindingId, e.hoursPerWeek - 1)}
+                          >
+                            −
+                          </Button>
+                          <input
+                            id={`h-${e.bindingId}`}
+                            className="sch-input"
+                            data-testid="S-41.input.hours"
+                            data-binding-id={e.bindingId}
+                            inputMode="numeric"
+                            value={e.hoursPerWeek || ""}
+                            onChange={(ev) => setHours(e.bindingId, Number(ev.target.value) || 0)}
+                          />
+                          <Button
+                            kind="secondary"
+                            className="sch-btn--stepper"
+                            aria-label={`${e.subjectName}: больше часов`}
+                            onClick={() => setHours(e.bindingId, e.hoursPerWeek + 1)}
+                          >
+                            +
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   <p className="sch-muted" data-testid="S-41.summary.class">
@@ -474,28 +593,31 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
         {/* Экран 4 — параметры дня. «Уроков в день» — верхняя граница (AR-114). */}
         {step === 4 ? (
           <div className="sch-stack">
-            <Field
+            <NumberField
               label="Уроков в день"
               hint="верхняя граница: каждый класс получит не больше потолка своей параллели"
               testId="S-41.input.slotsPerDay"
-              inputMode="numeric"
+              min={1}
+              max={8}
               value={day.slotsPerDay}
-              onChange={(e) => setDay({ ...day, slotsPerDay: e.target.value })}
+              onValue={(v) => setDay({ ...day, slotsPerDay: v })}
             />
-            <Field
+            <NumberField
               label="Длина урока, минут"
               testId="S-41.input.lessonMin"
-              inputMode="numeric"
+              min={30}
+              max={45}
               value={day.lessonMin}
-              onChange={(e) => setDay({ ...day, lessonMin: e.target.value })}
+              onValue={(v) => setDay({ ...day, lessonMin: v })}
               error={Number(day.lessonMin) > 45 ? "Не более 45 минут — СанПиН 1.2.3685-21" : null}
             />
-            <Field
+            <NumberField
               label="Длина перемены, минут"
               testId="S-41.input.breakMin"
-              inputMode="numeric"
+              min={10}
+              max={30}
               value={day.breakMin}
-              onChange={(e) => setDay({ ...day, breakMin: e.target.value })}
+              onValue={(v) => setDay({ ...day, breakMin: v })}
               error={Number(day.breakMin) < 10 ? "Не менее 10 минут — СанПиН 1.2.3685-21" : null}
             />
             <div className="sch-field">
@@ -520,12 +642,13 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
                 <option value={3}>после 3-го</option>
               </select>
             </div>
-            <Field
+            <NumberField
               label="Длительность большой перемены, минут"
               testId="S-41.input.bigBreakMin"
-              inputMode="numeric"
+              min={20}
+              max={30}
               value={day.bigBreakMin}
-              onChange={(e) => setDay({ ...day, bigBreakMin: e.target.value })}
+              onValue={(v) => setDay({ ...day, bigBreakMin: v })}
               error={
                 Number(day.bigBreakMin) < 20 || Number(day.bigBreakMin) > 30
                   ? "От 20 до 30 минут — СанПиН 1.2.3685-21"
@@ -546,9 +669,16 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
         ) : null}
       </Modal>
 
-      {/* M-09 — полноэкранный прогресс генерации с кнопкой «Отменить» (AR-107). */}
+      {/*
+        M-09 — полноэкранный прогресс генерации с кнопкой «Отменить» (AR-107).
+        Идентификатор `M-09` принадлежит ЕМУ, а не предпросмотру: реестр §3
+        называет `M-09` прогрессом генерации. До этапа 3 имя стояло на модалке
+        предпросмотра, а прогресс жил без имени модалки вовсе — перечисление
+        «пятнадцать модалок открыты» доказывало бы не тот предмет.
+      */}
       {generating ? (
-        <div className="sch-fullscreen" data-testid="S-42.progress">
+        <div className="sch-fullscreen" data-testid="M-09">
+          <div data-testid="S-42.progress" className="sch-stack" style={{ alignItems: "center" }}>
           <div className="sch-logo" style={{ fontSize: "var(--fs-h1)" }}>
             Schoolium
           </div>
@@ -564,6 +694,7 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
           >
             Отменить
           </Button>
+          </div>
         </div>
       ) : null}
 
@@ -574,6 +705,7 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
           width={520}
           onClose={() => setRefusal(null)}
           testId="S-42.refusal"
+          mobile="fullscreen"
           footer={
             <div className="sch-actions">
               <Button
@@ -602,6 +734,7 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
           width={400}
           onClose={() => setConfirmExit(false)}
           testId="M-14"
+        mobile="sheet"
           level={2}
           footer={
             <div className="sch-actions">
@@ -650,7 +783,8 @@ export function PreviewScreen({ preview, onClose }: { preview: SchedulePreviewDt
         title="Предпросмотр расписания"
         width={960}
         onClose={onClose}
-        testId="M-09"
+        testId="S-42"
+        mobile="fullscreen"
         footer={
           <div className="sch-actions">
             <Button

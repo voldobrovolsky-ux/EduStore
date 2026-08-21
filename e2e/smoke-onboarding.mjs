@@ -18,8 +18,18 @@
  * тему так же, как это делает педагог, а колонки следующих дней остаются
  * будущими и доказывают `S-50.col.future` на том же экране.
  *
+ * **Раскладок две, сценарий один** (этап 3). `SMOKE_VIEWPORT=mobile` гонит те
+ * же шаги в 390×844, и это не «второй смок»: ворота G-53 требуют ТОТ ЖЕ
+ * сценарий во второй раскладке, а не другой сценарий про мобайл. Ветвится
+ * только то, что реестр `75-adaptive.md` объявил разным — оболочка (§2),
+ * `S-01` (телефон не сканирует сам себя), `S-70` (камера вместо объяснения).
+ *
+ * Мобильный прогон доказывает сверх десктопного три вещи ворот этапа 3:
+ * `body` не скроллится по горизонтали НИ НА ОДНОМ экране, тап-мишени ≥44px
+ * перечислены, и каждая из пятнадцати модалок открыта и закрыта.
+ *
  * Запуск: node e2e/smoke-onboarding.mjs   (нужен Postgres; API/web поднимает сам)
- * Env: SMOKE_DATABASE_URL, SMOKE_SCHOOL_DAY, CHROMIUM_PATH.
+ * Env: SMOKE_DATABASE_URL, SMOKE_SCHOOL_DAY, SMOKE_VIEWPORT, CHROMIUM_PATH.
  */
 import { chromium } from 'playwright';
 import { spawn, execSync } from 'node:child_process';
@@ -32,7 +42,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API = 'http://localhost:3000';
 const WEB = 'http://localhost:5173';
 const DB = process.env.SMOKE_DATABASE_URL ?? 'postgresql://edustore:edustore@localhost:5432/edustore_onboarding?schema=public';
-const SHOTS = path.join(ROOT, 'e2e', 'screenshots-onboarding');
+/**
+ * Раскладка прогона. Точка останова одна (`75-adaptive.md` §1), поэтому и
+ * значений два: 1440×900 — десктоп, 390×844 — телефон (iPhone 14 по ширине).
+ */
+const MOBILE = (process.env.SMOKE_VIEWPORT ?? 'desktop') === 'mobile';
+const VIEWPORT = MOBILE ? { width: 390, height: 844 } : { width: 1440, height: 900 };
+const SHOTS = path.join(ROOT, 'e2e', MOBILE ? 'screenshots-onboarding-mobile' : 'screenshots-onboarding');
+/** Минимальная тап-мишень (`docs/design/tokens.json` → `tap.minTargetPx`). */
+const TAP_MIN = 44;
 const PHONE = '+79990001122';
 /**
  * Учебный день смока: понедельник внутри первой четверти рекомендованного
@@ -108,6 +126,112 @@ const shot = async (page, name) => {
   const file = path.join(SHOTS, `${String(stepNo).padStart(2, '0')}-${name}.png`);
   await page.screenshot({ path: file, fullPage: true });
   console.log(`  📸 ${path.basename(file)}`);
+  // Железное правило прокрутки (§6): `body` не скроллится по горизонтали
+  // НИКОГДА. Проверяется на КАЖДОМ снятом экране, а не выборочно: широкая
+  // таблица ломает раскладку ровно на том экране, где её забыли обернуть.
+  if (MOBILE) await assertNoHScroll(page, name);
+};
+
+/**
+ * Ширина документа не превышает вьюпорт — иначе `body` уехал вбок (§6).
+ *
+ * Проверка НАЗЫВАЕТ виновника: «страница шире на 59px» отправляет искать по
+ * всему дереву, а «вот этот узел торчит вправо» — чинить. Ищутся самые
+ * ВЕРХНИЕ такие узлы: у распёртого контейнера торчат и все его потомки, и
+ * список из сорока строк не помогает никому.
+ */
+const assertNoHScroll = async (page, where) => {
+  const m = await page.evaluate(() => {
+    const client = document.documentElement.clientWidth;
+    const scroll = document.documentElement.scrollWidth;
+    const culprits = [];
+    if (scroll - client > 1) {
+      const over = [];
+      for (const el of document.body.querySelectorAll('*')) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
+        if (r.right > client + 1) over.push(el);
+      }
+      for (const el of over) {
+        if (over.some((other) => other !== el && other.contains(el))) continue;  // потомок распёртого
+        const id = el.dataset.testid ? `[${el.dataset.testid}]` : `${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}`;
+        culprits.push(`${id} → ${Math.round(el.getBoundingClientRect().right)}px`);
+      }
+    }
+    return { scroll, client, culprits: culprits.slice(0, 5) };
+  });
+  // Один пиксель прощаем округлению вьюпорта, больше — дефект раскладки.
+  if (m.scroll - m.client <= 1) return true;
+  console.error(
+    `    ❌ ${where}: body скроллится по горизонтали — ${m.scroll}px при вьюпорте ${m.client}px` +
+      (m.culprits.length ? `; торчат: ${m.culprits.join(', ')}` : ''),
+  );
+  failures++;
+  return false;
+};
+
+/**
+ * Тап-мишени ≥44px ПЕРЕЧИСЛЕНИЕМ (ворота этапа 3), а не выборочно: каждый
+ * видимый интерактивный элемент экрана измеряется реальным
+ * `boundingBox`, и нарушители называются поимённо.
+ *
+ * Меряется меньшая сторона: кнопка 200×32 промахивается пальцем так же, как
+ * 32×32. Скрытые и нулевые элементы пропускаются — их нельзя нажать.
+ */
+const tapTargets = async (page, where) => {
+  const bad = await page.evaluate((min) => {
+    const sel = 'button:not([disabled]), a[href], input:not([type="hidden"]):not([disabled]), select, [tabindex]:not([tabindex="-1"])';
+    const out = [];
+    for (const el of document.querySelectorAll(sel)) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;            // не отрисован
+      if (getComputedStyle(el).visibility === 'hidden') continue;
+      // Ячейка журнала — не кнопка: она tabindex-навигация по таблице, её
+      // мишень задаётся высотой строки, и реестр её размер не называет.
+      if (el.closest('.sch-journal')) continue;
+      if (Math.min(r.width, r.height) + 0.5 < min)
+        out.push(`${el.dataset.testid ?? el.className ?? el.tagName}: ${Math.round(r.width)}×${Math.round(r.height)}`);
+    }
+    return out;
+  }, TAP_MIN);
+  if (bad.length === 0) {
+    console.log(`    ✅ тап-мишени ≥${TAP_MIN}px: ${where}`);
+    return true;
+  }
+  console.error(`    ❌ ${where}: мишени меньше ${TAP_MIN}px — ${bad.join(', ')}`);
+  failures++;
+  return false;
+};
+
+/**
+ * Реестр модалок §3: пятнадцать штук. Ворота этапа 3 требуют, чтобы каждая
+ * была ОТКРЫТА и ЗАКРЫТА в мобильном варианте — не «описана», а показана.
+ */
+const MODALS = ['M-01', 'M-02', 'M-03', 'M-04', 'M-05', 'M-06', 'M-07', 'M-08', 'M-09', 'M-10', 'M-11', 'M-12', 'M-13', 'M-14', 'M-15'];
+/** `M-10`, `M-11`, `M-12` живут в DOM под именами своих экранов (реестр §3). */
+const MODAL_NODE = { 'M-10': 'S-42.refusal', 'M-11': 'S-51', 'M-12': 'S-52' };
+const modalsOpened = new Set();
+const modalsClosed = new Set();
+
+/** Модалка на экране: форма (лист/поток/поповер) проверяется вместе с фактом. */
+const modalOpen = async (page, id) => {
+  const node = MODAL_NODE[id] ?? id;
+  const n = await page.locator(`[data-testid="${node}"]`).count();
+  if (n === 0) { console.error(`    ❌ ${id} не открылась (узел ${node})`); failures++; return false; }
+  modalsOpened.add(id);
+  if (!MOBILE) { console.log(`    ✅ ${id} открыта`); return true; }
+  // На мобайле форма слоя объявлена реестром §3 и обязана совпасть.
+  const shape = await page.locator(`[data-testid="${node}"]`).first().getAttribute('data-shape');
+  console.log(`    ✅ ${id} открыта · форма «${shape ?? 'поповер'}»`);
+  return true;
+};
+
+/** Слой ушёл из DOM — «закрыта» значит именно это, а не «кнопку нажали». */
+const modalClosed = async (page, id) => {
+  const node = MODAL_NODE[id] ?? id;
+  await page.waitForSelector(`[data-testid="${node}"]`, { state: 'detached', timeout: 20_000 });
+  modalsClosed.add(id);
+  console.log(`    ✅ ${id} закрыта`);
 };
 
 /** Утверждение о DOM: идентификатор объявлен реестром — значит он на экране. */
@@ -177,9 +301,21 @@ async function main() {
   await waitHttp(`${API}/api/v1/me`);
   await waitHttp(WEB);
 
-  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-  // Десктоп ≥768px: промежуточной верстки нет, проверяется одна из двух раскладок.
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'ru-RU' });
+  const browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM_PATH || undefined,
+    // Поддельная камера: `S-70` и `S-80` на мобайле — камера во весь экран, и
+    // без устройства смок доказывал бы только экран отказа.
+    args: MOBILE ? ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] : [],
+  });
+  console.log(`▶ раскладка: ${MOBILE ? 'мобайл' : 'десктоп'} ${VIEWPORT.width}×${VIEWPORT.height}`);
+  const ctx = await browser.newContext({
+    viewport: VIEWPORT,
+    locale: 'ru-RU',
+    isMobile: MOBILE,
+    hasTouch: MOBILE,
+    deviceScaleFactor: MOBILE ? 3 : 1,
+    permissions: MOBILE ? ['camera'] : [],
+  });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => { console.error(`    ❌ ошибка страницы: ${e.message}`); failures++; });
 
@@ -194,8 +330,19 @@ async function main() {
     // ── S-01 · вход по QR (аноним): страница выдаёт код и ждёт скан ──
     console.log('▶ S-01 · вход');
     await click(page, 'S-00.btn.login');
-    await page.waitForSelector('[data-testid="S-01.qr"]');
-    await hasAll(page, ['S-01.qr', 'S-01.caption', 'S-01.status', 'S-01.link.byCode', 'S-01.note.help']);
+    // На мобайле `S-01` НЕ показывает QR (§6): телефон не сканирует сам себя,
+    // и вместо кода здесь объяснение плюс ссылка на `S-05`. Это ветвление
+    // объявлено реестром, а не «не поместилось».
+    await page.waitForSelector(MOBILE ? '[data-testid="S-01.caption"]' : '[data-testid="S-01.qr"]');
+    await hasAll(page, MOBILE
+      ? ['S-01.caption', 'S-01.status', 'S-01.link.byCode', 'S-01.note.help']
+      : ['S-01.qr', 'S-01.caption', 'S-01.status', 'S-01.link.byCode', 'S-01.note.help']);
+    if (MOBILE) {
+      const qr = await page.locator('[data-testid="S-01.qr"]').count();
+      if (qr === 0) console.log('    ✅ QR на телефоне не показывается — сканировать его нечем (§6)');
+      else { console.error('    ❌ телефон показывает QR привязки самому себе'); failures++; }
+      await tapTargets(page, 'S-01');
+    }
     await shot(page, 'S-01-login');
 
     // ── S-05 · вход по коду от модератора ──
@@ -203,6 +350,7 @@ async function main() {
     await click(page, 'S-01.link.byCode');
     await page.waitForSelector('[data-testid="S-05.code"]');
     await hasAll(page, ['S-05.code', 'S-05.hint', 'S-05.btn.back']);
+    if (MOBILE) await tapTargets(page, 'S-05');
     await shot(page, 'S-05-login-code');
 
     // ── bootstrap: первый модератор входит по одноразовой ссылке ──
@@ -213,13 +361,33 @@ async function main() {
 
     // ── S-10 · пустая школа ──
     console.log('▶ S-10 · классы (пусто)');
-    await hasAll(page, ['S-10.empty', 'S-10.btn.newClasses', 'L.sidebar', 'L.sidebar.logo', 'L.sidebar.item.admin', 'L.sidebar.user', 'L.sidebar.collapse', 'L.topbar.title']);
+    await hasAll(page, MOBILE
+      ? ['S-10.empty', 'S-10.btn.newClasses', 'L.header.title', 'L.header.admin', 'L.header.user', 'L.tabbar',
+         'L.tabbar.item.classes', 'L.tabbar.item.subjects', 'L.tabbar.item.staff', 'L.tabbar.item.schedule', 'L.tabbar.item.journal']
+      : ['S-10.empty', 'S-10.btn.newClasses', 'L.sidebar', 'L.sidebar.logo', 'L.sidebar.item.admin', 'L.sidebar.user', 'L.sidebar.collapse', 'L.topbar.title']);
+    if (MOBILE) {
+      // Сайдбара на телефоне нет вовсе — таб-бар не «дополняет» его, а заменяет.
+      const side = await page.locator('[data-testid="L.sidebar"]').count();
+      if (side === 0) console.log('    ✅ сайдбара на мобайле нет — навигацию ведёт таб-бар (§2.2)');
+      else { console.error('    ❌ на мобайле остался десктопный сайдбар'); failures++; }
+      const tabs = await page.locator('[data-testid^="L.tabbar.item."]').count();
+      if (tabs === 5) console.log('    ✅ вкладок ровно пять — одинаковых для всех шести ролей (§2.2)');
+      else { console.error(`    ❌ вкладок ${tabs}, реестр требует пять`); failures++; }
+      await tapTargets(page, 'S-10 + оболочка');
+    }
     await shot(page, 'S-10-empty');
 
     // ── S-11 · мастер создания классов: пять шагов в порядке реестра ──
     console.log('▶ S-11 · мастер классов');
     await click(page, 'S-10.btn.newClasses');
     await page.waitForSelector('[data-testid="M-01"]');
+    await modalOpen(page, 'M-01');
+    if (MOBILE) {
+      // Полноэкранный поток прячет таб-бар и возвращает по завершении (§2.2).
+      const bar = await page.locator('[data-testid="L.tabbar"]').isVisible().catch(() => false);
+      if (!bar) console.log('    ✅ таб-бар скрыт в полноэкранном потоке мастера (§2.2)');
+      else { console.error('    ❌ таб-бар остался поверх полноэкранного потока'); failures++; }
+    }
     await has(page, 'S-11.input.parallels');
     await fill(page, 'S-11.input.parallels', '2');
     await shot(page, 'S-11-step1-parallels');
@@ -250,6 +418,13 @@ async function main() {
     await click(page, 'S-11.btn.create');
 
     await page.waitForSelector('[data-testid="S-10.grid.classes"]', { timeout: 20_000 });
+    modalsClosed.add('M-01');
+    console.log('    ✅ M-01 закрыта');
+    if (MOBILE) {
+      const bar = await page.locator('[data-testid="L.tabbar"]').isVisible().catch(() => false);
+      if (bar) console.log('    ✅ таб-бар вернулся по завершении потока (§2.2)');
+      else { console.error('    ❌ таб-бар не вернулся после закрытия потока'); failures++; }
+    }
     await hasAll(page, ['S-10.grid.classes', 'S-10.card.class']);
     await shot(page, 'S-10-classes');
 
@@ -270,6 +445,7 @@ async function main() {
     for (const [last, first, mid, sex] of kids) {
       await page.locator('[data-testid="S-12.row.empty"]').first().click();
       await page.waitForSelector('[data-testid="S-13.input.lastName"]');
+      if (last === 'Абрамов') await modalOpen(page, 'M-02');
       await fill(page, 'S-13.input.lastName', last);
       await fill(page, 'S-13.input.firstName', first);
       if (mid) await fill(page, 'S-13.input.middleName', mid);
@@ -280,7 +456,9 @@ async function main() {
       }
       await click(page, 'S-13.btn.save');
       await page.waitForSelector('[data-testid="S-13.input.lastName"]', { state: 'detached', timeout: 15_000 });
+      if (last === 'Абрамов') { modalsClosed.add('M-02'); console.log('    ✅ M-02 закрыта'); }
     }
+    if (MOBILE) await tapTargets(page, 'S-12 · контингент');
     await shot(page, 'S-12-filled');
 
     // ── S-20 · предметы ──
@@ -291,11 +469,14 @@ async function main() {
     await shot(page, 'S-20-empty');
     await click(page, 'S-20.btn.newSubject');
     await page.waitForSelector('[data-testid="M-03"]');
+    await modalOpen(page, 'M-03');
     await hasAll(page, ['M-03.input.name', 'M-03.select.class']);
     await fill(page, 'M-03.input.name', 'Математика');
     await shot(page, 'M-03-create-subject');
     await click(page, 'M-03.create');
     await page.waitForSelector('[data-testid="S-20.grid.subjects"]', { timeout: 20_000 });
+    modalsClosed.add('M-03');
+    console.log('    ✅ M-03 закрыта');
     await hasAll(page, ['S-20.grid.subjects', 'S-20.card.subject', 'S-20.card.subject.badge']);
     await shot(page, 'S-20-subjects');
 
@@ -315,6 +496,7 @@ async function main() {
     await has(page, 'S-30.card.person');
     await teacherCards.last().click();
     await page.waitForSelector('[data-testid="M-06"]', { timeout: 20_000 });
+    await modalOpen(page, 'M-06');
     // На ПУСТОЙ карточке есть только QR и статус: кода входа не существует,
     // пока карточку никто не активировал, а бейджа «деактивирован» — пока
     // некого деактивировать. Оба появляются ниже по потоку.
@@ -329,7 +511,17 @@ async function main() {
     const cards = await api(page, 'GET', '/api/v1/staff');
     const card = cards.find((c) => c.roles.includes('teacher') && !c.userId) ?? cards.find((c) => c.roles.includes('teacher'));
     const act = await api(page, 'POST', `/api/v1/staff/${card.id}/activation-token`);
-    const phoneCtx = await browser.newContext({ locale: 'ru-RU' });
+    // Стендовый телефон педагога ведётся в ТОЙ ЖЕ раскладке, что и прогон:
+    // иначе «телефон» в мобильном прогоне открывался бы десктопом, и оболочка
+    // второй роли проверялась бы не та, которую проверяет остальной смок.
+    const phoneCtx = await browser.newContext({
+      locale: 'ru-RU',
+      viewport: VIEWPORT,
+      isMobile: MOBILE,
+      hasTouch: MOBILE,
+      deviceScaleFactor: MOBILE ? 3 : 1,
+      permissions: MOBILE ? ['camera'] : [],
+    });
     const phone = await phoneCtx.newPage();
     await phone.goto(`${WEB}/join/${act.token}`);
     await phone.waitForSelector('[data-testid="S-03.input.lastName"]');
@@ -358,7 +550,30 @@ async function main() {
     await page.waitForSelector('[data-testid="S-31.loginCode"]', { timeout: 20_000 });
     await has(page, 'S-31.loginCode', 'код показывается модератору, а не отправляется SMS (AR-94)');
     await shot(page, 'S-31-login-code');
+    // M-07 — добавление роли: поповер у кнопки на десктопе, нижний лист на
+    // мобайле (§3). Роль не выдаём — открыть и закрыть достаточно, а лишняя
+    // роль изменила бы состав персонала под следующими шагами.
+    await click(page, 'S-31.btn.addRole');
+    await page.waitForSelector('[data-testid="M-07"]', { timeout: 20_000 });
+    await modalOpen(page, 'M-07');
+    if (MOBILE) await tapTargets(page, 'M-07 · добавление роли');
+    await shot(page, 'M-07-add-role');
+    await page.keyboard.press('Escape');
+    await modalClosed(page, 'M-07');
+
+    // M-13 — подтверждение разрушающего действия: открыть и ОТМЕНИТЬ. Реестр
+    // требует показать модалку, а не удалить сотрудника: удалённый педагог
+    // унёс бы с собой привязку к предмету и всё, что после неё.
+    const destructive = del ? 'S-31.btn.deleteStaff' : 'S-31.btn.deactivateStaff';
+    await click(page, destructive);
+    await page.waitForSelector('[data-testid="M-13"]', { timeout: 20_000 });
+    await modalOpen(page, 'M-13');
+    await shot(page, 'M-13-confirm');
+    await page.keyboard.press('Escape');
+    await modalClosed(page, 'M-13');
+
     await click(page, 'S-31.btn.close');
+    await modalClosed(page, 'M-06');
     console.log('    · `S-31.badge.inactive` требует деактивированной карточки — вне пути онбординга, доказан G-52');
 
     // ── S-21/S-22 · карточка предмета и QR привязки ──
@@ -367,10 +582,18 @@ async function main() {
     await page.waitForSelector('[data-testid="S-20.card.subject"]');
     await click(page, 'S-20.card.subject');
     await page.waitForSelector('[data-testid="M-04"]');
+    await modalOpen(page, 'M-04');
     await hasAll(page, ['S-21.list.bindings', 'S-21.status.coverage', 'S-21.btn.bind']);
     await shot(page, 'S-21-subject-card');
     await click(page, 'S-21.btn.bind');
     await page.waitForSelector('[data-testid="M-05"]', { timeout: 20_000 });
+    await modalOpen(page, 'M-05');
+    if (MOBILE) {
+      // Второй и ПОСЛЕДНИЙ уровень вложенности (AR-82): лист поверх потока.
+      const levels = await page.locator('.sch-overlay').count();
+      if (levels === 2) console.log('    ✅ уровней слоя ровно два — M-05 поверх M-04 (AR-82)');
+      else { console.error(`    ❌ открытых слоёв ${levels}, реестр разрешает два`); failures++; }
+    }
     await hasAll(page, ['S-22.qr', 'S-22.caption', 'S-22.scope']);
     await shot(page, 'S-22-bind-qr');
 
@@ -389,7 +612,7 @@ async function main() {
     await page.waitForSelector('[data-testid="S-22.btn.confirm"]:not([disabled])', { timeout: 20_000 });
     await shot(page, 'S-22-scanned');
     await click(page, 'S-22.btn.confirm');
-    await page.waitForSelector('[data-testid="M-05"]', { state: 'detached', timeout: 20_000 });
+    await modalClosed(page, 'M-05');
     // Карточка предмета закрывается вместе с привязкой — открываем заново и
     // смотрим, что покрытие пересчитано и педагог в списке.
     await page.goto(`${WEB}/subjects`);
@@ -401,6 +624,7 @@ async function main() {
     else { console.error(`    ❌ после привязки покрытие осталось «${coverage}»`); failures++; }
     await shot(page, 'S-21-covered');
     await page.keyboard.press('Escape');
+    await modalClosed(page, 'M-04');
 
     // ── S-40 · расписание: до сборки уроков нет ──
     console.log('▶ S-40 · расписание');
@@ -413,6 +637,7 @@ async function main() {
     console.log('▶ S-41 · мастер расписания');
     await click(page, 'S-40.btn.setup');
     await page.waitForSelector('[data-testid="M-08"]');
+    await modalOpen(page, 'M-08');
     // Панели приходят из календаря — у первого шага есть состояние загрузки
     // (скелетоны той же геометрии), и утверждать до него значит ловить гонку.
     await page.waitForSelector('[data-testid="S-41.panel.term1"]', { timeout: 20_000 });
@@ -452,8 +677,32 @@ async function main() {
     // Длина дня считается на экране из четырёх параметров, а не «примерно».
     const dayLen = await page.locator('[data-testid="S-41.calc.dayLength"]').innerText();
     console.log(`    · длина учебного дня по параметрам: ${dayLen.replace(/\s+/g, ' ').trim()}`);
+    if (MOBILE) await tapTargets(page, 'S-41 · параметры дня');
     await shot(page, 'S-41-step4-day');
+    /*
+     * `M-09` — прогресс генерации: слой живёт ровно столько, сколько идёт
+     * перебор, и на пустой школе это десятки миллисекунд. Опрос
+     * (`waitForSelector`) такой слой честно пропускает — не потому, что его не
+     * было, а потому, что между двумя опросами он успел появиться и уйти.
+     * Поэтому наблюдатель ставится ДО клика и запоминает сам ФАКТ появления:
+     * `MutationObserver` вызывается на каждой правке DOM, и узел ещё в
+     * документе, когда он смотрит.
+     */
+    await page.evaluate(() => {
+      const w = window;
+      w.__m09 = Boolean(document.querySelector('[data-testid="M-09"]'));
+      const mo = new MutationObserver(() => {
+        if (document.querySelector('[data-testid="M-09"]')) w.__m09 = true;
+      });
+      mo.observe(document.body, { childList: true, subtree: true });
+    });
     await click(page, 'S-41.btn.generate');
+    const sawProgress = await page
+      .waitForFunction(() => window.__m09 === true, null, { timeout: 30_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (sawProgress) { modalsOpened.add('M-09'); console.log('    ✅ M-09 открыта · полноэкранный прогресс генерации'); }
+    else { console.error('    ❌ M-09 (прогресс генерации) не показалась'); failures++; }
 
     // ── S-42 · генерация и предпросмотр ──
     console.log('▶ S-42 · генерация и подтверждение');
@@ -463,7 +712,10 @@ async function main() {
       console.error('    ❌ генератор отказал — сетка не собрана');
       failures++;
     } else {
+      if (sawProgress) { modalsClosed.add('M-09'); console.log('    ✅ M-09 закрыта — прогресс сменился предпросмотром'); }
+      modalsClosed.add('M-08');
       await hasAll(page, ['S-42.grid.preview', 'S-42.btn.regenerate', 'S-42.btn.confirm']);
+      if (MOBILE) await tapTargets(page, 'S-42 · предпросмотр');
       await shot(page, 'S-42-preview');
       await click(page, 'S-42.btn.confirm');
       await page.waitForSelector('[data-testid="S-40.grid.week"]', { timeout: 60_000 });
@@ -532,6 +784,8 @@ async function main() {
       const cellOf = (row) => page.locator(`[data-cell="${row}:${todayCol - 1}"]`);
       await cellOf(0).click();
       await page.waitForSelector('[data-testid="S-52.chip.m5"]', { timeout: 20_000 });
+      await modalOpen(page, 'M-12');
+      if (MOBILE) await tapTargets(page, 'M-12 · выбор отметки (чипы 44px)');
       await hasAll(page, ['S-52.chip.m5', 'S-52.chip.m4', 'S-52.chip.m3', 'S-52.chip.m2', 'S-52.chip.n', 'S-52.chip.b', 'S-52.btn.clear']);
       // Порядок шкалы — часть смысла, а не оформления (AR-79): «б» после «н».
       const order = await page.locator('[data-testid^="S-52.chip."]').evaluateAll((n) => n.map((x) => x.getAttribute('data-testid')));
@@ -541,6 +795,7 @@ async function main() {
       await shot(page, 'S-52-mark-popover');
 
       await click(page, 'S-52.chip.m5');
+      await modalClosed(page, 'M-12');
       await page.waitForFunction((c) => {
         const el = document.querySelector(`[data-cell="0:${c}"]`);
         return el && el.textContent.trim().includes('5');
@@ -562,6 +817,7 @@ async function main() {
       console.log('▶ S-51 · тема урока');
       await page.locator('table[data-testid="S-50.table"] thead th').nth(todayCol).locator('[data-testid="S-50.colhead.date"]').click();
       await page.waitForSelector('[data-testid="S-51.input.topic"]', { timeout: 20_000 });
+      await modalOpen(page, 'M-11');
       await hasAll(page, ['S-51.input.topic', 'S-51.btn.save', 'S-51.meta']);
       await fill(page, 'S-51.input.topic', 'Сложение и вычитание');
       await shot(page, 'S-51-topic');
@@ -577,11 +833,11 @@ async function main() {
       // §0: слой закрывается `Esc`. Проверяется здесь, а не «подразумевается»:
       // обработчик висит на слое и срабатывает, только если фокус внутри него.
       const focusInside = await page.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="S-51"]')));
-      if (focusInside) console.log('    ✅ фокус внутри поповера — ловушка фокуса и Esc имеют на чём работать');
-      else { console.error('    ❌ фокус остался снаружи поповера: Esc и Tab-ловушка не работают'); failures++; }
+      if (focusInside) console.log('    ✅ фокус внутри слоя — ловушка фокуса и Esc имеют на чём работать');
+      else { console.error('    ❌ фокус остался снаружи слоя: Esc и Tab-ловушка не работают'); failures++; }
       await page.keyboard.press('Escape');
-      await page.waitForSelector('[data-testid="S-51"]', { state: 'detached', timeout: 10_000 });
-      console.log('    ✅ Esc закрывает поповер темы (§0)');
+      await modalClosed(page, 'M-11');
+      console.log(`    ✅ Esc закрывает слой темы урока (§0, ${MOBILE ? 'нижний лист' : 'поповер'})`);
 
       // ── S-52.btn.clear · снятие отметки — единственный способ её стереть ──
       console.log('▶ S-52.btn.clear · снятие отметки');
@@ -606,6 +862,7 @@ async function main() {
       await page.waitForSelector('[data-testid="S-40.grid.week"]', { timeout: 30_000 });
       await click(page, 'S-40.btn.setup');
       await page.waitForSelector('[data-testid="M-08"]', { timeout: 20_000 });
+      await modalOpen(page, 'M-08');
       await click(page, 'S-41.btn.next1');
       await page.waitForSelector('[data-testid="S-41.input.hours"]', { timeout: 20_000 });
       await page.locator('[data-testid="S-41.input.hours"]').first().fill('3');
@@ -619,13 +876,63 @@ async function main() {
       else { console.error('    ❌ фокус ушёл из мастера при смене шага: Esc и Tab-ловушка не работают'); failures++; }
       await page.keyboard.press('Escape');
       await page.waitForSelector('[data-testid="M-14"]', { timeout: 20_000 });
+      await modalOpen(page, 'M-14');
       await has(page, 'M-14', 'выход из мастера с введёнными данными спрашивает подтверждение');
       await shot(page, 'M-14-exit-wizard');
       await page.locator('[data-testid="M-14"] button', { hasText: 'Закрыть без сохранения' }).click();
+      await modalClosed(page, 'M-14');
       await page.goto(`${WEB}/schedule`);
       await page.waitForSelector('[data-testid="S-40.banner.stale"]', { timeout: 30_000 });
       await hasAll(page, ['S-40.banner.stale', 'S-40.btn.regenerate']);
       await shot(page, 'S-40-stale');
+
+      // ── M-10 · отказ генератора: код, причина с цифрами, «К шагу N» ──
+      // Отказ вызывается тем же путём, каким его получит модератор: предметом
+      // без педагога. Важно, ЧЕЙ это отказ — арифметические отказы экрана 2
+      // (`LOAD_EXCEEDS_SANPIN` и соседи) сервер отдаёт ещё при вводе нагрузки,
+      // и они показываются строкой под полем, а НЕ модалкой `M-10`. `M-10`
+      // принадлежит отказам самой генерации, и проверять её надо ими.
+      console.log('▶ M-10 · отказ генератора (предмет без педагога)');
+      await page.goto(`${WEB}/subjects`);
+      await page.waitForSelector('[data-testid="S-20.btn.newSubject"]', { timeout: 20_000 });
+      await click(page, 'S-20.btn.newSubject');
+      await page.waitForSelector('[data-testid="M-03.input.name"]', { timeout: 20_000 });
+      await fill(page, 'M-03.input.name', 'Физика');
+      await click(page, 'M-03.create');
+      await page.waitForSelector('[data-testid="M-03"]', { state: 'detached', timeout: 20_000 });
+
+      await page.goto(`${WEB}/schedule`);
+      await page.waitForSelector('[data-testid="S-40.grid.week"], [data-testid="S-40.banner.stale"]', { timeout: 30_000 });
+      await click(page, 'S-40.btn.setup');
+      await page.waitForSelector('[data-testid="M-08"]', { timeout: 20_000 });
+      await click(page, 'S-41.btn.next1');
+      await page.waitForSelector('[data-testid="S-41.input.hours"]', { timeout: 20_000 });
+      await click(page, 'S-41.btn.next2');
+      await page.waitForSelector('[data-testid="S-41.chips.priority"]', { timeout: 20_000 });
+      await click(page, 'S-41.btn.noPriority');
+      await click(page, 'S-41.btn.next3');
+      await page.waitForSelector('[data-testid="S-41.input.slotsPerDay"]', { timeout: 20_000 });
+      // Параметры дня мастер не помнит между входами — их источник регистр
+      // школы, а не форма (AR-103); заполняем те же, что и в первый раз.
+      await fill(page, 'S-41.input.slotsPerDay', '5');
+      await click(page, 'S-41.btn.generate');
+      await page.waitForSelector('[data-testid="S-42.refusal"]', { timeout: 90_000 });
+      await modalOpen(page, 'M-10');
+      const refusalText = (await page.locator('[data-testid="S-42.refusal"]').innerText()).replace(/\s+/g, ' ').trim();
+      // Отказ обязан НАЗЫВАТЬ объект, а не «не получилось» (§9, ворота G-54).
+      if (/Физика/.test(refusalText)) console.log(`    ✅ отказ называет объект: «${refusalText.slice(0, 100)}»`);
+      else { console.error(`    ❌ отказ не называет предмет: «${refusalText}»`); failures++; }
+      await shot(page, 'M-10-refusal');
+      // «К шагу N» ведёт на конкретный экран мастера, а не «куда-нибудь» (§3).
+      await page.locator('[data-testid="S-42.refusal"] button', { hasText: 'К шагу' }).click();
+      await modalClosed(page, 'M-10');
+      await page.waitForSelector('[data-testid="M-08"]', { timeout: 20_000 });
+      console.log('    ✅ «К шагу N» вернула в мастер, а не закрыла его');
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('[data-testid="M-14"], [data-testid="M-08"]', { state: 'attached', timeout: 20_000 });
+      if (await page.locator('[data-testid="M-14"]').count()) {
+        await page.locator('[data-testid="M-14"] button', { hasText: 'Закрыть без сохранения' }).click();
+      }
     }
 
     // ── S-60 · кабинет модератора ──
@@ -633,13 +940,36 @@ async function main() {
     await page.goto(`${WEB}/admin`);
     await page.waitForSelector('[data-testid="S-60.nav"]');
     await hasAll(page, ['S-60.nav', 'S-60.audit']);
+    if (MOBILE) {
+      // На мобайле аудит — карточки, а не таблица (§6).
+      const asTable = await page.locator('table[data-testid="S-60.audit"]').count();
+      if (asTable === 0) console.log('    ✅ аудит на мобайле — карточки, а не таблица (§6)');
+      else { console.error('    ❌ на мобайле остался табличный аудит'); failures++; }
+      await tapTargets(page, 'S-60 · кабинет');
+    }
     await shot(page, 'S-60-admin');
+
+    // ── M-15 · меню пользователя: поповер на десктопе, нижний лист из хедера ──
+    console.log('▶ M-15 · меню пользователя');
+    await click(page, MOBILE ? 'L.header.user' : 'L.sidebar.user');
+    await page.waitForSelector('[data-testid="M-15"]', { timeout: 20_000 });
+    await modalOpen(page, 'M-15');
+    await hasAll(page, ['M-15.devices', 'M-15.logout']);
+    // Слой обязан держать фокус внутри (§3): до этапа 3 меню было собрано мимо
+    // библиотеки и не ставило фокус вовсе — ни Esc, ни Tab там не работали.
+    const menuFocus = await page.evaluate(() => Boolean(document.activeElement?.closest('[data-testid="M-15"]')));
+    if (menuFocus) console.log('    ✅ фокус внутри M-15 — Esc и Tab-ловушка имеют на чём работать');
+    else { console.error('    ❌ фокус не попал в M-15'); failures++; }
+    await shot(page, 'M-15-user-menu');
+    await page.keyboard.press('Escape');
+    await modalClosed(page, 'M-15');
 
     // ── S-80 · устройства и сессии ──
     console.log('▶ S-80 · устройства');
     await page.goto(`${WEB}/settings/devices`);
     await page.waitForSelector('[data-testid="S-80.list.sessions"]');
     await has(page, 'S-80.list.sessions');
+    if (MOBILE) await tapTargets(page, 'S-80 · устройства');
     await shot(page, 'S-80-devices');
 
     // ── Оболочка глазами педагога: кнопка вне роли не рендерится (AR-69) ──
@@ -647,30 +977,74 @@ async function main() {
     // уже есть — её выдала регистрация по QR выше.
     console.log('▶ оболочка педагога · права видны по составу элементов');
     await phone.goto(`${WEB}/journal`);
-    await phone.waitForSelector('[data-testid="L.sidebar"]', { timeout: 30_000 });
-    const admin = await phone.locator('[data-testid="L.sidebar.item.admin"]').count();
-    if (admin === 0) console.log('    ✅ «Кабинет» у педагога ОТСУТСТВУЕТ, а не «серый и некликабельный» (AR-69)');
+    await phone.waitForSelector(MOBILE ? '[data-testid="L.tabbar"]' : '[data-testid="L.sidebar"]', { timeout: 30_000 });
+    const adminId = MOBILE ? 'L.header.admin' : 'L.sidebar.item.admin';
+    const scanId = MOBILE ? 'L.header.scan' : 'L.topbar.scan';
+    const admin = await phone.locator(`[data-testid="${adminId}"]`).count();
+    if (admin === 0) console.log(`    ✅ «Кабинет» (${adminId}) у педагога ОТСУТСТВУЕТ, а не «серый и некликабельный» (AR-69)`);
     else { console.error('    ❌ педагог видит раздел «Кабинет»'); failures++; }
-    const scan = await phone.locator('[data-testid="L.topbar.scan"]').count();
-    if (scan === 1) console.log('    ✅ L.topbar.scan виден педагогу (модератор показывает коды, а не сканирует)');
+    const scan = await phone.locator(`[data-testid="${scanId}"]`).count();
+    if (scan === 1) console.log(`    ✅ ${scanId} виден педагогу (модератор показывает коды, а не сканирует)`);
     else { console.error(`    ❌ кнопок сканера в шапке педагога ${scan}, ожидалась одна`); failures++; }
-    await hasAll(phone, ['L.sidebar', 'L.sidebar.logo', 'L.sidebar.user', 'L.sidebar.collapse', 'L.topbar.title']);
+    if (MOBILE) {
+      // Пять вкладок одинаковы у ВСЕХ шести ролей (§2.2) — различие ролей
+      // выражается доступностью действий внутри экранов, а не меню.
+      const tabs = await phone.locator('[data-testid^="L.tabbar.item."]').count();
+      if (tabs === 5) console.log('    ✅ у педагога те же пять вкладок, что у модератора (§2.2)');
+      else { console.error(`    ❌ у педагога вкладок ${tabs}`); failures++; }
+    }
+    await hasAll(phone, MOBILE
+      ? ['L.header.title', 'L.header.user', 'L.tabbar']
+      : ['L.sidebar', 'L.sidebar.logo', 'L.sidebar.user', 'L.sidebar.collapse', 'L.topbar.title']);
     await shot(phone, 'shell-teacher');
 
     // ── S-70 · сканер: на десктопе — причина, а не заглушка ──
-    console.log('▶ S-70 · сканер (десктоп)');
+    console.log(`▶ S-70 · сканер (${MOBILE ? 'мобайл: камера во весь экран' : 'десктоп: причина вместо заглушки'})`);
     await phone.goto(`${WEB}/scan`);
     await phone.waitForSelector('[data-testid="S-70.hint.desktop"], [data-testid="S-70.viewfinder"], [data-testid="S-70.error.denied"]');
-    await has(phone, 'S-70.hint.desktop', 'на десктопе сканер объясняет причину, а не показывает заглушку');
+    if (MOBILE) {
+      // Видоискатель — ЕДИНСТВЕННЫЙ элемент версии, которому нужна камера.
+      // В смоке она поддельная (`--use-fake-device-for-media-stream`), и это
+      // доказывает раскладку и поток, но НЕ распознавание на живом телефоне.
+      await has(phone, 'S-70.viewfinder', 'камера во весь экран (§6)');
+      const bar = await phone.locator('[data-testid="L.tabbar"]').isVisible().catch(() => false);
+      if (!bar) console.log('    ✅ таб-бар скрыт под камерой во весь экран (§6)');
+      else { console.error('    ❌ таб-бар остался поверх камеры'); failures++; }
+    } else {
+      await has(phone, 'S-70.hint.desktop', 'на десктопе сканер объясняет причину, а не показывает заглушку');
+    }
     await shot(phone, 'S-70-scan');
 
+    // Уводим телефон со сканера ДО закрытия контекста: камера освобождается
+    // размонтированием `QrCamera`, и без этого шага живой медиапоток держит
+    // браузер открытым — смок печатает результат и не завершается. Ворота,
+    // которые не выходят, в конвейере равны упавшим.
+    await phone.goto(`${WEB}/journal`).catch(() => undefined);
     await phoneCtx.close();
-    console.log(`\n${failures === 0 ? '✅' : '❌'} G-53: шагов со скриншотами ${stepNo}, нарушений ${failures}`);
+
+    // ── реестр модалок §3 пройден перечислением, а не «в целом» ──
+    const missOpen = MODALS.filter((m) => !modalsOpened.has(m));
+    const missClose = MODALS.filter((m) => !modalsClosed.has(m));
+    if (missOpen.length === 0 && missClose.length === 0) {
+      console.log(`\n    ✅ реестр модалок §3: все ${MODALS.length} открыты и закрыты`);
+    } else {
+      if (missOpen.length) console.error(`\n    ❌ не открывались: ${missOpen.join(', ')}`);
+      if (missClose.length) console.error(`    ❌ не закрывались: ${missClose.join(', ')}`);
+      failures++;
+    }
+
+    console.log(`\n${failures === 0 ? '✅' : '❌'} G-53 (${MOBILE ? 'мобайл 390×844' : 'десктоп 1440×900'}): шагов со скриншотами ${stepNo}, нарушений ${failures}`);
   } finally {
-    await ctx.close();
-    await browser.close();
+    // Закрытие ограничено по времени: зависший браузер не должен превращать
+    // прогон в вечное ожидание — результат уже напечатан, и он и есть ворота.
+    const bounded = (p) => Promise.race([p.catch(() => undefined), new Promise((r) => setTimeout(r, 15_000))]);
+    await bounded(ctx.close());
+    await bounded(browser.close());
   }
-  if (failures) process.exit(1);
+  // Явный выход: смок держит поднятые API и веб детачем, и без этого процесс
+  // остаётся жив после последнего утверждения (`process.on('exit', kill)`
+  // снимет детей сам).
+  process.exit(failures ? 1 : 0);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

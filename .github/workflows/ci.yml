@@ -114,8 +114,14 @@ jobs:
         run: node e2e/smoke-textbook.mjs
       - name: Смок-БД онбординга
         run: PGPASSWORD=edustore psql -h localhost -U edustore -d edustore -c 'CREATE DATABASE edustore_onboarding;'
-      - name: G-53 — Chromium-смок полного онбординга школы
+      - name: G-53 — Chromium-смок полного онбординга школы (десктоп 1440×900)
         run: npm --workspace apps/web run smoke:onboarding
+      - name: Смок-БД онбординга (мобайл)
+        run: PGPASSWORD=edustore psql -h localhost -U edustore -d edustore -c 'CREATE DATABASE edustore_onboarding_m;'
+      - name: G-55 — тот же смок в раскладке телефона (390×844)
+        env:
+          SMOKE_DATABASE_URL: postgresql://edustore:edustore@localhost:5432/edustore_onboarding_m?schema=public
+        run: npm --workspace apps/web run smoke:onboarding:mobile
       - name: Скриншоты смоков — артефакт
         if: always()
         uses: actions/upload-artifact@v4
@@ -124,4 +130,5 @@ jobs:
           path: |
             e2e/screenshots/
             e2e/screenshots-onboarding/
+            e2e/screenshots-onboarding-mobile/
           if-no-files-found: ignore

@@ -10,9 +10,10 @@
  *      СВОЕГО экрана — «экран без элемента» не принимается;
  *   2. модуль не несёт идентификаторов чужого экрана — элемент, уехавший не
  *      туда, ломает и реестр, и смок;
- *   3. каждый десктопный элемент оболочки (`L.*`) стоит в `shell.tsx`.
- *      Мобильные (`L.header.*`, `L.tabbar*`) — объём этапа 3, и их отсутствие
- *      здесь ОБЪЯВЛЕНО, а не пропущено молчанием.
+ *   3. каждый элемент оболочки (`L.*`) стоит в `shell.tsx` — и десктопный, и
+ *      мобильный. До этапа 3 мобильные (`L.header.*`, `L.tabbar*`) были
+ *      объявлены вне объёма вслух; теперь обе раскладки живут в одном модуле,
+ *      и делить реестр оболочки надвое больше не на чем.
  *
  * Шаблонные идентификаторы (`S-52.chip.${markKey(m)}`) разворачиваются в
  * префиксное правило: такой идентификатор закрывает семейство, и КАЖДЫЙ
@@ -152,16 +153,16 @@ if (fs.existsSync(ADAPTIVE)) {
   shellDesktop = all.filter((id) => !isMobile(id)).sort();
   shellMobile = all.filter(isMobile).sort();
   const shell = parsed.get('shell.tsx');
-  for (const id of shellDesktop) {
+  for (const id of [...shellDesktop, ...shellMobile]) {
     if (!shell || !shell.literal.has(id)) fail(`${id}: элемент оболочки отсутствует в shell.tsx`);
   }
 }
 
 // ---------- отчёт ----------
-console.log(`Элементов в реестре: ${expected.length} экранных + ${shellDesktop.length} оболочки; модулей: ${files.size}.`);
-if (shellMobile.length) {
-  console.log(`Мобильные элементы оболочки (этап 3, здесь не проверяются): ${shellMobile.join(', ')}`);
-}
+console.log(
+  `Элементов в реестре: ${expected.length} экранных + ${shellDesktop.length + shellMobile.length} оболочки ` +
+    `(${shellDesktop.length} десктопных, ${shellMobile.length} мобильных); модулей: ${files.size}.`,
+);
 if (byTemplate > 0) {
   console.log(`Через шаблонный идентификатор закрыто ${byTemplate}: ${notes.join(', ')}`);
   console.log('  (буквальное присутствие этих узлов в DOM доказывает смок G-53)');
@@ -171,4 +172,4 @@ if (errors.length) {
   for (const e of errors) console.error('  · ' + e);
   process.exit(1);
 }
-console.log('✅ G-52: каждый элемент реестра стоит на своём месте — экраны и десктопная оболочка; чужих элементов ни один модуль не носит.');
+console.log('✅ G-52: каждый элемент реестра стоит на своём месте — экраны и оболочка в ОБЕИХ раскладках; чужих элементов ни один модуль не носит.');

@@ -136,6 +136,7 @@ function CreateSubject({ classes, onClose, onDone }: { classes: ClassDto[]; onCl
       width={480}
       onClose={onClose}
       testId="M-03"
+        mobile="fullscreen"
       footer={
         <div className="sch-actions">
           <Button kind="ghost" onClick={onClose}>
@@ -209,6 +210,7 @@ function SubjectCardModal({ subject, onClose, onChanged }: { subject: SubjectDto
         width={560}
         onClose={onClose}
         testId="M-04"
+        mobile="fullscreen"
         footer={
           mayWrite ? (
             <div className="sch-actions sch-actions--start">
@@ -347,6 +349,7 @@ function BindQr({ subject, onClose, onBound }: { subject: SubjectDto; onClose: (
       width={420}
       onClose={onClose}
       testId="M-05"
+        mobile="sheet"
       level={2}
       footer={
         <div className="sch-actions">

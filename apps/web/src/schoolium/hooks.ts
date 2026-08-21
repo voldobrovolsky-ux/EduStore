@@ -51,3 +51,28 @@ export function usePolling(fn: () => void | Promise<void>, ms: number, active: b
     return () => clearInterval(id);
   }, [ms, active]);
 }
+
+/**
+ * Точка останова версии — одна (`75-adaptive.md` §1): `<768px` мобайл, `≥768px`
+ * десктоп. Промежуточной (планшетной) раскладки в 1.1.1 нет, поэтому и хук
+ * отвечает одним булевым значением, а не «размером экрана».
+ *
+ * Подписка обязательна: раскладка меняется не только при повороте телефона, но
+ * и когда окно десктопа сужают. Замороженное на монтировании значение оставило
+ * бы половину контура в чужой раскладке до перезагрузки — и починить это можно
+ * было бы только F5, чего человеку никто не подскажет.
+ */
+export function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const on = () => setMobile(mq.matches);
+    mq.addEventListener("change", on);
+    on();
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return mobile;
+}

@@ -67,16 +67,23 @@ async function main(): Promise<void> {
     // На КАЖДОМ прогоне проверяется главный инвариант — отметок не убыло.
     let detached = 0;
     let rounds = 0;
+    let heldEveryRound = true;
     while (detached === 0 && rounds < 5) {
       rounds += 1;
       const fresh = await schedule.generate(s.moderator);
       const reg = await state.register();
       const res = await schedule.confirm({ templateId: fresh.templateId, version: reg.scheduleVersion }, s.moderator);
       await drain();
-      check((await b.prisma.mark.count()) === marksBefore,
-        `прогон ${rounds}: отметок по-прежнему ${marksBefore} — пересборка не стирает историю (красная линия 10)`);
+      // Инвариант проверяется на КАЖДОМ прогоне, а утверждение засчитывается
+      // ОДНО: число прогонов зависит от зерна генератора, и «по утверждению на
+      // прогон» делало цифру ворот разной от запуска к запуску (537 против
+      // 538 на двух прогонах подряд). Ворота, у которых цифра пляшет, нечем
+      // сверить с отчётом — ровно та болезнь, что Д5 и Д9 диагностики этапа 2.
+      if ((await b.prisma.mark.count()) !== marksBefore) heldEveryRound = false;
       detached = await b.prisma.schoolLesson.count({ where: { detachedAt: { not: null } } });
     }
+    check(heldEveryRound,
+      `отметок по-прежнему ${marksBefore} на каждом из ${rounds} прогонов — пересборка не стирает историю (красная линия 10)`);
     check(detached > 0, `урок с отметками ОТВЯЗАН, а не удалён: отвязанных уроков ${detached} (прогонов ${rounds})`);
 
     const lesson = await b.prisma.schoolLesson.findUnique({ where: { id: markedLesson } });

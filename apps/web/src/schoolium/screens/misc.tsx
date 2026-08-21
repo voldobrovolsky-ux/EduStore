@@ -9,13 +9,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { AuditEntryDto, SessionDto } from "@edustore/shared";
 import { api, SchoolApiError } from "../api";
-import { useAsync } from "../hooks";
-import { Badge, Button, EmptyState, ErrorState, Modal, Skeletons, Toast, useToast } from "../ui";
+import { useAsync, useIsMobile } from "../hooks";
+import { Badge, Button, EmptyState, ErrorState, Modal, Skeletons, Toast, useFullscreenFlow, useToast } from "../ui";
 import { useSession } from "../session";
 import { navigate } from "../router";
 
-/** Десктоп начинается с 768px (§0): промежуточной верстки нет — две раскладки. */
-const isMobile = (): boolean => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
 const hasCamera = (): boolean =>
   typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia);
 
@@ -88,6 +86,7 @@ export function AdminScreen() {
 }
 
 function AuditList({ entries }: { entries: AuditEntryDto[] }) {
+  const mobile = useIsMobile();
   if (entries.length === 0) {
     return (
       <EmptyState
@@ -96,6 +95,22 @@ function AuditList({ entries }: { entries: AuditEntryDto[] }) {
       />
     );
   }
+  /* На мобайле аудит — карточки, а не таблица (§6): три колонки на 390px дают
+     нечитаемый горизонтальный скролл там, где строка и так короткая. */
+  if (mobile) {
+    return (
+      <div className="sch-list" data-testid="S-60.audit">
+        {entries.map((e) => (
+          <div className="sch-card" key={e.id}>
+            <div className="sch-card-title">{e.actionLabel}</div>
+            <div className="sch-card-sub">{e.objectName ?? e.objectKind}</div>
+            <div className="sch-muted">{dateTime(e.at)}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="sch-tablewrap">
       <table className="sch-table" data-testid="S-60.audit">
@@ -122,16 +137,45 @@ function AuditList({ entries }: { entries: AuditEntryDto[] }) {
 
 // ─────────────────────────── S-70 · сканер QR ───────────────────────────
 
-export function ScanScreen() {
-  const [mobile] = useState(isMobile);
-  const [denied, setDenied] = useState(false);
-  const [result, setResult] = useState<{ subject: string; classLabel: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+/**
+ * Камера с распознаванием QR — общая для `S-70` (привязка к предмету) и `S-80`
+ * (подключение устройства): §6 требует камеру во весь экран в обоих случаях, и
+ * второй реализации того же кода в версии быть не должно.
+ *
+ * Распознавание — нативным `BarcodeDetector`: сторонний декодер тянуть в
+ * версию не за чем.
+ *
+ * ВНИМАНИЕ, незакрытый край: на устройстве без `BarcodeDetector` (сегодня это
+ * весь iOS Safari) видоискатель открывается и не распознаёт НИЧЕГО — человек
+ * смотрит в камеру, и ничего не происходит. Запасного пути у этого экрана нет:
+ * реестр `70-screens.md` §S-70 называет четыре элемента, и элемента «ввести
+ * код руками» среди них нет. Придумывать его здесь нельзя (правило «не
+ * додумывать»), поэтому край назван вслух — находка Д16 отчёта этапа 3,
+ * вопрос владельцу. До его закрытия обещать сканер на iPhone нельзя.
+ */
+function QrCamera({
+  onCode,
+  onDenied,
+  hint,
+  testId,
+  onCancel,
+}: {
+  onCode: (raw: string) => void;
+  onDenied: () => void;
+  hint: string;
+  testId: string;
+  onCancel?: () => void;
+}) {
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
+  const sink = useRef(onCode);
+  sink.current = onCode;
+
+  // Камера во весь экран прячет таб-бар и возвращает его по выходу (§6, §2.2).
+  useFullscreenFlow(true);
 
   useEffect(() => {
-    if (!mobile || !hasCamera()) return;
+    if (!hasCamera()) return;
     let alive = true;
     navigator.mediaDevices
       .getUserMedia({ video: { facingMode: "environment" } })
@@ -140,17 +184,15 @@ export function ScanScreen() {
         stream.current = s;
         if (video.current) video.current.srcObject = s;
       })
-      .catch(() => alive && setDenied(true));
+      .catch(() => alive && onDenied());
     return () => {
       alive = false;
       stream.current?.getTracks().forEach((t) => t.stop());
     };
-  }, [mobile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Распознавание — нативным BarcodeDetector: сторонний декодер тянуть в
-  // версию не за чем, а на устройствах без него честно предлагается ввод кода.
   useEffect(() => {
-    if (!mobile || denied || result) return;
     const Detector = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => { detect: (s: CanvasImageSource) => Promise<{ rawValue: string }[]> } }).BarcodeDetector;
     if (!Detector) return;
     const det = new Detector({ formats: ["qr_code"] });
@@ -160,15 +202,50 @@ export function ScanScreen() {
       const raw = codes[0]?.rawValue;
       if (!raw) return;
       clearInterval(id);
-      try {
-        const r = await api.scan(raw.replace(/^schoolium:bind:/, ""));
-        setResult({ subject: r.subject, classLabel: r.classLabel });
-      } catch (e) {
-        setError(e instanceof SchoolApiError ? e.message : "Код не распознан");
-      }
+      sink.current(raw);
     }, 400);
     return () => clearInterval(id);
-  }, [mobile, denied, result]);
+  }, []);
+
+  return (
+    <>
+      <div className="sch-viewfinder sch-viewfinder--full" data-testid={testId}>
+        <video ref={video} autoPlay playsInline muted />
+        <div className="sch-viewfinder-frame" />
+        <div className="sch-viewfinder-bar">
+          <p>{hint}</p>
+          {onCancel ? (
+            <Button kind="secondary" onClick={onCancel}>
+              Отмена
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Экран «нет доступа к камере» — один текст на оба сценария. */
+function CameraDenied({ testId }: { testId: string }) {
+  return (
+    <div className="sch-card sch-stack" data-testid={testId}>
+      <h2>Нет доступа к камере</h2>
+      <p className="sch-muted">
+        Разрешите камеру в настройках браузера: значок замка в адресной строке → «Камера» → «Разрешить», затем
+        обновите страницу.
+      </p>
+      <Button kind="secondary" onClick={() => window.location.reload()}>
+        Повторить
+      </Button>
+    </div>
+  );
+}
+
+export function ScanScreen() {
+  const mobile = useIsMobile();
+  const [denied, setDenied] = useState(false);
+  const [result, setResult] = useState<{ subject: string; classLabel: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   if (!mobile) {
     // Десктоп показывает не заглушку, а причину: камера ноутбука есть не у
@@ -182,20 +259,7 @@ export function ScanScreen() {
     );
   }
 
-  if (denied) {
-    return (
-      <div className="sch-card sch-stack" data-testid="S-70.error.denied">
-        <h2>Нет доступа к камере</h2>
-        <p className="sch-muted">
-          Разрешите камеру в настройках браузера: значок замка в адресной строке → «Камера» → «Разрешить», затем
-          обновите страницу.
-        </p>
-        <Button kind="secondary" onClick={() => window.location.reload()}>
-          Повторить
-        </Button>
-      </div>
-    );
-  }
+  if (denied) return <CameraDenied testId="S-70.error.denied" />;
 
   if (result) {
     return (
@@ -213,11 +277,19 @@ export function ScanScreen() {
 
   return (
     <>
-      <div className="sch-viewfinder" data-testid="S-70.viewfinder">
-        <video ref={video} autoPlay playsInline muted />
-        <div className="sch-viewfinder-frame" />
-      </div>
-      <p className="sch-muted">Наведите камеру на QR из карточки предмета</p>
+      <QrCamera
+        testId="S-70.viewfinder"
+        hint="Наведите камеру на QR из карточки предмета"
+        onDenied={() => setDenied(true)}
+        onCode={async (raw) => {
+          try {
+            const r = await api.scan(raw.replace(/^schoolium:bind:/, ""));
+            setResult({ subject: r.subject, classLabel: r.classLabel });
+          } catch (e) {
+            setError(e instanceof SchoolApiError ? e.message : "Код не распознан");
+          }
+        }}
+      />
       {error ? <Toast text={error} /> : null}
     </>
   );
@@ -229,9 +301,32 @@ export function DevicesScreen() {
   const [state, reload] = useAsync(() => api.sessions());
   const { toast, showToast } = useToast();
   const [pending, setPending] = useState<{ token: string; hint: string } | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [denied, setDenied] = useState(false);
+  const mobile = useIsMobile();
 
   if (state.status === "loading") return <Skeletons count={3} kind="row" />;
   if (state.status === "error") return <ErrorState message={state.message} onRetry={reload} />;
+
+  /* Основной случай — телефон подключает ноутбук (`S-80` mobile): кнопка
+     открывает КАМЕРУ во весь экран (§6), а не поле для ручного ввода кода.
+     На десктопе камера смотрит на человека, а не на чужой экран, поэтому там
+     остаётся ввод кода — тот же разбор, что у `S-70`. */
+  if (scanning) {
+    if (denied) return <CameraDenied testId="S-80.error.denied" />;
+    return (
+      <QrCamera
+        testId="S-80.viewfinder"
+        hint="Наведите камеру на QR с экрана входа подключаемого устройства"
+        onDenied={() => setDenied(true)}
+        onCancel={() => setScanning(false)}
+        onCode={(raw) => {
+          setScanning(false);
+          setPending({ token: raw.replace(/^schoolium:link:/, ""), hint: "новое устройство" });
+        }}
+      />
+    );
+  }
 
   const sessions = state.data;
 
@@ -246,6 +341,7 @@ export function DevicesScreen() {
             kind="primary"
             testId="S-80.btn.linkDevice"
             onClick={() => {
+              if (mobile) return setScanning(true);
               const raw = window.prompt("Код с экрана входа подключаемого устройства");
               if (raw) setPending({ token: raw.replace(/^schoolium:link:/, ""), hint: "новое устройство" });
             }}
@@ -275,6 +371,7 @@ export function DevicesScreen() {
           title="Подключить устройство?"
           width={420}
           testId="S-80.confirm"
+        mobile="sheet"
           onClose={() => setPending(null)}
           footer={
             <div className="sch-actions">

@@ -2,6 +2,12 @@
  * Библиотека Schoolium: девять типов кнопок (§4), модалка с ловушкой фокуса
  * (§3, AR-82), три состояния экрана (§5) и мелкие элементы.
  *
+ * Раскладок ДВЕ, и обе живут здесь, а не в экранах (`75-adaptive.md` §1):
+ * геометрия слоя выбирается по точке останова, гарантии §3 — фокус, `Esc`,
+ * закрытие фоном, два уровня вложенности — у обеих одни и те же. Иначе мобайл
+ * получил бы вторую реализацию тех же правил и вторую же возможность их
+ * потерять: ровно так этап 2 потерял фокус в поповере.
+ *
  * Правила, которые здесь ЗАШИТЫ, а не оставлены на дисциплину экрана:
  *   · модалка и поповер закрываются крестиком, `Esc` и кликом мимо, держат фокус
  *     внутри и возвращают его открывателю;
@@ -25,6 +31,7 @@ import {
   type ReactNode,
 } from "react";
 import { MARK_VALUES, type MarkValue } from "@edustore/shared";
+import { useIsMobile } from "./hooks";
 
 // ─────────────────────────── кнопки (реестр §4) ───────────────────────────
 
@@ -45,11 +52,11 @@ interface BtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   testId?: string;
 }
 
-export function Button({ kind = "primary", loading, testId, children, ...rest }: BtnProps) {
+export function Button({ kind = "primary", loading, testId, children, className, ...rest }: BtnProps) {
   return (
     <button
       type="button"
-      className={`sch-btn sch-btn--${kind}`}
+      className={className ? `sch-btn sch-btn--${kind} ${className}` : `sch-btn sch-btn--${kind}`}
       data-testid={testId}
       data-kind={kind}
       disabled={rest.disabled || loading}
@@ -96,7 +103,96 @@ export function Field({ label, error, testId, hint, ...rest }: FieldProps) {
   );
 }
 
+/**
+ * Числовое поле с шаговыми кнопками «−»/«+» 44×44 рядом (§7). На десктопе
+ * кнопки не рендерятся визуально (CSS `min-width: 768px`): там поле правится
+ * с клавиатуры, и лишняя пара мишеней — шум. На телефоне обратное: попасть в
+ * узкое поле и вызвать цифровую клавиатуру ради «+1» дороже, чем нажать шаг.
+ *
+ * Значение остаётся СТРОКОЙ: пустое поле — это не ноль, и мастер обязан
+ * отличать «не ввели» от «ввели 0» (шаг 5 `S-11` принимает ноль как ответ).
+ */
+export function NumberField({
+  label,
+  testId,
+  value,
+  onValue,
+  min,
+  max,
+  hint,
+  error,
+}: {
+  label: string;
+  testId?: string;
+  value: string;
+  onValue: (v: string) => void;
+  min: number;
+  max: number;
+  hint?: string;
+  error?: string | null;
+}) {
+  const id = useId();
+  const step = (d: number) => {
+    const base = value === "" ? min : Number(value);
+    const next = Math.min(max, Math.max(min, (Number.isFinite(base) ? base : min) + d));
+    onValue(String(next));
+  };
+  return (
+    <div className="sch-field">
+      <label className="sch-field-label" htmlFor={id}>
+        {label}
+        {hint ? <span className="sch-muted"> · {hint}</span> : null}
+      </label>
+      <div className="sch-stepper">
+        <Button
+          kind="secondary"
+          className="sch-btn--stepper"
+          aria-label={`${label}: меньше`}
+          testId={testId ? `${testId}.minus` : undefined}
+          disabled={value !== "" && Number(value) <= min}
+          onClick={() => step(-1)}
+        >
+          −
+        </Button>
+        <input
+          id={id}
+          className="sch-input"
+          data-testid={testId}
+          inputMode="numeric"
+          value={value}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${id}-err` : undefined}
+          onChange={(e) => onValue(e.target.value)}
+        />
+        <Button
+          kind="secondary"
+          className="sch-btn--stepper"
+          aria-label={`${label}: больше`}
+          testId={testId ? `${testId}.plus` : undefined}
+          disabled={value !== "" && Number(value) >= max}
+          onClick={() => step(1)}
+        >
+          +
+        </Button>
+      </div>
+      {error ? (
+        <span className="sch-field-error" id={`${id}-err`} role="alert">
+          {error}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 // ─────────────────────────── модалка (§3) ───────────────────────────
+
+/**
+ * Мобильная форма слоя (`75-adaptive.md` §3, колонка Mobile). Значение НЕ
+ * угадывается компонентом: у каждой из пятнадцати модалок реестра она уже
+ * названа, и экран обязан её передать — «по умолчанию полноэкранная» молча
+ * превратило бы подтверждение удаления в поток на весь экран.
+ */
+export type MobileShape = "fullscreen" | "sheet";
 
 export interface ModalProps {
   title: string;
@@ -107,12 +203,53 @@ export interface ModalProps {
   testId?: string;
   /** Уровень вложенности: максимум два (AR-82). Третий — дефект конструкции. */
   level?: 1 | 2;
+  /** Как эта модалка выглядит на мобайле — из колонки Mobile реестра §3. */
+  mobile: MobileShape;
+  /**
+   * «Назад» вместо крестика в хедере мобильного потока (§3, полноэкранная
+   * модалка мастера). На десктопе шаг листается кнопками футера, поэтому
+   * значение здесь имеет смысл только в паре с `mobile="fullscreen"`.
+   */
+  onBack?: () => void;
 }
 
-export function Modal({ title, width, onClose, children, footer, testId, level = 1 }: ModalProps) {
+/**
+ * Полноэкранный поток на мобайле прячет таб-бар (§2.2) и возвращает его по
+ * завершении. Считаем ГЛУБИНОЙ, а не флагом: `M-01` может открыть `M-14`
+ * вторым уровнем, и закрытие верхнего слоя не должно возвращать таб-бар под
+ * ещё открытый мастер. Признак — атрибут на `body`, потому что таб-бар живёт
+ * в оболочке, а слой — в портале своего экрана: общего React-предка у них нет.
+ */
+let flowDepth = 0;
+const enterFlow = () => {
+  flowDepth += 1;
+  document.body.setAttribute("data-sch-flow", "1");
+};
+const leaveFlow = () => {
+  flowDepth = Math.max(0, flowDepth - 1);
+  if (flowDepth === 0) document.body.removeAttribute("data-sch-flow");
+};
+
+/**
+ * Тот же признак для полноэкранного потока, который НЕ является модалкой:
+ * сканер `S-70` — экран, а не слой, но таб-бар при камере во весь экран
+ * прячется по тому же правилу §2.2. Считать глубину в двух местах нельзя —
+ * счётчик один.
+ */
+export function useFullscreenFlow(active: boolean): void {
+  useEffect(() => {
+    if (!active) return;
+    enterFlow();
+    return leaveFlow;
+  }, [active]);
+}
+
+export function Modal({ title, width, onClose, children, footer, testId, level = 1, mobile, onBack }: ModalProps) {
   const ref = useRef<HTMLDivElement>(null);
   const opener = useRef<Element | null>(null);
   const titleId = useId();
+  const isMobile = useIsMobile();
+  const shape = isMobile ? mobile : "desktop";
 
   useEffect(() => {
     opener.current = document.activeElement;
@@ -129,6 +266,14 @@ export function Modal({ title, width, onClose, children, footer, testId, level =
       (opener.current as HTMLElement | null)?.focus?.(); // возврат фокуса открывателю
     };
   }, []);
+
+  // Таб-бар уходит только под полноэкранный поток: нижний лист его не прячет —
+  // человек видит, откуда пришёл, и куда вернётся (§3).
+  useEffect(() => {
+    if (shape !== "fullscreen") return;
+    enterFlow();
+    return leaveFlow;
+  }, [shape]);
 
   /**
    * Фокус не уходит из модалки, даже когда исчезает элемент, на котором он был.
@@ -148,6 +293,12 @@ export function Modal({ title, width, onClose, children, footer, testId, level =
     if (!card || !document.hasFocus()) return;
     const active = document.activeElement;
     if (active && card.contains(active)) return;
+    // Верхним слоем бывает не только модалка: `M-07` на десктопе — поповер у
+    // кнопки (§3), и он живёт вне стопки `.sch-overlay`. Без этой уступки
+    // модалка-родитель отбирала бы у него фокус тем же проходом, каким чинила
+    // свой, и `Esc` с ловушкой фокуса переставали бы работать — ровно тот
+    // дефект, который этап 2 уже ловил в поповере журнала.
+    if (document.querySelector('.sch-popover')) return;
     const overlays = document.querySelectorAll('.sch-overlay');
     if (overlays[overlays.length - 1] !== card.parentElement) return;
     card.focus();
@@ -180,10 +331,13 @@ export function Modal({ title, width, onClose, children, footer, testId, level =
     [onClose],
   );
 
+  const swipe = useSwipeDown(shape === "sheet" ? onClose : null);
+
   return (
     <div
       className="sch-overlay"
       data-level={level}
+      data-shape={shape}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose(); // клик по фону
       }}
@@ -191,15 +345,26 @@ export function Modal({ title, width, onClose, children, footer, testId, level =
     >
       <div
         className="sch-modal"
-        style={{ width }}
+        data-shape={shape}
+        /* Ширина из реестра — ДЕСКТОПНАЯ величина. На мобайле лист и поток
+           занимают всю ширину вьюпорта, и инлайновое значение победило бы CSS. */
+        style={shape === "desktop" ? { width } : undefined}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         data-testid={testId}
         ref={ref}
         tabIndex={-1}
+        {...swipe}
       >
+        {shape === "sheet" ? <div className="sch-sheet-handle" aria-hidden="true" /> : null}
         <div className="sch-modal-head">
+          {/* У мастера на мобайле в хедере «Назад», а не крестик (§3). */}
+          {shape === "fullscreen" && onBack ? (
+            <Button kind="icon" onClick={onBack} aria-label="Назад" testId={testId ? `${testId}.back.header` : undefined}>
+              ‹
+            </Button>
+          ) : null}
           <h2 id={titleId}>{title}</h2>
           <Button kind="icon" onClick={onClose} aria-label="Закрыть" testId={testId ? `${testId}.close` : undefined}>
             ✕
@@ -210,6 +375,31 @@ export function Modal({ title, width, onClose, children, footer, testId, level =
       </div>
     </div>
   );
+}
+
+/**
+ * Свайп вниз закрывает нижний лист (§3) — единственный жест версии: §8 прямо
+ * запрещает остальные. Порог в 64px и требование «тянуть вниз, а не вбок»
+ * нужны, чтобы прокрутка содержимого листа не читалась как закрытие.
+ */
+function useSwipeDown(onClose: (() => void) | null) {
+  const start = useRef<{ x: number; y: number } | null>(null);
+  if (!onClose) return {};
+  return {
+    onTouchStart: (e: React.TouchEvent) => {
+      const t = e.touches[0];
+      start.current = { x: t.clientX, y: t.clientY };
+    },
+    onTouchEnd: (e: React.TouchEvent) => {
+      const s0 = start.current;
+      start.current = null;
+      if (!s0) return;
+      const t = e.changedTouches[0];
+      const dy = t.clientY - s0.y;
+      const dx = Math.abs(t.clientX - s0.x);
+      if (dy > 64 && dy > dx) onClose();
+    },
+  };
 }
 
 /**
@@ -225,12 +415,15 @@ export function Popover({
   children,
   testId,
   label,
+  width,
 }: {
   anchor: DOMRect;
   onClose: () => void;
   children: ReactNode;
   testId?: string;
   label: string;
+  /** Ширина из реестра §3: поповеры версии — 240, 280 и 320px. */
+  width?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const opener = useRef<Element | null>(null);
@@ -281,7 +474,11 @@ export function Popover({
       aria-label={label}
       data-testid={testId}
       ref={ref}
-      style={pos ? { top: pos.top, left: pos.left } : { top: anchor.bottom + 8, left: anchor.left, visibility: "hidden" }}
+      style={
+        pos
+          ? { top: pos.top, left: pos.left, width }
+          : { top: anchor.bottom + 8, left: anchor.left, width, visibility: "hidden" }
+      }
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
@@ -307,6 +504,49 @@ export function Popover({
     >
       {children}
     </div>
+  );
+}
+
+/**
+ * Слой, у которого две формы по реестру §3: **поповер у якоря** на десктопе и
+ * **нижний лист** на мобайле. Таких в версии четыре — `M-07`, `M-11` (`S-51`),
+ * `M-12` (`S-52`) и `M-15`.
+ *
+ * Экран не выбирает форму сам и не пишет её дважды: он говорит, к чему слой
+ * якорится и как называется, а раскладку выбирает библиотека. Иначе четыре
+ * экрана завели бы четыре реализации одного правила — и три из них рано или
+ * поздно разошлись бы с четвёртой.
+ */
+export function PopoverOrSheet({
+  anchor,
+  onClose,
+  children,
+  testId,
+  label,
+  width,
+  level = 1,
+}: {
+  anchor: DOMRect;
+  onClose: () => void;
+  children: ReactNode;
+  testId?: string;
+  label: string;
+  /** Десктопная ширина поповера из реестра §3. */
+  width: number;
+  level?: 1 | 2;
+}) {
+  const mobile = useIsMobile();
+  if (mobile) {
+    return (
+      <Modal title={label} width={width} onClose={onClose} testId={testId} level={level} mobile="sheet">
+        {children}
+      </Modal>
+    );
+  }
+  return (
+    <Popover anchor={anchor} onClose={onClose} testId={testId} label={label} width={width}>
+      {children}
+    </Popover>
   );
 }
 
