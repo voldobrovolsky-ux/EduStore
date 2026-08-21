@@ -330,6 +330,39 @@ if (st.deviceLink && typeof st.deviceLink.approve === 'function') {
     ok('завершение сессии из настроек убивает ровно её — остальные устройства живут'); else bad('отзыв сессии не адресный');
 } else bad('FSM привязки устройства не объявлен: deviceLink отсутствует в states.mjs');
 
+// ---------- P16. Календарь нерабочих дней и материализация ----------
+console.log('P16. Нерабочие дни и скользящая материализация (AR-100, AR-101)');
+if (st.calendar && typeof st.calendar.nonWorking === 'function' && typeof st.materialize === 'function') {
+  const y = st.calendar.nonWorking(2026);
+  if (Array.isArray(y) && y.length) ok(`справочник нерабочих дней на 2026 загружен: ${y.length} дат — генератор не угадывает праздники`);
+  else bad('справочник нерабочих дней пуст: источник праздников не назван');
+  const missing = st.calendar.check(2099);
+  if (missing.code === 'CALENDAR_YEAR_MISSING') ok('год без данных календаря — именованный отказ, а не тихий пропуск праздников');
+  else bad('отсутствие календаря на год проходит молча');
+  const r1 = st.materialize({ from:'2026-02-20', weeks:3, perDay:{0:[{slot:1}],1:[{slot:1}]} });
+  if (!r1.lessons.some(l => y.includes(l.date))) ok('материализация не создаёт уроки в нерабочие дни'); else bad('урок материализован в праздник');
+  const r2 = st.materialize({ from:'2026-02-20', weeks:3, perDay:{0:[{slot:1}],1:[{slot:1}]}, existing:r1.lessons });
+  if (r2.created === 0) ok('повторный прогон идемпотентен: дублей нет — значит все три триггера безопасны'); else bad(`повторный прогон создал ${r2.created} дублей`);
+  if (Array.isArray(st.materialize.triggers) && st.materialize.triggers.length === 3)
+    ok(`триггеры материализации названы: ${st.materialize.triggers.join(', ')}`);
+  else bad('кто и когда двигает горизонт материализации — не названо');
+} else bad('календарь и материализация не объявлены: calendar/materialize отсутствуют в states.mjs');
+
+// ---------- P17. Второй модератор ----------
+console.log('P17. Как в школе появляется второй модератор (AR-102)');
+if (typeof st.roleChange === 'function') {
+  const grant = st.roleChange({ op:'add', role:'moderator', person:{roles:['teacher']}, school:{moderators:1} });
+  if (grant.ok && grant.roles.includes('moderator')) ok('роль модератора выдаётся зарегистрированному сотруднику кнопкой «Добавить роль»');
+  else bad('второго модератора завести нечем: '+JSON.stringify(grant));
+  const strip = st.roleChange({ op:'remove', role:'moderator', person:{roles:['moderator']}, school:{moderators:1} });
+  if (strip.code === 'LAST_MODERATOR') ok('снятие роли у последнего модератора — отказ, школа не остаётся без управления');
+  else bad('последний модератор лишается роли и школа запирается');
+  const strip2 = st.roleChange({ op:'remove', role:'moderator', person:{roles:['moderator','teacher']}, school:{moderators:2} });
+  if (strip2.ok) ok('при двух модераторах роль снимается свободно'); else bad('второй модератор не снимается');
+  const last = st.roleChange({ op:'remove', role:'teacher', person:{roles:['teacher']}, school:{moderators:2} });
+  if (last.code === 'LAST_ROLE') ok('последняя роль сотрудника не снимается — для закрытия доступа есть деактивация'); else bad('сотрудник остаётся без единой роли');
+} else bad('правила смены ролей не объявлены: roleChange отсутствует в states.mjs');
+
 console.log(fails? `\n❌ Свойства: ${fails} падений` : '\n✅ Свойства: все инварианты держатся.');
 if (notes.length){ console.log('\nЗаметки для 40-bench.md:'); notes.forEach(n=>console.log('  · '+n)); }
 process.exit(fails?1:0);

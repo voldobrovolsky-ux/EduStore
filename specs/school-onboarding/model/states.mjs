@@ -182,3 +182,57 @@ export const deviceLink = {
   },
   revoke({ session }) { return { only: session.id }; },
 };
+
+// Календарь нерабочих дней (AR-100). Источник — справочник производственного
+// календаря РФ, версионируемый в коде по учебным годам; отсутствие года не
+// «пропускается молча», а становится именованным отказом генерации.
+const NON_WORKING = {
+  2026: ['2026-01-01','2026-01-02','2026-01-05','2026-01-06','2026-01-07','2026-01-08',
+         '2026-02-23','2026-03-09','2026-05-01','2026-05-11','2026-06-12','2026-11-04'],
+  2027: ['2027-01-01','2027-01-04','2027-01-05','2027-01-06','2027-01-07','2027-01-08',
+         '2027-02-23','2027-03-08','2027-05-03','2027-05-10','2027-06-14','2027-11-04'],
+};
+export const calendar = {
+  nonWorking: (year) => NON_WORKING[year] ?? [],
+  check: (year) => (NON_WORKING[year] ? { ok: true } : { code: 'CALENDAR_YEAR_MISSING', year }),
+};
+
+// Скользящая материализация (AR-101): идемпотентная операция «дозаполнить
+// горизонт», а не разовое событие. Идемпотентность и даёт право на три триггера.
+export const materialize = ({ from, weeks, perDay, existing = [] }) => {
+  const seen = new Set(existing.map((l) => `${l.date}:${l.slot}`));
+  const lessons = [...existing];
+  let created = 0;
+  const start = new Date(from);
+  for (let i = 0; i < weeks * 7; i += 1) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const iso = d.toISOString().slice(0, 10);
+    const dow = (d.getDay() + 6) % 7;
+    if (d.getDay() === 0 || d.getDay() === 6) continue;
+    if (calendar.nonWorking(d.getFullYear()).includes(iso)) continue;
+    for (const u of perDay[dow] ?? []) {
+      const key = `${iso}:${u.slot}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lessons.push({ date: iso, ...u });
+      created += 1;
+    }
+  }
+  return { lessons, created };
+};
+materialize.triggers = ['подтверждение сетки', 'ночной крон', 'открытие журнала с коротким горизонтом'];
+
+// Смена ролей сотрудника (AR-102). Роль модератора выдаётся и снимается той же
+// кнопкой «Добавить роль»; школа защищена от потери последнего модератора,
+// сотрудник — от потери последней роли (для закрытия доступа есть деактивация).
+export const roleChange = ({ op, role, person, school }) => {
+  const roles = [...person.roles];
+  if (op === 'add') {
+    if (!roles.includes(role)) roles.push(role);
+    return { ok: true, roles };
+  }
+  if (role === 'moderator' && school.moderators <= 1) return { code: 'LAST_MODERATOR' };
+  if (roles.length <= 1) return { code: 'LAST_ROLE' };
+  return { ok: true, roles: roles.filter((r) => r !== role) };
+};
