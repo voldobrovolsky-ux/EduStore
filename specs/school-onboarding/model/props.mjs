@@ -281,32 +281,54 @@ if (typeof st.staffRemoval === 'function') {
   if (secondMod.action === 'delete') ok('второй модератор удаляется — правило защищает школу, а не должность'); else bad('второй модератор защищён ошибочно');
 } else bad('правила удаления сотрудника не объявлены: staffRemoval отсутствует в states.mjs');
 
-// ---------- P14. Маршруты входа: устройство × шлюз × камера ----------
-console.log('P14. Как сотрудник попадает в кабинет (AR-91…AR-93)');
+// ---------- P14. Маршруты входа без SMS: якорная сессия и привязка устройств ----------
+console.log('P14. Как сотрудник попадает в кабинет (AR-94: без SMS)');
 if (typeof st.loginRoute === 'function') {
   const R = (o) => st.loginRoute(o).route;
   if (R({justRegistered:true, ownDevice:true}) === 'session-from-registration')
-    ok('регистрация со своего телефона заканчивается сессией — человек уже в кабинете, не в форме входа');
-  else bad('после QR-регистрации сотрудник оказывается на экране входа: сессию никто не выдал');
+    ok('регистрация со своего телефона заканчивается сессией 90 дней — телефон становится якорным устройством');
+  else bad('после QR-регистрации сотрудник не получает сессию');
   if (R({justRegistered:true, ownDevice:false}) !== 'session-from-registration')
-    ok('регистрация с устройства модератора сессии сотруднику не создаёт — чужой телефон не становится его кабинетом');
+    ok('регистрация с устройства модератора сессии сотруднику не создаёт');
   else bad('сессия сотрудника создаётся на устройстве модератора');
-  if (R({smsUp:true}) === 'otp') ok('обычный повторный вход — телефон и код по SMS'); else bad('повторный вход не определён');
-  if (R({smsUp:false, moderatorPresent:true}) === 'login-code')
-    ok('шлюз недоступен, модератор рядом → одноразовый код входа с его карточки (обещанный fallback AR-63 существует)');
-  else bad('шлюз недоступен: обещанный резервный путь не выполним — QR активации одноразов и уже сгорел');
-  if (R({smsUp:false, moderatorPresent:true, hasCamera:false}) === 'login-code')
-    ok('без камеры тот же код вводится цифрами — кнопочный телефон и старый ноутбук не отсекаются');
-  else bad('без камеры входа нет: код только в QR');
-  const dead = st.loginRoute({smsUp:false, moderatorPresent:false});
-  if (dead.route === 'none' && dead.reason) ok(`шлюз лежит и модератора нет → входа нет, и причина названа: «${dead.reason}»`);
+  if (R({hasAnchorSession:true, newDevice:true}) === 'device-link')
+    ok('вход с ноутбука при живом телефоне — привязка устройства: QR на ноутбуке, скан из настроек телефона');
+  else bad('повторный вход с нового устройства не определён без SMS');
+  if (R({hasAnchorSession:false, moderatorPresent:true}) === 'login-code')
+    ok('якорной сессии нет (телефон потерян/куки стёрты), модератор рядом → код с карточки: QR и шесть цифр');
+  else bad('восстановление без якорной сессии не определено');
+  const dead = st.loginRoute({hasAnchorSession:false, moderatorPresent:false});
+  if (dead.route === 'none' && /модератор/.test(dead.reason))
+    ok('якоря нет и модератора нет → входа нет, причина отправляет к модератору, а не «попробуйте позже»');
   else bad('тупик входа не назван честно');
-  if (R({deactivated:true}) === 'none') ok('деактивированный сотрудник не входит ни одним маршрутом'); else bad('деактивация не закрывает вход');
-  if (st.loginRoute({deactivated:true}).revokesSessions) ok('деактивация отзывает активные сессии — доступ закрывается сразу, не через 30 дней');
-  else bad('деактивация оставляет живую сессию на устройстве');
-  if (R({bootstrap:true}) === 'bootstrap-link') ok('первый модератор школы входит по одноразовой ссылке платформенного bootstrap — корень графа есть');
-  else bad('появление первого модератора школы не описано: онбординг некому начать');
+  if (R({deactivated:true}) === 'none' && st.loginRoute({deactivated:true}).revokesSessions)
+    ok('деактивация закрывает все маршруты и отзывает живые сессии немедленно');
+  else bad('деактивация не закрывает вход или оставляет сессию');
+  if (R({bootstrap:true}) === 'bootstrap-link') ok('первый модератор школы — одноразовая ссылка платформенной операции');
+  else bad('корня графа онбординга нет');
+  if (R({lastModeratorNoSession:true}) === 'bootstrap-relink')
+    ok('единственный модератор потерял телефон → платформа перевыпускает ссылку — школа не запирается навсегда');
+  else bad('потеря телефона единственным модератором — вечный тупик');
 } else bad('маршруты входа не объявлены: loginRoute отсутствует в states.mjs');
+
+// ---------- P15. FSM привязки устройства (AR-94, паттерн Telegram) ----------
+console.log('P15. Привязка устройства по QR');
+if (st.deviceLink && typeof st.deviceLink.approve === 'function') {
+  const D = st.deviceLink;
+  if (D.ttlMinutes <= 3) ok(`токен привязки живёт ${D.ttlMinutes} мин — QR на экране входа не залёживается`); else bad('TTL токена привязки не ограничен');
+  const okCase = D.approve({token:{state:'waiting'}, scanner:{deactivated:false, workspaceId:'ws-1'}});
+  if (okCase.ok && okCase.session.workspaceId==='ws-1')
+    ok('скан выдаёт новому устройству сессию той же школы и тех же ролей, что у сканирующего');
+  else bad('привязка не наследует школу сканирующего: '+JSON.stringify(okCase));
+  if (D.approve({token:{state:'approved'}, scanner:{workspaceId:'ws-1'}}).code==='TOKEN_USED')
+    ok('токен одноразов: повторный скан — отказ'); else bad('токен привязки переиспользуем');
+  if (D.approve({token:{state:'expired'}, scanner:{workspaceId:'ws-1'}}).code==='LINK_CODE_EXPIRED')
+    ok('просроченный токен — именованный отказ, страница входа перевыпускает QR сама'); else bad('просроченный токен не различим');
+  if (D.approve({token:{state:'waiting'}, scanner:{deactivated:true}}).code==='ACCESS_REVOKED')
+    ok('деактивированный не может привязать устройство — сканер проверяется, не только токен'); else bad('деактивированный привязывает устройства');
+  if (D.revoke({session:{id:'s2'}, by:'owner'}).only==='s2')
+    ok('завершение сессии из настроек убивает ровно её — остальные устройства живут'); else bad('отзыв сессии не адресный');
+} else bad('FSM привязки устройства не объявлен: deviceLink отсутствует в states.mjs');
 
 console.log(fails? `\n❌ Свойства: ${fails} падений` : '\n✅ Свойства: все инварианты держатся.');
 if (notes.length){ console.log('\nЗаметки для 40-bench.md:'); notes.forEach(n=>console.log('  · '+n)); }

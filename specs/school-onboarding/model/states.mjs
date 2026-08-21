@@ -140,26 +140,45 @@ export const staffRemoval = (person, school) => {
   return { action: 'delete', keepsMarks: true, unbinds: true, staleSchedule: true };
 };
 
-// Маршруты входа сотрудника (AR-91, AR-92, AR-93). Вход — не одна дверь, а
-// решётка «устройство × состояние SMS-шлюза × наличие камеры × присутствие
-// модератора»; каждая клетка обязана иметь либо путь, либо названную причину
-// его отсутствия.
+// Маршруты входа сотрудника (AR-91, AR-93, AR-94). SMS-контура нет: вход
+// держится на якорной сессии телефона (90 дней) и привязке устройств по QR
+// (паттерн Telegram); восстановление — код с карточки у модератора.
 export const loginRoute = (ctx) => {
-  const c = { justRegistered:false, ownDevice:true, smsUp:true, hasCamera:true,
-              moderatorPresent:false, deactivated:false, bootstrap:false, ...ctx };
+  const c = { justRegistered:false, ownDevice:true, hasAnchorSession:false,
+              newDevice:false, moderatorPresent:false, deactivated:false,
+              bootstrap:false, lastModeratorNoSession:false, ...ctx };
   if (c.deactivated)
     return { route:'none', revokesSessions:true,
              reason:'доступ закрыт деактивацией: активные сессии отозваны, новые маршруты не выдаются' };
   if (c.bootstrap)
     return { route:'bootstrap-link',
              reason:'первый модератор школы заводится платформенной операцией и входит по одноразовой ссылке (24 часа)' };
+  if (c.lastModeratorNoSession)
+    return { route:'bootstrap-relink',
+             reason:'единственный модератор без единой живой сессии — платформа перевыпускает одноразовую ссылку той же командой; школа не запирается навсегда' };
   if (c.justRegistered && c.ownDevice)
     return { route:'session-from-registration',
-             reason:'регистрация прошла на устройстве сотрудника при живой сессии модератора — сессия выдаётся сразу' };
-  if (c.smsUp) return { route:'otp', reason:'штатный вход: номер телефона и код по SMS' };
+             reason:'регистрация прошла на устройстве сотрудника при живой сессии модератора — сессия 90 дней выдаётся сразу, телефон становится якорным устройством' };
+  if (c.hasAnchorSession)
+    return { route:'device-link',
+             reason:'новое устройство открывает /login и показывает QR; телефон сканирует его из «Настройки → Подключить устройство» — сессия выдаётся сразу' };
   if (c.moderatorPresent)
     return { route:'login-code',
-             reason:'одноразовый код входа с карточки сотрудника: QR для камеры, шесть цифр — для набора руками' };
+             reason:'якорной сессии нет: одноразовый код с карточки сотрудника — QR для камеры, шесть цифр для набора руками' };
   return { route:'none',
-           reason:'SMS-шлюз недоступен, модератора рядом нет — входа нет; человеку сообщается именно это, а не «попробуйте позже»' };
+           reason:'живой сессии нет ни на одном устройстве — обратитесь к модератору школы, он выдаст код входа' };
+};
+
+// FSM привязки устройства (AR-94): токен со страницы входа нового устройства.
+// waiting → approved (скан якорным устройством) | expired (TTL) ; одноразов.
+export const deviceLink = {
+  ttlMinutes: 3,
+  approve({ token, scanner }) {
+    if (scanner.deactivated) return { code:'ACCESS_REVOKED' };
+    if (token.state === 'approved') return { code:'TOKEN_USED' };
+    if (token.state === 'expired') return { code:'LINK_CODE_EXPIRED' };
+    // сессия нового устройства — копия контекста сканирующего: та же школа, те же роли
+    return { ok:true, session:{ workspaceId: scanner.workspaceId, roles: scanner.roles } };
+  },
+  revoke({ session }) { return { only: session.id }; },
 };
