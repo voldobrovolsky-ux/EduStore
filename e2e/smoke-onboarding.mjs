@@ -492,8 +492,26 @@ async function main() {
         failures++;
         throw new Error('нет урока в учебный день смока — шаг «отметка в журнале» недостижим');
       }
-      await page.goto(`${WEB}/journal?classId=${slotToday.classId}&subjectId=${slotToday.subjectId}`);
-      await page.waitForSelector('[data-testid="S-50.table"], [data-testid="S-50.empty"], [data-testid="S-50.empty.holidays"]', { timeout: 30_000 });
+      // Журнал строит колонки ПОДПИСКОЙ на schedule.lesson.materialized.v1
+      // через outbox, который дренируется раз в 2 с (apps/api/src/common/
+      // outbox/outbox.worker.ts, интервал 'outbox-drain'). Сразу после
+      // подтверждения сетки строка `JournalColumn` может ещё не существовать —
+      // это не баг журнала, а нормальная задержка eventual consistency.
+      // Единичный `waitForSelector` резолвится и на `S-50.empty`, который тут
+      // временное состояние, а не окончательное: ждём появления таблицы
+      // перебором, а не один раз.
+      let journalReady = false;
+      for (let attempt = 0; attempt < 10 && !journalReady; attempt++) {
+        await page.goto(`${WEB}/journal?classId=${slotToday.classId}&subjectId=${slotToday.subjectId}`);
+        await page.waitForSelector('[data-testid="S-50.table"], [data-testid="S-50.empty"], [data-testid="S-50.empty.holidays"]', { timeout: 15_000 });
+        journalReady = (await page.locator('[data-testid="S-50.table"]').count()) > 0;
+        if (!journalReady) await page.waitForTimeout(1500);
+      }
+      if (!journalReady) {
+        console.error('    ❌ S-50.table не появился за 10 попыток — outbox не продренировал schedule.lesson.materialized.v1');
+        failures++;
+        throw new Error('журнал не построил колонку урока в учебный день смока');
+      }
       await hasAll(page, ['S-50.select.class', 'S-50.select.subject']);
       await hasAll(page, ['S-50.table', 'S-50.colhead.date', 'S-50.cell.mark', 'S-50.col.average']);
       console.log(`    · ${slotToday.classLabel}, ${slotToday.subjectName} — урок в учебный день смока (${SCHOOL_DAY})`);
