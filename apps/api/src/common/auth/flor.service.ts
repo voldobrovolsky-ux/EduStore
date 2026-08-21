@@ -13,6 +13,12 @@ export interface SessionUser {
   subRole: string | null;
   name: string;
   orgName?: string; // отображаемое имя школы (Workspace.name)
+  /**
+   * Роли Schoolium 1.1.1 (AR-60): совмещение выражается массивом, а не строкой.
+   * Заполняется контуром доступа версии (AppSession); у legacy-сессий OIDC пусто,
+   * и резолв доступа падает обратно на (role, subRole) — старый контур не ломается.
+   */
+  roles?: string[];
 }
 
 interface FlorOrg { org_id: string; org_name?: string; role: string }

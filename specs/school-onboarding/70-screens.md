@@ -285,7 +285,7 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | `S-21.list.bindings` | список | привязанные педагоги: аватар, ФИО, охват («весь класс» / «группа 1») | — |
 | `S-21.btn.unbind` | текст-действие | «Открепить» у каждой привязки | `DELETE /api/v1/subjects/:id/teachers/:tid` |
 | `S-21.status.coverage` | строка состояния | «Покрытие полное» (success) / «Группа 2 без педагога» (warning) | — |
-| `S-21.btn.deleteSubject` | danger-текст | «Удалить предмет» — доступна, когда педагог не привязан либо привязки сняты | `DELETE /api/v1/subjects/:id` → `subject.deleted.v1`; после подтверждённой сетки переводит расписание в `stale` |
+| `S-21.btn.deleteSubject` | danger-текст | «Удалить предмет» — доступна, когда педагог не привязан либо привязки сняты | `DELETE /api/v1/subjects/:id` → `subject.card.deleted.v1`; после подтверждённой сетки переводит расписание в `stale` |
 
 ## S-22 · QR привязки педагога
 
@@ -404,10 +404,18 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | `S-41.btn.next2` | primary | активна, когда все окошки заполнены и валидации §9 проходят |
 
 **Отказы экрана 2** (вычисляются арифметикой сразу при вводе, до генерации):
-`LOAD_EXCEEDS_SANPIN` — сумма часов класса выше потолка; `LOAD_EXCEEDS_GRID` —
-часов больше, чем слотов недели; `GROUP_HOURS_UNEQUAL` — часы групп одного
-предмета различаются; `TEACHER_OVERBOOKED` — у педагога часов больше, чем слотов.
-Каждый показывается под соответствующим аккордеоном с именем объекта и цифрами.
+`LOAD_EXCEEDS_SANPIN` — сумма часов класса выше недельного потолка СанПиН;
+`GROUP_HOURS_UNEQUAL` — часы групп одного предмета различаются. Каждый
+показывается под соответствующим аккордеоном с именем объекта и цифрами.
+
+**`LOAD_EXCEEDS_GRID` и `TEACHER_OVERBOOKED` считаются на экране 4, а не здесь**
+(AR-111). Оба про «слоты недели» = `дни × уроков в день`, а «уроков в день»
+собирается ЭКРАНОМ 4 — то есть позже нагрузки в порядке мастера: на экране 2
+второго множителя ещё не существует, и попытка посчитать их тут отказывает любой
+ненулевой нагрузке («8 часов при 0 слотах недели»). При ВОЗВРАТЕ на экран 2 после
+того, как параметры дня уже заданы, оба отказа считаются и здесь — данные для них
+появились. Правило общее: отказ живёт на том экране, где собран последний нужный
+ему вход, и ни экраном раньше.
 
 ### Экран 3 — Приоритеты (`priorities_set`)
 
@@ -617,9 +625,9 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | `TERM_OVERLAP` | S-41.1 | Четверти пересекаются |
 | `TERM_REVERSED` | S-41.1 | Дата конца раньше даты начала |
 | `LOAD_EXCEEDS_SANPIN` | S-41.2 | 5 класс: 34 часа при потолке 29 — СанПиН 1.2.3685-21 |
-| `LOAD_EXCEEDS_GRID` | S-41.2 | 5 класс: 40 часов при 35 слотах недели |
+| `LOAD_EXCEEDS_GRID` | S-41.4 | 5 класс: 40 часов при 35 слотах недели |
 | `GROUP_HOURS_UNEQUAL` | S-41.2 | Английский, 7 класс: группа 1 — 3 ч, группа 2 — 1 ч |
-| `TEACHER_OVERBOOKED` | S-41.2 | Иванова М. И.: 48 часов при 35 слотах недели |
+| `TEACHER_OVERBOOKED` | S-41.4 | Иванова М. И.: 48 часов при 35 слотах недели |
 | `SUBJECT_UNCOVERED` | S-42 | Английский, 7 класс: группа 2 без педагога |
 | `GROUPS_UNASSIGNED` | S-42 | 7 класс: группы объявлены, состав не назначен |
 | `DAY_EXCEEDS_SANPIN` | S-41.4 | 5 класс: 9 уроков в день при потолке 6 — СанПиН 1.2.3685-21 |
@@ -674,11 +682,11 @@ primary-кнопка к следующему шагу), `error` (карточк�
 | 21 | POST `/api/v1/schedule/generate` | S-42 | `schedule.build` | — | `SUBJECT_UNCOVERED`, `GROUPS_UNASSIGNED`, `NO_SOLUTION` |
 | 22 | POST `/api/v1/schedule/confirm` | S-42 | `schedule.build` | `schedule.template.confirmed.v1`, `schedule.lesson.materialized.v1` ×N, `schedule.lesson.detached.v1` ×M | `CONCURRENT_EDIT` |
 | 23 | PUT `/api/v1/lessons/:id/topic` | S-51 | `journal.topic.set` | `journal.topic.set.v1` | `LESSON_NOT_HELD` |
-| 24 | POST `/api/v1/lessons/:id/marks` | S-52 | `journal.mark.post` | `journal.mark.posted.v1` | `LESSON_NOT_HELD`, `STUDENT_INACTIVE` |
+| 24 | POST `/api/v1/lessons/:id/marks` | S-52 | `journal.mark.post` | `journal.mark.posted.v1` | `LESSON_NOT_HELD`, `LESSON_DETACHED`, `STUDENT_INACTIVE` |
 | 25 | DELETE `/api/v1/lessons/:id/marks/:studentId` | S-52 | `journal.mark.post` | `journal.mark.removed.v1` | `LESSON_NOT_HELD`, `LESSON_DETACHED` |
 | 26 | DELETE `/api/v1/classes/:id` | S-12 | `contingent.write` | `contingent.class.deleted.v1`, `contingent.student.deleted.v1` ×N | `CLASS_HAS_MARKS` |
 | 27 | POST `/api/v1/students/:id/reactivate` | S-12 | `contingent.write` | `contingent.student.reactivated.v1` | — |
-| 28 | DELETE `/api/v1/subjects/:id` | S-21 | `subject.write` | `subject.deleted.v1` | — |
+| 28 | DELETE `/api/v1/subjects/:id` | S-21 | `subject.write` | `subject.card.deleted.v1` | — |
 | 29 | POST `/api/v1/staff/:id/deactivate` | S-31 | `staff.manage` | `staff.member.deactivated.v1`, `subject.teacher.unbound.v1` ×N | `LAST_MODERATOR` |
 | 30 | POST `/api/v1/staff/:id/reactivate` | S-31 | `staff.manage` | `staff.member.reactivated.v1` | — |
 | 31 | DELETE `/api/v1/staff/:id` | S-31 | `staff.manage` | `staff.member.deleted.v1`, `subject.teacher.unbound.v1` ×N | `LAST_MODERATOR` |
@@ -709,6 +717,16 @@ primary-кнопка к следующему шагу), `error` (карточк�
 (`GET /api/v1/staff/:id/activation-token`, `GET /api/v1/subjects/:id/bind-token`,
 `GET /api/v1/auth/device-link/token/:id` со страницы `/login`) раз в 2 секунды
 (AR-87); список сессий `GET /api/v1/auth/sessions` для `S-80`.
+
+**Отметка скана — не мутация школы, а действие над собой.** Карточка `S-22`
+узнаёт о скане поллингом, но кто-то обязан этот скан зафиксировать: педагог,
+наведя камеру из `S-70`, отправляет `POST /api/v1/subjects/scan {token}` —
+токен переходит в `scanned`, и на экране модератора появляется выбор охвата.
+Строки в таблице выше у этой операции нет намеренно: она **identity-gated** —
+человек отмечает СВОЙ скан своей сессией, а не ведёт школу. Права из каталога
+она не несёт по той же причине, что `POST /auth/logout` и
+`DELETE /auth/sessions/:sid`; в воротах G-10 у неё строка whitelist с причиной.
+Мутаций школы по-прежнему 38.
 
 ## 10. Чего на экранах нет (не додумывать)
 

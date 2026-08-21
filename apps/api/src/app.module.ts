@@ -29,6 +29,9 @@ import { DocModule } from './modules/doc/doc.module';
 import { TextbookModule } from './modules/textbook/textbook.module';
 import { CommModule } from './modules/comm/comm.module';
 import { PilotModule } from './modules/pilot/pilot.module';
+// Schoolium 1.1.1: онбординг школы, контур доступа без SMS, производный журнал.
+import { SchooliumModule } from './schoolium/schoolium.module';
+import { ObservabilityModule } from './schoolium/observability/observability.module';
 // Параметры (система параметров EduStore, см. docs/PARAMETERS.md). Новый параметр = одна строка.
 import { ContingentModule } from './parameters/contingent/contingent.module';
 import { CommsModule } from './parameters/comms/comms.module';
@@ -68,6 +71,8 @@ import { ComplianceModule } from './parameters/compliance/compliance.module';
     TextbookModule, // Phase 1: учебники + парсер (doc.file.enriched → textbook.parsed → КТП)
     CommModule, // Phase 1: Communitoria — граф контактов + инварианты безопасности миноров
     PilotModule, // ВРЕМЕННЫЙ: пилотный auth (AUTH_MODE=pilot-qr) — owner-QR-онбординг для запуска
+    SchooliumModule, // 1.1.1: пустая школа превращается в работающую (AR-72…AR-109)
+    ObservabilityModule, // AR-97: env-флаги отладки, /healthz, requestId; маскирование ПДн не отключается
     // параметры
     ContingentModule,
     CommsModule,

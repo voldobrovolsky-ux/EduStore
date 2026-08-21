@@ -77,4 +77,34 @@ export const TENANT_COLUMN: Record<string, string> = {
   Ack: 'workspaceId',
   // Пилотный auth (временный)
   PilotInvite: 'workspaceId',
+  // ─── Schoolium 1.1.1: доменный контур версии (AR-2, AR-44) ───
+  // Ключ тенанта стоит на КАЖДОЙ из одиннадцати доменных таблиц — без исключений.
+  SchoolClass: 'workspaceId',
+  StudentGroup: 'workspaceId',
+  SchoolStudent: 'workspaceId',
+  SchoolSubject: 'workspaceId',
+  TeacherBinding: 'workspaceId',
+  Term: 'workspaceId',
+  ScheduleTemplate: 'workspaceId',
+  TemplateSlot: 'workspaceId',
+  SchoolLesson: 'workspaceId',
+  Mark: 'workspaceId',
+  LessonTopic: 'workspaceId',
+  // проекции журнала: он строит их подпиской, но живут они у него и под тем же ключом
+  JournalColumn: 'workspaceId',
+  JournalRow: 'workspaceId',
+  // регистр школы (версии агрегатов AR-109, параметры дня AR-103) — тоже школьный
+  SchoolState: 'workspaceId',
+  // ─── Schoolium 1.1.1: контур доступа (правило изоляции AR-99) ───
+  // Под guard: карточки персонала и все токены, выпущенные внутри школы.
+  StaffCard: 'workspaceId',
+  LoginCode: 'workspaceId',
+  ActivationToken: 'workspaceId',
+  BootstrapLink: 'workspaceId',
+  // ВНЕ guard осознанно (AR-99), перечислено здесь же, чтобы решение было видно:
+  //  - AppSession — читается ДО того, как тенант известен: это она его и называет;
+  //    изоляция обеспечивается тем, что сессия несёт workspaceId и он становится
+  //    тенантом запроса, а не тем, что таблицу фильтруют;
+  //  - DeviceLinkToken — до подтверждения анонимен (его создаёт страница входа без
+  //    сессии), workspaceId проставляется в момент привязки.
 };

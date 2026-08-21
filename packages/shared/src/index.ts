@@ -199,3 +199,7 @@ export interface StDevice { id: string; name: string; boundBy: string | null; bo
 // ─────────────────────────── сетка расписания (AR-38) ───────────────────────────
 export interface TimetableSlotDto { id: string; day: number; position: number; durationMin: number }
 export interface TimetableDto { id: string; classId: string; source: string; slots: TimetableSlotDto[] }
+
+// ─────────────────────────── Schoolium 1.1.1 (AR-36) ───────────────────────────
+// Роли, права, шкала отметок, коды ошибок и формы всех запросов версии.
+export * from "./schoolium";

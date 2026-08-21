@@ -28,7 +28,10 @@ export class PermissionGuard implements CanActivate {
     if (!code) return true; // негейченный роут
     const req = ctx.switchToHttp().getRequest<Request & { user?: SessionUser }>();
     if (!req.user) throw new ForbiddenException('требуется аутентификация');
-    const access = await this.authz.resolveAccess(req.user.role, req.user.subRole);
+    // Роли 1.1.1 приходят массивом (AR-60); legacy-сессия OIDC несёт одну строку.
+    const access = req.user.roles?.length
+      ? await this.authz.resolveForRoles(req.user.roles)
+      : await this.authz.resolveAccess(req.user.role, req.user.subRole);
     if (!access.permissions.includes(code)) {
       throw new ForbiddenException(`нет права: ${code}`);
     }

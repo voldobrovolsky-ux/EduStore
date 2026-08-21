@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+// AR-36: роли и их права — из общего контракта, а не второй копией в бэке.
+import { ROLE_LABELS, ROLE_PERMISSIONS, SCHOOL_ROLES, type SchoolRole } from '@edustore/shared';
 
 /**
  * Канонический каталог прав (§5.1) — Раздел→Экран→Действие + пакеты ролей.
@@ -77,13 +79,60 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'psych.cases.view', section: 'psych', screen: 'cases', action: 'view', label: 'Кейсы' },
   { code: 'psych.sessions.view', section: 'psych', screen: 'sessions', action: 'view', label: 'Сессии' },
   { code: 'psych.risk.view', section: 'psych', screen: 'risk', action: 'view', label: 'Risk-карта' },
+  // ─── Schoolium 1.1.1 (AR-69, AR-88): тринадцать кодов версии ───
+  // Восемь мутационных. `schedule.build` уже есть выше — код тот же, пакет другой.
+  { code: 'school.manage', section: 'school', screen: 'admin', action: 'manage', label: 'Кабинет модератора школы' },
+  { code: 'contingent.write', section: 'school', screen: 'classes', action: 'write', label: 'Ведение классов и контингента' },
+  { code: 'subject.write', section: 'school', screen: 'subjects', action: 'write', label: 'Ведение предметов и привязок' },
+  { code: 'staff.manage', section: 'school', screen: 'staff', action: 'manage', label: 'Ведение персонала' },
+  { code: 'journal.mark.post', section: 'school', screen: 'journal', action: 'mark', label: 'Постановка и снятие отметок' },
+  { code: 'journal.topic.set', section: 'school', screen: 'journal', action: 'topic', label: 'Тема урока' },
+  { code: 'staff.self.write', section: 'school', screen: 'profile', action: 'write', label: 'Собственная аватарка' },
+  // Пять читающих: выдаются всем шести ролям. Записи «*.read» в каталоге не
+  // существует — это сокращение текста спеки, а не код (G-10 сверяет коды).
+  { code: 'classes.read', section: 'school', screen: 'classes', action: 'read', label: 'Классы — просмотр' },
+  { code: 'subjects.read', section: 'school', screen: 'subjects', action: 'read', label: 'Предметы — просмотр' },
+  { code: 'staff.read', section: 'school', screen: 'staff', action: 'read', label: 'Персонал — просмотр' },
+  { code: 'schedule.read', section: 'school', screen: 'schedule', action: 'read', label: 'Расписание — просмотр' },
+  { code: 'journal.read', section: 'school', screen: 'journal', action: 'read', label: 'Журнал — просмотр' },
 ];
+
+/**
+ * Пакеты шести ролей Schoolium 1.1.1 (AR-60). Строятся из `ROLE_PERMISSIONS`
+ * пакета `@edustore/shared` — того же источника, которым пользуется фронт:
+ * расхождение каталога и интерфейса ломает `tsc`, а не обнаруживается в проде.
+ *
+ * Модератор держит ВСЕ ТРИНАДЦАТЬ (AR-88): любая мутация версии проходит для
+ * него, включая отметку в чужом уроке. Противовес полномочиям один — полный
+ * аудит его действий (ворота G-41).
+ *
+ * Ключ `teacher` совпадает с legacy-пакетом кабинета учителя: 1.1.1 не заводит
+ * второго пакета под тем же именем, а ДОПОЛНЯЕТ существующий правами версии —
+ * иначе один человек получил бы разный доступ в зависимости от того, какой
+ * контур его обслуживает.
+ */
+const SCHOOLIUM_CABINET: Record<SchoolRole, string> = {
+  moderator: 'moderator',
+  teacher: 'teacher',
+  founder: 'founder',
+  director: 'director',
+  deputy_academic: 'deputy_academic',
+  deputy_upbringing: 'deputy_upbringing',
+};
+
+export const SCHOOLIUM_PACKAGES: RolePackageDef[] = SCHOOL_ROLES.filter((r) => r !== 'teacher').map((role) => ({
+  key: role,
+  cabinet: SCHOOLIUM_CABINET[role],
+  label: ROLE_LABELS[role],
+  permissions: [...ROLE_PERMISSIONS[role]],
+}));
 
 // Каталог строится ТОЛЬКО на доменных ролях (teacher|student|parent|staff·завуч/методист/
 // психолог). admin/owner — tenancy-роли Флёра (RoleAssignment), в токен не приходят (канон
 // §7.4) → пакетов на них нет; их кабинеты ведёт панель Флёра/walk-up, не каталог RP.
 export const ROLE_PACKAGES: RolePackageDef[] = [
-  { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'materials.textbook.upload', 'comm.channel.manage', 'notes.teacher.edit', 'lesson.conduct', 'schedule.view', 'doc.files.manage', 'consent.record'] },
+  // Кабинет учителя: legacy-права контура КТП + права преподавателя 1.1.1 (AR-60).
+  { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'materials.textbook.upload', 'comm.channel.manage', 'notes.teacher.edit', 'lesson.conduct', 'schedule.view', 'doc.files.manage', 'consent.record', ...ROLE_PERMISSIONS.teacher] },
   { key: 'zavuch', cabinet: 'zavuch', label: 'Кабинет завуча', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'structure.classes.manage', 'contingent.students.manage', 'planning.ktp.view', 'planning.ktp.edit', 'planning.ktp.approve', 'planning.kpp.approve', 'standards.assessment.manage', 'standards.org.manage', 'standards.fgos.approve', 'comm.channel.manage', 'comm.announcement.post', 'schedule.build', 'schedule.view', 'doc.files.manage', 'doc.files.publish', 'consent.record', 'consent.deletion.request'] },
   { key: 'methodist', cabinet: 'methodist', label: 'Кабинет методиста', permissions: ['structure.disciplines.manage', 'methodics.umk.view', 'methodics.rp.view', 'standards.timing.manage', 'methodics.manage', 'courses.manage', 'curation.assign', 'comm.channel.manage', 'doc.files.manage', 'doc.files.publish', 'consent.record'] },
   { key: 'parent', cabinet: 'parent', label: 'Кабинет родителя', permissions: ['diary.child.view', 'grades.child.view', 'schedule.view', 'consent.record', 'consent.deletion.request'] },
@@ -93,6 +142,8 @@ export const ROLE_PACKAGES: RolePackageDef[] = [
   // НЕ путать с tenancy-ролями панели Флёра (operator/workspace_admin, в токен не приходят).
   // Кабинет админа (AdminApp) работает по этому пакету — уточнение AR-16 в AR-35.
   { key: 'admin', cabinet: 'admin', label: 'Панель управления школой', permissions: ['structure.classes.manage', 'structure.disciplines.manage', 'structure.distribution.manage', 'structure.devices.manage', 'contingent.students.manage', 'settings.parser.manage', 'consent.record', 'consent.deletion.request'] },
+  // Schoolium 1.1.1: пять оставшихся ролей версии (teacher дополнен выше).
+  ...SCHOOLIUM_PACKAGES,
 ];
 
 /** Идемпотентно засеять каталог в БД из канонического определения (boot + сид). */

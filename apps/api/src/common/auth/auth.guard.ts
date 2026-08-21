@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import { IS_PUBLIC } from './public.decorator';
 import { FlorService, type SessionUser } from './flor.service';
 import { DEFAULT_TEACHER_ID } from './dev-auth.guard';
+import { SCHOOL_COOKIE, SchoolSessionService } from './school-session.service';
 
 /**
  * Единый guard: сессия Флёруса (cookie flor_sid) → request.user.
@@ -16,10 +17,27 @@ export class AuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly flor: FlorService,
+    private readonly school: SchoolSessionService,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const req = ctx.switchToHttp().getRequest<Request & { user?: SessionUser; teacherId?: string }>();
+    const req = ctx.switchToHttp().getRequest<
+      Request & { user?: SessionUser; teacherId?: string; sessionId?: string }
+    >();
+
+    // Контур доступа 1.1.1 (AR-94): httpOnly-cookie sch_sid, сессия 90 дней.
+    // Проверяется первой — это действующий контур; flor_sid ниже принадлежит
+    // вытесненному OIDC-контуру (AR-46, AR-49) и уходит вместе с ним.
+    const schoolToken = req.cookies?.[SCHOOL_COOKIE] as string | undefined;
+    if (schoolToken) {
+      const session = await this.school.read(schoolToken);
+      if (session) {
+        req.user = session;
+        req.sessionId = session.sessionId;
+        req.teacherId = session.florusUserId;
+        return true;
+      }
+    }
 
     const sid = req.cookies?.flor_sid as string | undefined;
     if (sid) {

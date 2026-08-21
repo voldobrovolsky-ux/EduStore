@@ -8,6 +8,7 @@ import { CONTINGENT_EVENTS } from '../../parameters/contingent/contract';
 import { ENGINE_EVENTS } from '../../modules/engine/engine.contract';
 import { DOC_EVENTS } from '../../modules/doc/doc.contract';
 import { STRUCTURE_EVENTS } from '../../modules/structure/structure.contract';
+import { SCHOOL_EVENTS } from '../../schoolium/schoolium.contract';
 
 // Реестр событий с касанием ПДн → категории + извлечение субъекта (§4.8).
 // Расширение покрытия аудита = строка здесь. Охват AR-30: оценки, утверждения КТП/КПП,
@@ -31,7 +32,38 @@ const AUDITED: Record<string, { categories: string[]; subject: (p: Record<string
   [STRUCTURE_EVENTS.assignmentCreated]: { categories: ['identity'], subject: (p) => p.teacherId as string },
   [STRUCTURE_EVENTS.assignmentRemoved]: { categories: ['identity'], subject: (p) => p.teacherId as string },
   [STRUCTURE_EVENTS.deviceRemoved]: { categories: ['devices'], subject: () => undefined },
+  // ─── Schoolium 1.1.1: аудит как ПРОТИВОВЕС полным правам модератора ───
+  // AR-88 назвал цену полномочий: модератор — единственная точка, из которой
+  // достижим любой аккаунт школы. Сдерживающий механизм один — полный аудит его
+  // действий, поэтому аудит перестаёт быть фоновой функцией и получает
+  // собственные ворота (G-41). Здесь перечислены ВСЕ 22 события версии: каждое
+  // ложится в леджер с идентичностью действующего из конверта (AR-21, AR-30).
+  [SCHOOL_EVENTS.classCreated]: { categories: ['identity'], subject: () => undefined },
+  [SCHOOL_EVENTS.classDeleted]: { categories: ['identity'], subject: () => undefined },
+  [SCHOOL_EVENTS.studentUpserted]: { categories: ['identity'], subject: (p) => p.studentId as string },
+  [SCHOOL_EVENTS.studentDeactivated]: { categories: ['identity'], subject: (p) => p.studentId as string },
+  [SCHOOL_EVENTS.studentReactivated]: { categories: ['identity'], subject: (p) => p.studentId as string },
+  [SCHOOL_EVENTS.studentDeleted]: { categories: ['identity'], subject: (p) => p.studentId as string },
+  [SCHOOL_EVENTS.subjectDeleted]: { categories: ['process'], subject: () => undefined },
+  [SCHOOL_EVENTS.teacherBound]: { categories: ['identity'], subject: (p) => p.teacherId as string },
+  [SCHOOL_EVENTS.teacherUnbound]: { categories: ['identity'], subject: (p) => p.teacherId as string },
+  [SCHOOL_EVENTS.staffRegistered]: { categories: ['identity'], subject: (p) => p.userId as string },
+  [SCHOOL_EVENTS.staffDeactivated]: { categories: ['identity'], subject: (p) => p.userId as string },
+  [SCHOOL_EVENTS.staffReactivated]: { categories: ['identity'], subject: (p) => p.userId as string },
+  [SCHOOL_EVENTS.staffDeleted]: { categories: ['identity'], subject: (p) => p.userId as string },
+  [SCHOOL_EVENTS.sessionStarted]: { categories: ['identity'], subject: (p) => p.userId as string },
+  [SCHOOL_EVENTS.sessionRevoked]: { categories: ['identity'], subject: (p) => p.userId as string },
+  [SCHOOL_EVENTS.termSet]: { categories: ['process'], subject: () => undefined },
+  [SCHOOL_EVENTS.templateConfirmed]: { categories: ['process'], subject: () => undefined },
+  [SCHOOL_EVENTS.lessonMaterialized]: { categories: ['process'], subject: () => undefined },
+  [SCHOOL_EVENTS.lessonDetached]: { categories: ['process'], subject: () => undefined },
+  [SCHOOL_EVENTS.markPosted]: { categories: ['learning'], subject: (p) => p.studentId as string },
+  [SCHOOL_EVENTS.markRemoved]: { categories: ['learning'], subject: (p) => p.studentId as string },
+  [SCHOOL_EVENTS.topicSet]: { categories: ['process'], subject: () => undefined },
 };
+
+/** Перечисление для ворот G-41: какие типы событий попадают в аудит. */
+export const AUDITED_TYPES = Object.keys(AUDITED);
 
 /**
  * Audit-леджер (§4.8): append-only иммутабельный журнал ПДн-действий. Пишется ИЗ СОБЫТИЙ —
