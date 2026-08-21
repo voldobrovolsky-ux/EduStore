@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@edustore/shared": "*",
+    "jsqr": "^1.4.0",
     "lucide-react": "^0.460.0",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",

@@ -10,12 +10,10 @@ import { useEffect, useRef, useState } from "react";
 import type { AuditEntryDto, SessionDto } from "@edustore/shared";
 import { api, SchoolApiError } from "../api";
 import { useAsync, useIsMobile } from "../hooks";
-import { Badge, Button, EmptyState, ErrorState, Modal, Skeletons, Toast, useFullscreenFlow, useToast } from "../ui";
+import { Badge, Button, EmptyState, ErrorState, Modal, Skeletons, Toast, useToast } from "../ui";
+import { CameraDenied, hasCamera, parseQr, QrCamera } from "../qr";
 import { useSession } from "../session";
 import { navigate } from "../router";
-
-const hasCamera = (): boolean =>
-  typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia);
 
 const dateTime = (iso: string): string =>
   new Date(iso).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -137,110 +135,6 @@ function AuditList({ entries }: { entries: AuditEntryDto[] }) {
 
 // ─────────────────────────── S-70 · сканер QR ───────────────────────────
 
-/**
- * Камера с распознаванием QR — общая для `S-70` (привязка к предмету) и `S-80`
- * (подключение устройства): §6 требует камеру во весь экран в обоих случаях, и
- * второй реализации того же кода в версии быть не должно.
- *
- * Распознавание — нативным `BarcodeDetector`: сторонний декодер тянуть в
- * версию не за чем.
- *
- * ВНИМАНИЕ, незакрытый край: на устройстве без `BarcodeDetector` (сегодня это
- * весь iOS Safari) видоискатель открывается и не распознаёт НИЧЕГО — человек
- * смотрит в камеру, и ничего не происходит. Запасного пути у этого экрана нет:
- * реестр `70-screens.md` §S-70 называет четыре элемента, и элемента «ввести
- * код руками» среди них нет. Придумывать его здесь нельзя (правило «не
- * додумывать»), поэтому край назван вслух — находка Д16 отчёта этапа 3,
- * вопрос владельцу. До его закрытия обещать сканер на iPhone нельзя.
- */
-function QrCamera({
-  onCode,
-  onDenied,
-  hint,
-  testId,
-  onCancel,
-}: {
-  onCode: (raw: string) => void;
-  onDenied: () => void;
-  hint: string;
-  testId: string;
-  onCancel?: () => void;
-}) {
-  const video = useRef<HTMLVideoElement>(null);
-  const stream = useRef<MediaStream | null>(null);
-  const sink = useRef(onCode);
-  sink.current = onCode;
-
-  // Камера во весь экран прячет таб-бар и возвращает его по выходу (§6, §2.2).
-  useFullscreenFlow(true);
-
-  useEffect(() => {
-    if (!hasCamera()) return;
-    let alive = true;
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: "environment" } })
-      .then((s) => {
-        if (!alive) return void s.getTracks().forEach((t) => t.stop());
-        stream.current = s;
-        if (video.current) video.current.srcObject = s;
-      })
-      .catch(() => alive && onDenied());
-    return () => {
-      alive = false;
-      stream.current?.getTracks().forEach((t) => t.stop());
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const Detector = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => { detect: (s: CanvasImageSource) => Promise<{ rawValue: string }[]> } }).BarcodeDetector;
-    if (!Detector) return;
-    const det = new Detector({ formats: ["qr_code"] });
-    const id = setInterval(async () => {
-      if (!video.current || video.current.readyState < 2) return;
-      const codes = await det.detect(video.current).catch(() => []);
-      const raw = codes[0]?.rawValue;
-      if (!raw) return;
-      clearInterval(id);
-      sink.current(raw);
-    }, 400);
-    return () => clearInterval(id);
-  }, []);
-
-  return (
-    <>
-      <div className="sch-viewfinder sch-viewfinder--full" data-testid={testId}>
-        <video ref={video} autoPlay playsInline muted />
-        <div className="sch-viewfinder-frame" />
-        <div className="sch-viewfinder-bar">
-          <p>{hint}</p>
-          {onCancel ? (
-            <Button kind="secondary" onClick={onCancel}>
-              Отмена
-            </Button>
-          ) : null}
-        </div>
-      </div>
-    </>
-  );
-}
-
-/** Экран «нет доступа к камере» — один текст на оба сценария. */
-function CameraDenied({ testId }: { testId: string }) {
-  return (
-    <div className="sch-card sch-stack" data-testid={testId}>
-      <h2>Нет доступа к камере</h2>
-      <p className="sch-muted">
-        Разрешите камеру в настройках браузера: значок замка в адресной строке → «Камера» → «Разрешить», затем
-        обновите страницу.
-      </p>
-      <Button kind="secondary" onClick={() => window.location.reload()}>
-        Повторить
-      </Button>
-    </div>
-  );
-}
-
 export function ScanScreen() {
   const mobile = useIsMobile();
   const [denied, setDenied] = useState(false);
@@ -282,8 +176,12 @@ export function ScanScreen() {
         hint="Наведите камеру на QR из карточки предмета"
         onDenied={() => setDenied(true)}
         onCode={async (raw) => {
+          // Чужой код — не «ошибка сервера», а не тот код: экран привязки к
+          // предмету не должен молча пытаться скормить контракту токен входа.
+          const qr = parseQr(raw);
+          if (qr?.kind !== "bind") return setError("Это не код привязки к предмету");
           try {
-            const r = await api.scan(raw.replace(/^schoolium:bind:/, ""));
+            const r = await api.scan(qr.value);
             setResult({ subject: r.subject, classLabel: r.classLabel });
           } catch (e) {
             setError(e instanceof SchoolApiError ? e.message : "Код не распознан");
@@ -321,8 +219,10 @@ export function DevicesScreen() {
         onDenied={() => setDenied(true)}
         onCancel={() => setScanning(false)}
         onCode={(raw) => {
+          const qr = parseQr(raw);
+          if (qr?.kind !== "link") return showToast("Это не код подключения устройства");
           setScanning(false);
-          setPending({ token: raw.replace(/^schoolium:link:/, ""), hint: "новое устройство" });
+          setPending({ token: qr.value, hint: "новое устройство" });
         }}
       />
     );
@@ -343,7 +243,9 @@ export function DevicesScreen() {
             onClick={() => {
               if (mobile) return setScanning(true);
               const raw = window.prompt("Код с экрана входа подключаемого устройства");
-              if (raw) setPending({ token: raw.replace(/^schoolium:link:/, ""), hint: "новое устройство" });
+              if (!raw) return;
+              const qr = parseQr(raw) ?? { kind: "link" as const, value: raw.trim() };
+              setPending({ token: qr.value, hint: "новое устройство" });
             }}
           >
             Подключить устройство

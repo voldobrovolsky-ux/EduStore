@@ -12,6 +12,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { ACCESS_PARAMS, safeNext } from "@edustore/shared";
 import { api, SchoolApiError } from "../api";
 import { Button, Field } from "../ui";
+import { CameraDenied, hasCamera, parseQr, QrCamera } from "../qr";
 import { useIsMobile, usePolling } from "../hooks";
 import { navigate } from "../router";
 
@@ -159,6 +160,8 @@ export function LoginCodeScreen() {
   const [digits, setDigits] = useState<string[]>(Array(ACCESS_PARAMS.loginCodeDigits).fill(""));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [denied, setDenied] = useState(false);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
 
   const submit = async (code: string) => {
@@ -186,6 +189,36 @@ export function LoginCodeScreen() {
     const code = next.join("");
     if (code.length === ACCESS_PARAMS.loginCodeDigits && !next.includes("")) void submit(code);
   };
+
+  /*
+   * `S-05.btn.scan` — «открывает камеру, скан того же кода» (реестр §S-05).
+   * До этапа 3 кнопка рендерилась БЕЗ обработчика: нажималась и не делала
+   * ничего, при том что модератор показывает рядом QR кода входа. G-52 такую
+   * дыру не ловит по построению — она проверяет, что идентификатор стоит на
+   * экране, а не что за ним есть поведение.
+   *
+   * Камера открывается ЗДЕСЬ, а не переходом на `S-70`: `S-05` — экран
+   * анонима, а `S-70` живёт за сессией. Отправлять человека без доступа на
+   * экран, требующий доступа, значит закрыть ему единственный путь внутрь.
+   */
+  if (scanning) {
+    if (denied) return <AuthFrame><CameraDenied testId="S-05.error.denied" /></AuthFrame>;
+    return (
+      <QrCamera
+        testId="S-05.viewfinder"
+        hint="Наведите камеру на QR из карточки, которую открыл модератор"
+        onDenied={() => setDenied(true)}
+        onCancel={() => setScanning(false)}
+        onCode={(raw) => {
+          const qr = parseQr(raw);
+          if (qr?.kind !== "code") return setError("Это не код входа");
+          setScanning(false);
+          setDigits(qr.value.split(""));
+          void submit(qr.value);
+        }}
+      />
+    );
+  }
 
   return (
     <AuthFrame>
@@ -220,7 +253,7 @@ export function LoginCodeScreen() {
         </p>
         {/* Кнопка сканера скрыта, если камеры нет (§6). */}
         {hasCamera() ? (
-          <Button kind="secondary" testId="S-05.btn.scan">
+          <Button kind="secondary" testId="S-05.btn.scan" onClick={() => setScanning(true)}>
             Сканировать QR
           </Button>
         ) : null}
@@ -232,8 +265,7 @@ export function LoginCodeScreen() {
   );
 }
 
-const hasCamera = (): boolean =>
-  typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia);
+
 
 // ─────────────────────────── S-03 · регистрация по QR ───────────────────────────
 
