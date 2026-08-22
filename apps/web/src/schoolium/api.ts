@@ -167,8 +167,12 @@ export const api = {
     call<{ ok: boolean; detached: number; materialized: number }>("POST", `${V1}/schedule/confirm`, dto),
 
   // ─── журнал ───
-  journal: (classId: string, subjectId: string) =>
-    call<JournalDto>("GET", `${V1}/journal?classId=${encodeURIComponent(classId)}&subjectId=${encodeURIComponent(subjectId)}`),
+  journal: (classId: string, subjectId: string, week?: string) =>
+    call<JournalDto>(
+      "GET",
+      `${V1}/journal?classId=${encodeURIComponent(classId)}&subjectId=${encodeURIComponent(subjectId)}` +
+        (week ? `&week=${encodeURIComponent(week)}` : ""),
+    ),
   setTopic: (lessonId: string, topic: string) => call<{ ok: boolean }>("PUT", `${V1}/lessons/${lessonId}/topic`, { topic }),
   postMark: (lessonId: string, studentId: string, mark: MarkValue) =>
     call<{ ok: boolean }>("POST", `${V1}/lessons/${lessonId}/marks`, { studentId, mark }),

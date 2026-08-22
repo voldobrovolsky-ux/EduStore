@@ -8,8 +8,8 @@
  * линия 3): серая колонка будущего урока — это отражение `LESSON_NOT_HELD`,
  * и попытка обойти интерфейс упирается в тот же отказ на сервере.
  */
-import { useCallback, useMemo, useRef, useState } from "react";
-import type { ClassDto, JournalColumnDto, JournalRowDto, MarkValue, SubjectDto } from "@edustore/shared";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ClassDto, JournalColumnDto, JournalRowDto, JournalWeekDto, MarkValue, SubjectDto } from "@edustore/shared";
 import { api, SchoolApiError } from "../api";
 import { useAsync, useIsMobile } from "../hooks";
 import {
@@ -98,14 +98,22 @@ function JournalBody({
   forClass: SubjectDto[];
   subj: SubjectDto | null;
 }) {
+  /* Неделю выбирает человек, но НАЧАЛЬНУЮ выбирает сервер: он один знает
+     календарь и то, идёт ли сейчас учебный год. Пока выбора не было — `null`,
+     и сервер открывает текущую (реестр §S-50, `openWeekReason`). */
+  const [week, setWeek] = useState<string | null>(null);
   const [state, reload] = useAsync(
-    async () => (subj ? api.journal(cls.id, subj.id) : null),
-    [cls.id, subj?.id ?? ""],
+    async () => (subj ? api.journal(cls.id, subj.id, week ?? undefined) : null),
+    [cls.id, subj?.id ?? "", week ?? ""],
   );
   const { toast, showToast } = useToast();
 
-  const go = (nextClass: string, nextSubject: string | null) =>
+  const go = (nextClass: string, nextSubject: string | null) => {
+    // Другой класс — другой набор недель с уроками: держать выбор прежним
+    // значило бы открыть неделю, которой у нового предмета может не быть.
+    setWeek(null);
     navigate(`/journal?classId=${nextClass}${nextSubject ? `&subjectId=${nextSubject}` : ""}`);
+  };
 
   const selects = (
     <div className="sch-toolbar">
@@ -153,7 +161,13 @@ function JournalBody({
       {state.status === "loading" ? <Skeletons count={8} kind="row" /> : null}
       {state.status === "error" ? <ErrorState message={state.message} onRetry={reload} /> : null}
       {state.status === "ready" ? (
-        <JournalTable data={state.data} subjectName={subj?.name ?? ""} onChanged={reload} showToast={showToast} />
+        <JournalTable
+          data={state.data}
+          subjectName={subj?.name ?? ""}
+          onChanged={reload}
+          onWeek={setWeek}
+          showToast={showToast}
+        />
       ) : null}
       {toast ? <Toast text={toast} /> : null}
     </>
@@ -170,11 +184,13 @@ function JournalTable({
   data,
   subjectName,
   onChanged,
+  onWeek,
   showToast,
 }: {
   data: import("@edustore/shared").JournalDto | null;
   subjectName: string;
   onChanged: () => void;
+  onWeek: (monday: string) => void;
   showToast: (t: string) => void;
 }) {
   const me = useSession();
@@ -276,6 +292,8 @@ function JournalTable({
 
   return (
     <>
+      <WeekStrip weeks={data.weeks} open={data.week} reason={data.openWeekReason} termNo={data.termNo} onWeek={onWeek} />
+
       <div className="sch-journal">
         <table data-testid="S-50.table" ref={grid} onKeyDown={onKeyDown}>
           <thead>
@@ -305,6 +323,7 @@ function JournalTable({
                 </th>
               ))}
               <th className="sch-j-avg">Средний</th>
+              <th className="sch-j-avg">Четвертная</th>
             </tr>
           </thead>
           <tbody>
@@ -342,6 +361,12 @@ function JournalTable({
                 <td className="sch-j-avg" data-testid="S-50.col.average">
                   {r.average === null ? "—" : r.average.toFixed(2)}
                 </td>
+                {/* Четвертная, которая ВЫХОДИТ: округление среднего за
+                    четверть. Прогноз по ходу периода, не выставленная итоговая
+                    — выставления в 1.1.1 нет, и обещать его нечем. */}
+                <td className="sch-j-avg" data-testid="S-50.col.termGrade">
+                  {r.termGrade === null ? "—" : <MarkChip value={String(r.termGrade) as MarkValue} />}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -378,6 +403,80 @@ function JournalTable({
     </>
   );
 }
+
+/**
+ * `S-50.weeks` — строка календаря над журналом.
+ *
+ * Открытая неделя приезжает с сервера вместе с причиной: он один знает
+ * календарь и то, идёт ли сейчас учебный год. Причину экран проговаривает
+ * словами — «сегодня каникулы, открыта ближайшая учебная неделя» честнее, чем
+ * молча показанная не та неделя, в которой учитель не найдёт своих уроков.
+ */
+function WeekStrip({
+  weeks,
+  open,
+  reason,
+  termNo,
+  onWeek,
+}: {
+  weeks: JournalWeekDto[];
+  open: string;
+  reason: "current" | "nearest" | "requested";
+  termNo: 1 | 2 | 3 | 4 | null;
+  onWeek: (monday: string) => void;
+}) {
+  const strip = useRef<HTMLDivElement>(null);
+
+  // Открытая неделя подкручивается в поле зрения: учебный год — это 34+ недели,
+  // и без этого сентябрь встречал бы человека прокруткой до апреля.
+  useEffect(() => {
+    strip.current?.querySelector<HTMLElement>('[aria-current="true"]')?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [open]);
+
+  if (weeks.length === 0) return null;
+
+  return (
+    <div className="sch-weeks" data-testid="S-50.weeks">
+      <div className="sch-weeks-strip" ref={strip}>
+        {weeks.map((w) => {
+          const isOpen = w.monday === open;
+          return (
+            <button
+              key={w.monday}
+              className="sch-week"
+              data-testid={isOpen ? "S-50.week.current" : undefined}
+              data-term={w.termNo ?? undefined}
+              data-empty={!w.hasLessons || undefined}
+              aria-current={isOpen}
+              onClick={() => onWeek(w.monday)}
+            >
+              <span className="sch-week-range">{weekLabel(w)}</span>
+              <span className="sch-week-term">{w.termNo ? `${w.termNo} четв.` : "каникулы"}</span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="sch-muted" data-testid="S-50.week.note">
+        {reason === "current"
+          ? `Текущая неделя${termNo ? `, ${termNo} четверть` : ""}`
+          : reason === "nearest"
+            ? "Сегодня вне учебных недель — открыта ближайшая неделя с уроками"
+            : `Выбранная неделя${termNo ? `, ${termNo} четверть` : " — каникулы"}`}
+      </p>
+    </div>
+  );
+}
+
+/** «8–14 сент.»; неделя на стыке месяцев — «29 сент. – 5 окт.». */
+function weekLabel(w: JournalWeekDto): string {
+  const m = (iso: string) => MONTHS_SHORT[Number(iso.slice(5, 7)) - 1];
+  const d = (iso: string) => Number(iso.slice(8, 10));
+  return m(w.monday) === m(w.sunday)
+    ? `${d(w.monday)}–${d(w.sunday)} ${m(w.sunday)}`
+    : `${d(w.monday)} ${m(w.monday)} – ${d(w.sunday)} ${m(w.sunday)}`;
+}
+
+const MONTHS_SHORT = ["янв.", "фев.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек."];
 
 // ─────────────────────────── S-51 · тема урока ───────────────────────────
 

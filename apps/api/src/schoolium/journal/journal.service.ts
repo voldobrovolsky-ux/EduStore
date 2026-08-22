@@ -2,9 +2,11 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import {
   MARK_VALUES,
   isNumericMark,
+  termGradeOf,
   type JournalColumnDto,
   type JournalDto,
   type JournalRowDto,
+  type JournalWeekDto,
   type MarkValue,
   type SchoolRole,
 } from '@edustore/shared';
@@ -23,6 +25,17 @@ export interface Actor {
 }
 
 const isoDay = (d: Date): string => d.toISOString().slice(0, 10);
+/** Понедельник недели, которой принадлежит день. Неделя считается с понедельника. */
+const mondayOf = (day: string): string => {
+  const d = new Date(`${day}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return isoDay(d);
+};
+const addDays = (day: string, n: number): string => {
+  const d = new Date(`${day}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return isoDay(d);
+};
 
 /**
  * Журнал 1.1.1 (AR-74, AR-79, AR-83).
@@ -44,8 +57,22 @@ export class JournalService {
 
   // ─────────────── чтение ───────────────
 
-  async read(classId: string, subjectId: string, nextSchoolDay: string | null): Promise<JournalDto> {
-    const [columns, rows] = await Promise.all([
+  /**
+   * Журнал открывается НЕДЕЛЕЙ, а не всем годом.
+   *
+   * Учитель работает с текущей неделей — она и открывается сама. Но оценивает
+   * он за ЧЕТВЕРТЬ, поэтому средний балл и четвертная считаются по всем
+   * отметкам четверти, в которую попадает открытая неделя, а не по видимым
+   * шести колонкам. Две разные области у двух разных чисел — это не
+   * непоследовательность, а то, как устроена работа: смотрим неделю, отвечаем
+   * за период.
+   *
+   * Периоды берутся из календаря (AR-68): журнал их НЕ хранит, иначе перенос
+   * границы четверти разъехался бы с расписанием.
+   */
+  async read(classId: string, subjectId: string, nextSchoolDay: string | null, week?: string): Promise<JournalDto> {
+    const ws = TenantContext.require();
+    const [allColumns, rows, terms] = await Promise.all([
       this.prisma.journalColumn.findMany({
         where: { classId, subjectId },
         orderBy: [{ date: 'asc' }, { slotNo: 'asc' }],
@@ -56,8 +83,61 @@ export class JournalService {
         orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }, { middleName: 'asc' }],
         include: { marks: true },
       }),
+      this.prisma.term.findMany({ where: { workspaceId: ws }, orderBy: { termNo: 'asc' } }),
     ]);
+
     const t = today();
+    const termOf = (day: string): 1 | 2 | 3 | 4 | null => {
+      const hit = terms.find((x) => isoDay(x.dateFrom) <= day && day <= isoDay(x.dateTo));
+      return hit ? (hit.termNo as 1 | 2 | 3 | 4) : null;
+    };
+
+    // ── строка календаря: недели учебного года ──
+    // Границы берём из четвертей, а не из уроков: неделя без уроков всё равно
+    // существует и должна быть видна — иначе человек не поймёт, почему после
+    // «14.09» сразу «28.09».
+    const withLessons = new Set(allColumns.map((c) => mondayOf(isoDay(c.date))));
+    const weeks: JournalWeekDto[] = [];
+    if (terms.length) {
+      const first = mondayOf(isoDay(terms[0].dateFrom));
+      const last = mondayOf(isoDay(terms[terms.length - 1].dateTo));
+      for (let m = first; m <= last; m = addDays(m, 7)) {
+        weeks.push({
+          monday: m,
+          sunday: addDays(m, 6),
+          // Четверть недели — по её ПОНЕДЕЛЬНИКУ и воскресенью: неделя на стыке
+          // принадлежит той четверти, в которой начинается.
+          termNo: termOf(m) ?? termOf(addDays(m, 6)),
+          hasLessons: withLessons.has(m),
+        });
+      }
+    }
+
+    // ── какая неделя открыта ──
+    const requested = week && weeks.some((w) => w.monday === week) ? week : null;
+    const currentMonday = mondayOf(t);
+    const isCurrent = weeks.some((w) => w.monday === currentMonday);
+    // Сегодня вне учебного года или на каникулах — открываем ближайшую неделю
+    // С УРОКАМИ, а не пустую: иначе журнал встречает пустой таблицей и молчит.
+    const nearest =
+      weeks.find((w) => w.hasLessons && w.monday >= currentMonday)?.monday ??
+      [...weeks].reverse().find((w) => w.hasLessons)?.monday ??
+      weeks[0]?.monday ??
+      currentMonday;
+    const openWeek = requested ?? (isCurrent ? currentMonday : nearest);
+    const openWeekReason: JournalDto['openWeekReason'] = requested
+      ? 'requested'
+      : isCurrent
+        ? 'current'
+        : 'nearest';
+    const openTerm = weeks.find((w) => w.monday === openWeek)?.termNo ?? null;
+
+    // ── колонки открытой недели ──
+    const weekEnd = addDays(openWeek, 6);
+    const columns = allColumns.filter((c) => {
+      const d = isoDay(c.date);
+      return openWeek <= d && d <= weekEnd;
+    });
     const cols: JournalColumnDto[] = columns.map((c) => ({
       lessonId: c.lessonId,
       date: isoDay(c.date),
@@ -68,10 +148,22 @@ export class JournalService {
       future: isoDay(c.date) > t,
       detached: c.detachedAt !== null,
     }));
+
+    // ── отметки: видимые за неделю, средний и четвертная — за четверть ──
+    const dayOfLesson = new Map(allColumns.map((c) => [c.lessonId, isoDay(c.date)]));
+    const weekLessons = new Set(cols.map((c) => c.lessonId));
+
     const out: JournalRowDto[] = rows.map((r) => {
       const marks: Record<string, MarkValue> = {};
-      for (const m of r.marks) marks[m.lessonId] = m.value as MarkValue;
-      const nums = r.marks.map((m) => m.value as MarkValue).filter(isNumericMark).map(Number);
+      for (const m of r.marks) if (weekLessons.has(m.lessonId)) marks[m.lessonId] = m.value as MarkValue;
+
+      const inTerm = r.marks.filter((m) => {
+        const d = dayOfLesson.get(m.lessonId);
+        return d !== undefined && (openTerm === null ? false : termOf(d) === openTerm);
+      });
+      const nums = inTerm.map((m) => m.value as MarkValue).filter(isNumericMark).map(Number);
+      const average = nums.length ? Number((nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2)) : null;
+
       return {
         studentId: r.studentId,
         lastName: r.lastName,
@@ -80,10 +172,12 @@ export class JournalService {
         sex: (r.sex as 'm' | 'f' | null) ?? null,
         deactivated: r.deactivated,
         marks,
-        average: nums.length ? Number((nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2)) : null,
+        average,
+        termGrade: termGradeOf(average),
       };
     });
-    return { classId, subjectId, columns: cols, rows: out, nextSchoolDay };
+
+    return { classId, subjectId, columns: cols, rows: out, weeks, week: openWeek, openWeekReason, termNo: openTerm, nextSchoolDay };
   }
 
   // ─────────────── гейты ───────────────

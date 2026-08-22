@@ -1,9 +1,12 @@
-/* EduStore PWA service worker.
-   Стратегия: app-shell precache + stale-while-revalidate для статики,
-   network-first с офлайн-кешем для GET /api (журнал текущего дня, расписание,
-   материалы текущего урока — доступны офлайн; синхронизация при восстановлении сети). */
-const SHELL_CACHE = "edustore-shell-v1";
-const API_CACHE = "edustore-api-v1";
+/* Schoolium — service worker.
+   Стратегия: app-shell precache + stale-while-revalidate для СТАТИКИ.
+
+   Ответы `/api/` НЕ КЕШИРУЮТСЯ. Журнал — инструмент выставления оценок, а не
+   витрина: показать вчерашние отметки как сегодняшние значит соврать учителю о
+   том, что он уже поставил, и о том, что ещё нет. Без сети экран честно уходит
+   в состояние `error` с кнопкой «Повторить» — оно есть у каждого экрана и
+   описано реестром, в отличие от «данных неизвестной свежести». */
+const SHELL_CACHE = "schoolium-shell-v1";
 const SHELL_ASSETS = ["/", "/index.html", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -16,7 +19,7 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((k) => k !== SHELL_CACHE && k !== API_CACHE)
+          .filter((k) => k !== SHELL_CACHE)
           .map((k) => caches.delete(k)),
       ),
     ),
@@ -30,19 +33,9 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
-  // API: network-first, фолбэк в кеш (офлайн-доступ к последним данным)
-  if (url.pathname.startsWith("/api/")) {
-    event.respondWith(
-      fetch(request)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(API_CACHE).then((c) => c.put(request, copy));
-          return res;
-        })
-        .catch(() => caches.match(request)),
-    );
-    return;
-  }
+  // API: только сеть. Кеша нет ни как источника, ни как фолбэка — данные
+  // журнала и расписания либо свежие, либо их нет, и человек об этом знает.
+  if (url.pathname.startsWith("/api/")) return;
 
   // Статика/навигация: stale-while-revalidate
   event.respondWith(

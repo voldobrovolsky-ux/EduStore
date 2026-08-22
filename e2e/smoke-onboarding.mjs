@@ -797,8 +797,40 @@ async function main() {
         throw new Error('журнал не построил колонку урока в учебный день смока');
       }
       await hasAll(page, ['S-50.select.class', 'S-50.select.subject']);
-      await hasAll(page, ['S-50.table', 'S-50.colhead.date', 'S-50.cell.mark', 'S-50.col.average']);
+      await hasAll(page, ['S-50.table', 'S-50.colhead.date', 'S-50.cell.mark', 'S-50.col.average', 'S-50.col.termGrade', 'S-50.weeks', 'S-50.week.current']);
       console.log(`    · ${slotToday.classLabel}, ${slotToday.subjectName} — урок в учебный день смока (${SCHOOL_DAY})`);
+
+      /*
+       * Строка календаря над журналом: открывается ТА неделя, которая идёт
+       * сейчас (реестр §S-50). Проверяется не наличием элемента, а совпадением
+       * открытой недели с понедельником учебного дня смока — иначе «календарь
+       * есть» доказывало бы картинку, а не поведение.
+       */
+      const mondayOfSmoke = (() => {
+        const d = new Date(`${SCHOOL_DAY}T00:00:00.000Z`);
+        d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+        return d.getUTCDate();
+      })();
+      const openWeek = (await page.locator('[data-testid="S-50.week.current"] .sch-week-range').innerText()).trim();
+      if (openWeek.startsWith(String(mondayOfSmoke))) {
+        console.log(`    ✅ открыта текущая неделя «${openWeek}» — понедельник учебного дня смока (${SCHOOL_DAY})`);
+      } else {
+        console.error(`    ❌ открыта неделя «${openWeek}», ожидалась начинающаяся с ${mondayOfSmoke}`);
+        failures++;
+      }
+      const weekNote = (await page.locator('[data-testid="S-50.week.note"]').innerText()).trim();
+      if (/Текущая неделя/.test(weekNote)) console.log(`    ✅ экран называет причину выбора: «${weekNote}»`);
+      else { console.error(`    ❌ подпись недели: «${weekNote}»`); failures++; }
+
+      // Колонки принадлежат ОДНОЙ неделе, а не всему году: за год у предмета с
+      // двумя часами их под семьдесят, и таблица во всю ширину не читается.
+      const colDates = await page.locator('[data-testid="S-50.colhead.date"]').allInnerTexts();
+      if (colDates.length > 0 && colDates.length <= 7) {
+        console.log(`    ✅ колонок в открытой неделе ${colDates.length}: ${colDates.join(' ')}`);
+      } else {
+        console.error(`    ❌ колонок на экране ${colDates.length} — это не одна неделя`);
+        failures++;
+      }
 
       // Колонки следующих дней горизонта — будущие, и это видно на том же экране.
       const futureCols = await page.locator('[data-testid="S-50.col.future"]').count();
@@ -836,6 +868,11 @@ async function main() {
       const avg = (await page.locator('[data-testid="S-50.col.average"]').first().innerText()).trim();
       if (avg.startsWith('5')) console.log(`    ✅ S-50.col.average пересчитан: ${avg} (AR-115)`);
       else { console.error(`    ❌ средний балл после единственной пятёрки: «${avg}»`); failures++; }
+      // Четвертная ВЫХОДИТ из среднего за четверть — на том же экране, тем же
+      // действием: учитель поставил пятёрку и сразу видит, что выходит.
+      const term = (await page.locator('[data-testid="S-50.col.termGrade"]').first().innerText()).trim();
+      if (term === '5') console.log(`    ✅ S-50.col.termGrade: из среднего ${avg} выходит четвертная ${term}`);
+      else { console.error(`    ❌ четвертная при среднем ${avg}: «${term}»`); failures++; }
 
       // Перезагрузка — единственный честный ответ на вопрос «а записалось ли».
       await page.reload();
@@ -883,6 +920,9 @@ async function main() {
       const avgAfter = (await page.locator('[data-testid="S-50.col.average"]').first().innerText()).trim();
       if (avgAfter === '—') console.log('    ✅ отметка снята, средний балл вернулся к «—», а не к нулю (P7)');
       else { console.error(`    ❌ средний балл после снятия единственной отметки: «${avgAfter}»`); failures++; }
+      const termAfter = (await page.locator('[data-testid="S-50.col.termGrade"]').first().innerText()).trim();
+      if (termAfter === '—') console.log('    ✅ четвертная вернулась к «—», а не к двойке');
+      else { console.error(`    ❌ четвертная после снятия единственной отметки: «${termAfter}»`); failures++; }
       await shot(page, 'S-52-mark-cleared');
 
       // ── S-40.banner.stale · правка нагрузки после подтверждения ──

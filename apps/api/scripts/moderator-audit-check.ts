@@ -102,8 +102,17 @@ async function main(): Promise<void> {
   await ensurePastLesson(b, s.workspaceId);
   await inSchool(s.workspaceId, async () => {
     const view = await journal.read(s.classId, s.subjectId, null);
+    // Журнал отдаёт колонки ОДНОЙ недели (§S-50), поэтому будущий урок ищем
+    // обходом строки календаря: в открытой неделе его может не быть вовсе, а
+    // гейт даты проверять всё равно надо.
     const past = view.columns.find((c) => !c.future)!;
-    const future = view.columns.find((c) => c.future)!;
+    let future = view.columns.find((c) => c.future);
+    for (const w of view.weeks.filter((x) => x.hasLessons)) {
+      if (future) break;
+      const page = await journal.read(s.classId, s.subjectId, null, w.monday);
+      future = page.columns.find((c) => c.future);
+    }
+    if (!future) throw new Error('в сетке нет ни одного будущего урока — гейт даты нечем проверить');
     const modActor = { userId: s.moderator.userId, roles: s.moderator.roles, name: s.moderator.name };
     const teacherActor = { userId: s.teacher.userId, roles: ['teacher' as const], name: 'Иванова Мария' };
     const strangerActor = { userId: 'u-stranger', roles: ['teacher' as const], name: 'Чужой педагог' };

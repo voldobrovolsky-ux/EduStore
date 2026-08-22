@@ -447,12 +447,19 @@ export class SchoolJournalController {
    */
   @RequirePermission('journal.read')
   @Get('journal')
-  async journal(@Query('classId') classId: string, @Query('subjectId') subjectId: string) {
+  async journal(
+    @Query('classId') classId: string,
+    @Query('subjectId') subjectId: string,
+    @Query('week') week?: string,
+  ) {
     await this.schedule.materialize('journal-open');
     const today = schoolToday();
     const holidays = await this.calendar.onHolidays(today);
     const nextDay = holidays ? await this.calendar.nextSchoolDay(today) : null;
-    return this.svc.read(classId, subjectId, nextDay);
+    // `week` — понедельник открываемой недели. Отсутствует или не из этого
+    // учебного года — сервер сам выбирает текущую и говорит об этом
+    // (`openWeekReason`), а не молча показывает первую попавшуюся.
+    return this.svc.read(classId, subjectId, nextDay, week);
   }
 
   /** §11 строка 23 · `S-51.btn.save`. */

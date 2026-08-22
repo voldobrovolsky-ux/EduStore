@@ -331,6 +331,39 @@
 }
 .sch-avatar--lg { width: 120px; height: 120px; font-size: var(--fs-h1); }
 
+/* ─── строка календаря недель над журналом (S-50.weeks) ─── */
+
+.sch-weeks { margin-bottom: var(--sp-16); }
+/* Учебный год — 34+ недели: строка скроллится ВНУТРИ себя, `body` по
+   горизонтали не скроллится никогда (75-adaptive §6). */
+.sch-weeks-strip {
+  display: flex; gap: var(--sp-8);
+  overflow-x: auto; padding-bottom: var(--sp-8);
+  scroll-snap-type: x proximity;
+}
+.sch-week {
+  flex: 0 0 auto; scroll-snap-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-4);
+  min-width: 104px; min-height: var(--tap-min);
+  padding: var(--sp-8) var(--sp-12);
+  border: 1px solid var(--c-border-default); border-radius: var(--r-md);
+  background: var(--c-surface-card); color: var(--c-ink-primary);
+  font-family: inherit; font-size: var(--fs-sm); cursor: pointer;
+}
+.sch-week:hover { background: var(--c-brand-violet-050); }
+.sch-week[aria-current='true'] {
+  background: var(--c-brand-violet-100);
+  border-color: var(--c-brand-violet-500);
+  color: var(--c-brand-violet-700);
+  font-weight: var(--fw-medium);
+}
+/* Неделя без уроков не скрывается — иначе после «14 сент.» шла бы сразу
+   «28 сент.» и человек не понял бы, куда делась неделя (§S-50). */
+.sch-week[data-empty] { color: var(--c-ink-muted); border-style: dashed; }
+.sch-week-range { white-space: nowrap; }
+.sch-week-term { font-size: var(--fs-xs); color: var(--c-ink-secondary); }
+.sch-week[aria-current='true'] .sch-week-term { color: var(--c-brand-violet-700); }
+
 /* ─────────────────────────── журнал (S-50) ─────────────────────────── */
 
 .sch-journal { overflow: auto; max-height: 70vh; border: 1px solid var(--c-border-default); border-radius: var(--r-lg); background: var(--c-surface-card); }
