@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 import { ACCESS_PARAMS, safeNext, startScreenFor, type MeDto, type SchoolRole, type SessionDto } from '@edustore/shared';
 import { Public } from '../../common/auth/public.decorator';
 import type { SessionUser } from '../../common/auth/flor.service';
-import { SCHOOL_COOKIE, SchoolSessionService } from '../../common/auth/school-session.service';
+import { SCHOOL_COOKIE, schoolCookieOptions, SchoolSessionService } from '../../common/auth/school-session.service';
 import { AuthzService } from '../../common/authz/authz.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
@@ -41,9 +41,7 @@ export class SchoolAuthController {
 
   private setCookie(res: Response, token: string): void {
     res.cookie(SCHOOL_COOKIE, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      ...schoolCookieOptions(),
       maxAge: ACCESS_PARAMS.sessionDays * 24 * 3600 * 1000,
       path: '/',
     });

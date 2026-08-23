@@ -26,8 +26,12 @@ services:
       timeout: 5s
       retries: 12
 
+  # Голосовой ввод вытесняемого контура. В 1.1.1 не участвует, а образ тянет
+  # faster-whisper — самая долгая сборка стека. Поднимается только явно:
+  #   docker compose ... --profile asr up -d
   asr:
     build: ./services/asr
+    profiles: ["asr"]
     restart: unless-stopped
     environment:
       ASR_MODEL: ${ASR_MODEL:-small}
@@ -45,14 +49,16 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       PORT: "3000"
       ASR_URL: http://asr:8001
-      WEB_ORIGIN: https://edustore-flor-group.ru
+      # Публичный адрес стенда. От него зависит ссылка входа, которую печатает
+      # school:bootstrap: зашитый домен = мёртвая ссылка на чужом сервере.
+      WEB_ORIGIN: ${WEB_ORIGIN}
       AUTH_MODE: ${AUTH_MODE:-production}
       # Флёрус (ADR-0005) — заполнить в .env.prod
       FLOR_ISSUER: ${FLOR_ISSUER}
       FLOR_CLIENT_ID: ${FLOR_CLIENT_ID}
       FLOR_CLIENT_SECRET: ${FLOR_CLIENT_SECRET}
-      FLOR_REDIRECT_URI: https://edustore-flor-group.ru/api/auth/flor/callback
-      FLOR_POST_LOGOUT_REDIRECT_URI: https://edustore-flor-group.ru
+      FLOR_REDIRECT_URI: ${WEB_ORIGIN}/api/auth/flor/callback
+      FLOR_POST_LOGOUT_REDIRECT_URI: ${WEB_ORIGIN}
     depends_on:
       postgres:
         condition: service_healthy

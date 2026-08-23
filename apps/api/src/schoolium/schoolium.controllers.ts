@@ -18,7 +18,7 @@ import type {
 } from '@edustore/shared';
 import { RequirePermission } from '../common/authz/require-permission.decorator';
 import { Public } from '../common/auth/public.decorator';
-import { SCHOOL_COOKIE } from '../common/auth/school-session.service';
+import { SCHOOL_COOKIE, schoolCookieOptions } from '../common/auth/school-session.service';
 import type { SessionUser } from '../common/auth/flor.service';
 import { actorOf } from './actor';
 import { schoolToday } from './calendar/school-day';
@@ -232,9 +232,7 @@ export class StaffController {
     const r = await this.svc.join(token, body, { openedByOtherSession, deviceHint: ua.slice(0, 80) });
     if (r.sessionToken) {
       (req.res as import('express').Response).cookie(SCHOOL_COOKIE, r.sessionToken, {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
+        ...schoolCookieOptions(),
         path: '/',
       });
     }

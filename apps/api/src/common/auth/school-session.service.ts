@@ -8,6 +8,23 @@ import type { SessionUser } from './flor.service';
 /** Имя httpOnly-cookie контура доступа 1.1.1. Legacy `flor_sid` не переиспользуется. */
 export const SCHOOL_COOKIE = 'sch_sid';
 
+/**
+ * Флаги cookie сессии — ОДНО место на оба маршрута, которые её ставят (вход по
+ * коду и вход по ссылке bootstrap). Раздельные литералы уже расходились бы:
+ * `secure` там был выведен из `NODE_ENV`, и на стенде по голому IP вход молча
+ * не срабатывал — браузер не сохранял cookie, а экран показывал не ошибку, а
+ * возврат на форму.
+ *
+ * `COOKIE_INSECURE=1` снимает `secure` и предназначен ТОЛЬКО для стенда без
+ * TLS (демо по IP, локальная проверка). С реальными данными школы он
+ * недопустим: cookie уйдёт по открытому каналу.
+ */
+export const schoolCookieOptions = () => ({
+  httpOnly: true,
+  sameSite: 'lax' as const,
+  secure: process.env.NODE_ENV === 'production' && process.env.COOKIE_INSECURE !== '1',
+});
+
 const DAY_MS = 24 * 3600 * 1000;
 
 /**
