@@ -50,3 +50,4 @@ e2e/screenshots-onboarding-mobile/
 e2e/.smoke-storage/
 e2e/.textbook-smoke.pdf
 apps/api/.data/
+e2e/screenshots-walkthrough/

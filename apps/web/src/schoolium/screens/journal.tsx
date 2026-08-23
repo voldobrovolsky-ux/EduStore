@@ -54,6 +54,8 @@ const LESSON_DETACHED = "Урок вне расписания: отметки с
 const STUDENT_INACTIVE = "Ученик деактивирован";
 
 export function JournalScreen({ classId, subjectId }: { classId: string | null; subjectId: string | null }) {
+  const me = useSession();
+  const userId = me.state.status === "authed" ? me.state.me.userId : "";
   const [refs, reloadRefs] = useAsync(async () => {
     const [classes, subjects] = await Promise.all([api.classes(), api.subjects()]);
     return { classes: classes.classes, subjects };
@@ -80,9 +82,33 @@ export function JournalScreen({ classId, subjectId }: { classId: string | null; 
     );
   }
 
-  const cls = classes.find((c) => c.id === classId) ?? classes[0];
+  /*
+   * Журнал открывается на СВОЁМ, а не на первом классе школы.
+   *
+   * До этого стояло `classes[0]`, и педагог, ведущий 5А и 5Б, попадал в «1А» —
+   * класс, где у него ничего нет, — и читал «Уроки появятся после
+   * подтверждения расписания. У класса нет предметов — заведите их»: совет,
+   * который к нему не относится и которого он не имеет права выполнить.
+   * Расписание при этом было подтверждено, а его уроки существовали.
+   *
+   * Порядок предпочтений: явный выбор из адреса → класс, где у человека есть
+   * привязка → первый класс, где вообще есть предметы → первый класс школы.
+   * Последние два — для модератора и завуча, у которых привязок нет по роли.
+   */
+  const mine = subjects.filter((s) => s.bindings.some((b) => b.teacherId === userId));
+  const withSubjects = classes.filter((c) => subjects.some((s) => s.classId === c.id));
+  const cls =
+    classes.find((c) => c.id === classId) ??
+    classes.find((c) => mine.some((s) => s.classId === c.id)) ??
+    withSubjects[0] ??
+    classes[0];
   const forClass = subjects.filter((s) => s.classId === cls.id);
-  const subj = forClass.find((s) => s.id === subjectId) ?? forClass[0] ?? null;
+  // Внутри класса — тот же порядок: свой предмет вперёд чужого.
+  const subj =
+    forClass.find((s) => s.id === subjectId) ??
+    forClass.find((s) => mine.some((m) => m.id === s.id)) ??
+    forClass[0] ??
+    null;
 
   return <JournalBody key={`${cls.id}:${subj?.id ?? "-"}`} classes={classes} cls={cls} forClass={forClass} subj={subj} />;
 }

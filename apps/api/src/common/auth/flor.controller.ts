@@ -48,9 +48,21 @@ export class FlorController {
     res.redirect(dest);
   }
 
+  /**
+   * Профиль ВЫТЕСНЯЕМОГО контура. Отвечает только его сессии.
+   *
+   * Guard заполняет `req.user` и для сессии 1.1.1 — она проверяется первой, —
+   * поэтому без явной проверки контура эта ручка отвечала 200 сотруднику
+   * Schoolium. Фронт на корне спрашивает именно её и по ответу отдавал старый
+   * кабинет: учитель, открывший сайт, оказывался в «Кабинете методиста» с
+   * разделами КТП/КПП. Найдено обходом рабочего дня, ворота этого не ловили —
+   * они проверяют экраны, а не то, чей экран показан.
+   */
   @Get('me')
-  async me(@Req() req: Request & { user?: SessionUser }): Promise<SessionUser & ResolvedAccess> {
-    if (!req.user) throw new UnauthorizedException();
+  async me(
+    @Req() req: Request & { user?: SessionUser; contour?: 'schoolium' | 'legacy' },
+  ): Promise<SessionUser & ResolvedAccess> {
+    if (!req.user || req.contour === 'schoolium') throw new UnauthorizedException();
     // кабинет и права — из каталога (§5.1), не из кода фронта
     const access = await this.authz.resolveAccess(req.user.role, req.user.subRole);
     return { ...req.user, ...access };

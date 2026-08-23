@@ -22,7 +22,7 @@ export class AuthGuard implements CanActivate {
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<
-      Request & { user?: SessionUser; teacherId?: string; sessionId?: string }
+      Request & { user?: SessionUser; teacherId?: string; sessionId?: string; contour?: 'schoolium' | 'legacy' }
     >();
 
     // Контур доступа 1.1.1 (AR-94): httpOnly-cookie sch_sid, сессия 90 дней.
@@ -35,6 +35,11 @@ export class AuthGuard implements CanActivate {
         req.user = session;
         req.sessionId = session.sessionId;
         req.teacherId = session.florusUserId;
+        // Контур сессии называется ЯВНО. Без этого ручки вытесняемого контура
+        // отвечают сессии 1.1.1 (они защищены этим же guard, и `req.user` для
+        // них уже заполнен) — и сотрудник школы, открывший корень сайта,
+        // попадает в чужой кабинет. Найдено обходом рабочего дня.
+        req.contour = 'schoolium';
         return true;
       }
     }
@@ -45,6 +50,7 @@ export class AuthGuard implements CanActivate {
       if (session) {
         req.user = session;
         req.teacherId = session.florusUserId; // совместимость с @CurrentTeacher
+        req.contour = 'legacy';
         return true;
       }
     }
