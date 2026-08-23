@@ -4,12 +4,15 @@ FROM node:20-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 # зависимости (workspaces)
+# ВНИМАНИЕ на порядок: packages/shared копируется ЦЕЛИКОМ до npm install.
+# У @edustore/shared есть скрипт prepare (tsc -p tsconfig.json), который npm
+# выполняет прямо в install. Если к этому моменту лежит только его package.json,
+# install падает с TS5058 — и образ не собирается вовсе.
 COPY package.json package-lock.json ./
-COPY packages/shared/package.json packages/shared/
+COPY packages/shared packages/shared
 COPY apps/api/package.json apps/api/
 RUN npm install
 # исходники
-COPY packages/shared packages/shared
 COPY apps/api apps/api
 RUN npx prisma generate --schema apps/api/prisma/schema.prisma
 RUN npm --workspace apps/api run build
