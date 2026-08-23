@@ -138,24 +138,46 @@ export class ContingentService {
     if (dto.sexCount < 0 || dto.sexCount > dto.studentsPerClass) {
       throw new BadRequestException('Не больше численности класса');
     }
+    // Поклассные численности проверяются теми же границами и теми же текстами:
+    // человек правит строку таблицы и должен получить отказ про эту строку, а
+    // не общий «неверные данные».
+    for (const row of dto.perClass ?? []) {
+      if (row.students < 1 || row.students > 40) throw new BadRequestException(`${row.label}: укажите от 1 до 40`);
+      if (row.sexCount < 0 || row.sexCount > row.students) {
+        throw new BadRequestException(`${row.label}: не больше численности класса`);
+      }
+      if (dto.groups !== null && dto.groups > row.students) {
+        throw new BadRequestException(`${row.label}: групп не больше, чем учеников`);
+      }
+    }
 
     if ((await this.prisma.schoolClass.count()) > 0) throw new SchoolError('CLASSES_ALREADY_EXIST');
     await this.state.checkVersion('contingent', dto.version);
 
     const letters = dto.letters && dto.letters.length ? dto.letters : [null];
-    const boys = dto.sexKind === 'boys' ? dto.sexCount : dto.studentsPerClass - dto.sexCount;
+    // Строки таблицы кладутся под имя класса — сервер собирает то же имя, что
+    // показал мастер, и сопоставление не зависит от порядка строк.
+    const overrides = new Map((dto.perClass ?? []).map((r) => [r.label, r]));
+    const headcount = (label: string) => {
+      const row = overrides.get(label);
+      const students = row ? row.students : dto.studentsPerClass;
+      const sexCount = row ? row.sexCount : dto.sexCount;
+      return { students, boys: dto.sexKind === 'boys' ? sexCount : students - sexCount };
+    };
 
     await this.prisma.$transaction(async (tx) => {
       for (let p = 1; p <= dto.parallels; p += 1) {
         for (const letter of letters) {
+          const label = letter ? `${p}${letter}` : String(p);
+          const { students, boys } = headcount(label);
           const cls = await tx.schoolClass.create({
             data: {
               workspaceId: ws,
               parallel: p,
               letter,
-              label: letter ? `${p}${letter}` : String(p),
+              label,
               groupCount: dto.groups ?? 0,
-              plannedStudents: dto.studentsPerClass,
+              plannedStudents: students,
             },
           });
           for (let g = 1; g <= (dto.groups ?? 0); g += 1) {
@@ -166,7 +188,7 @@ export class ContingentService {
           // Пустые профили заводятся сразу, но пол уже известен из шага 5 мастера:
           // иначе собранное там число не влияло бы ни на что. ФИО остаются пустыми —
           // именно они делают профиль заполненным.
-          for (let i = 0; i < dto.studentsPerClass; i += 1) {
+          for (let i = 0; i < students; i += 1) {
             await tx.schoolStudent.create({
               data: { workspaceId: ws, classId: cls.id, seq: i + 1, sex: i < boys ? 'm' : 'f' },
             });

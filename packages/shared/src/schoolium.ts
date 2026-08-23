@@ -262,6 +262,15 @@ export interface StudentDto {
   filled: boolean;
 }
 
+/** Численность ОДНОГО класса, когда она отличается от общей. */
+export interface ClassHeadcountDto {
+  /** Имя класса как его показал мастер: «5» или «5А». */
+  label: string;
+  students: number;
+  /** Число учеников пола, названного в `sexKind`. */
+  sexCount: number;
+}
+
 export interface CreateClassesDto {
   parallels: number;
   /** Список литер либо `null` — явный отказ «⌀ Без литер» (AR-77). */
@@ -271,6 +280,14 @@ export interface CreateClassesDto {
   groups: number | null;
   sexKind: 'boys' | 'girls';
   sexCount: number;
+  /**
+   * Поклассные численности. Одно число на всю школу — ложь про любую реальную
+   * школу: в 1-м классе не столько же детей, сколько в 11-м, и мальчиков в них
+   * не поровну. `studentsPerClass` и `sexCount` остаются значением по
+   * умолчанию, которым таблица заполняется, а строки её переопределяют.
+   * Отсутствует или `null` — все классы одинаковы.
+   */
+  perClass?: ClassHeadcountDto[] | null;
   /** Версия прочитанного состояния контингента (AR-109). */
   version: number;
 }

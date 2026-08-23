@@ -58,6 +58,12 @@
   position: sticky;
   top: 0;
   height: 100vh;
+  /* Сайдбар ростом ровно в экран, а его содержимое может быть выше: на низком
+     окне карточка пользователя внизу уходила за край и не доставалась ничем —
+     ни колесом, ни перетаскиванием, потому что переполнение было видимым, но
+     не прокручиваемым. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .sch-sidebar[data-collapsed='true'] { width: 72px; flex-basis: 72px; }
 .sch-sidebar[data-collapsed='true'] .sch-nav-label,
@@ -711,3 +717,39 @@
 /* Шаговые кнопки существуют только на мобайле (§7): на десктопе поле числовое
    и правится с клавиатуры, лишняя пара кнопок там — шум. */
 @media (min-width: 768px) { .sch-stepper .sch-btn--stepper { display: none; } }
+
+/* ─────────────── S-11 · поклассная численность (M-01, шаг 5) ─────────────── */
+
+/* Таблица растёт с числом классов (11 параллелей × 4 литеры = 44 строки), а
+   модалка выше экрана не становится — прокрутка живёт здесь, а не у страницы. */
+.sch-headcount {
+  display: flex; flex-direction: column; gap: var(--sp-4);
+  max-height: 40vh; overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--c-border-default); border-radius: var(--r-md);
+  padding: var(--sp-8);
+}
+.sch-headcount-head,
+.sch-headcount-row {
+  display: grid;
+  grid-template-columns: 4rem 1fr 1fr 3.5rem;
+  gap: var(--sp-8);
+  align-items: center;
+}
+.sch-headcount-head {
+  position: sticky; top: calc(var(--sp-8) * -1); z-index: 1;
+  background: var(--c-surface-canvas);
+  padding: var(--sp-4) 0;
+  font-size: var(--fs-sm); color: var(--c-ink-secondary);
+}
+.sch-headcount-label { font-weight: var(--fw-bold); }
+.sch-headcount-input {
+  height: var(--tap-min); min-width: 0; padding: 0 var(--sp-8);
+  border: 1px solid var(--c-border-default); border-radius: var(--r-md);
+  background: var(--c-surface-card); color: var(--c-ink-primary);
+  font: inherit; font-size: var(--fs-md);
+}
+.sch-headcount-input:focus-visible { outline: 2px solid var(--c-brand-violet-600); outline-offset: 1px; }
+.sch-headcount-row[data-bad='true'] .sch-headcount-input { border-color: var(--c-danger-600); }
+/* Второй пол не вводится — он разность, и показывать его полем значило бы
+   предложить ввести число, которое всё равно будет пересчитано. */
+.sch-headcount-rest { font-size: var(--fs-sm); color: var(--c-ink-secondary); text-align: right; }

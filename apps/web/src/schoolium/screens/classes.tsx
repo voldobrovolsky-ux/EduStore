@@ -113,6 +113,8 @@ interface WizardState {
   groupsChosen: boolean;
   sexKind: "boys" | "girls";
   sexCount: string;
+  /** Правки по классам: имя класса → численность и число детей названного пола. */
+  rows: Record<string, { students: string; sexCount: string }>;
 }
 
 const EMPTY: WizardState = {
@@ -123,6 +125,7 @@ const EMPTY: WizardState = {
   groupsChosen: false,
   sexKind: "boys",
   sexCount: "",
+  rows: {},
 };
 
 export function ClassesWizard({ version, onClose, onDone }: { version: number; onClose: () => void; onDone: () => void }) {
@@ -145,7 +148,19 @@ export function ClassesWizard({ version, onClose, onDone }: { version: number; o
     if (n === 2) return lettersChosen;
     if (n === 3) return students >= 1 && students <= 40;
     if (n === 4) return w.groupsChosen;
-    return w.sexCount !== "" && sexCount >= 0 && sexCount <= students;
+    if (w.sexCount === "" || sexCount < 0 || sexCount > students) return false;
+    // Правка строки не должна пропускать заведомо невозможный класс: пустая
+    // строка — это «как у всех», а заполненная проверяется теми же границами.
+    return names().every((n) => {
+      const r = w.rows[n];
+      if (!r) return true;
+      const st = r.students === "" ? students : Number(r.students);
+      const sx = r.sexCount === "" ? sexCount : Number(r.sexCount);
+      if (!Number.isFinite(st) || st < 1 || st > 40) return false;
+      if (!Number.isFinite(sx) || sx < 0 || sx > st) return false;
+      if (w.groups !== null && w.groups > st) return false;
+      return true;
+    });
   };
 
   const names = (): string[] => {
@@ -153,6 +168,23 @@ export function ClassesWizard({ version, onClose, onDone }: { version: number; o
     const out: string[] = [];
     for (let p = 1; p <= parallels; p += 1) for (const l of ls) out.push(l ? `${p}${l}` : String(p));
     return out;
+  };
+
+  /**
+   * Строки таблицы, реально отличающиеся от общего значения. Пустая строка —
+   * «как у всех», и отправлять её значит записать в контракт то, чего человек
+   * не вводил.
+   */
+  const perClass = () => {
+    const out = names()
+      .map((label) => {
+        const r = w.rows[label];
+        const st = r && r.students !== "" ? Number(r.students) : students;
+        const sx = r && r.sexCount !== "" ? Number(r.sexCount) : sexCount;
+        return { label, students: st, sexCount: sx };
+      })
+      .filter((r) => r.students !== students || r.sexCount !== sexCount);
+    return out.length ? out : null;
   };
 
   const create = async () => {
@@ -166,6 +198,7 @@ export function ClassesWizard({ version, onClose, onDone }: { version: number; o
         groups: w.groups,
         sexKind: w.sexKind,
         sexCount,
+        perClass: perClass(),
         version,
       });
       onDone();
@@ -338,9 +371,66 @@ export function ClassesWizard({ version, onClose, onDone }: { version: number; o
               {w.sexKind === "boys" ? "Девочек" : "Мальчиков"}: {Math.max(0, students - (sexCount || 0))} — посчитано
               автоматически
             </p>
+            {/* Поклассная таблица. Одно число на школу — ложь про любую реальную
+                школу, поэтому общее значение здесь только заполняет столбцы, а
+                каждая строка правится отдельно. */}
+            <div className="sch-headcount" data-testid="S-11.table.perClass">
+              <div className="sch-headcount-head">
+                <span>Класс</span>
+                <span>Учеников</span>
+                <span>{w.sexKind === "boys" ? "Мальчиков" : "Девочек"}</span>
+                <span>{w.sexKind === "boys" ? "Девочек" : "Мальчиков"}</span>
+              </div>
+              {names().map((label) => {
+                const r = w.rows[label] ?? { students: "", sexCount: "" };
+                const st = r.students === "" ? students : Number(r.students);
+                const sx = r.sexCount === "" ? sexCount : Number(r.sexCount);
+                const bad = !Number.isFinite(st) || st < 1 || st > 40 || !Number.isFinite(sx) || sx < 0 || sx > st;
+                const set = (patch: Partial<{ students: string; sexCount: string }>) =>
+                  setW({ ...w, rows: { ...w.rows, [label]: { ...r, ...patch } } });
+                return (
+                  <div className="sch-headcount-row" data-testid={`S-11.row.${label}`} key={label} data-bad={bad}>
+                    <span className="sch-headcount-label">{label}</span>
+                    <input
+                      className="sch-headcount-input"
+                      data-testid={`S-11.row.${label}.students`}
+                      type="number"
+                      min={1}
+                      max={40}
+                      placeholder={String(students || "")}
+                      value={r.students}
+                      onChange={(e) => set({ students: e.target.value })}
+                      aria-label={`Учеников в классе ${label}`}
+                    />
+                    <input
+                      className="sch-headcount-input"
+                      data-testid={`S-11.row.${label}.sex`}
+                      type="number"
+                      min={0}
+                      max={st || 0}
+                      placeholder={String(sexCount === 0 ? 0 : sexCount || "")}
+                      value={r.sexCount}
+                      onChange={(e) => set({ sexCount: e.target.value })}
+                      aria-label={`${w.sexKind === "boys" ? "Мальчиков" : "Девочек"} в классе ${label}`}
+                    />
+                    <span className="sch-headcount-rest">{Number.isFinite(st) && Number.isFinite(sx) ? Math.max(0, st - sx) : "—"}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="sch-muted">
+              Пустое поле — как у всех: {students || 0} учеников, из них{" "}
+              {w.sexKind === "boys" ? "мальчиков" : "девочек"} {sexCount || 0}.
+            </p>
+
             {/* Превью перечисляет ИМЕНА, а не число: смысл проверки — увидеть произведение (Д5). */}
             <div className="sch-preview" data-testid="S-11.preview">
-              Будет создано {names().length} классов: {names().join(", ")}
+              Будет создано {names().length} классов: {names().join(", ")} · всего учеников{" "}
+              {names().reduce((acc, n) => {
+                const r = w.rows[n];
+                const st = r && r.students !== "" ? Number(r.students) : students;
+                return acc + (Number.isFinite(st) ? st : 0);
+              }, 0)}
             </div>
             {error ? (
               <p className="sch-danger-text" role="alert">
