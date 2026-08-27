@@ -65,34 +65,47 @@ export interface ScheduleParam {
   refusals?: readonly string[];
 }
 
-// ─────────────────────────── ранги ───────────────────────────
+// ─────────────────── приоритет и спаренность (AR-134) ───────────────────
 
 /**
- * Приоритет предмета — ранг 1…6, задающий порядок уроков внутри дня класса.
- * Ранг 1 жёсткий: ни один урок другого ранга не стоит раньше него в том же дне.
- * Ранги 2…5 мягкие: смешение соседних допускается долей `PRIORITY_TOLERANCE`.
+ * **Приоритет предмета** — 1…6, где 1 самый главный. Приоритеты ПОВТОРЯЮТСЯ:
+ * несколько предметов могут иметь один и тот же приоритет и делят начало дня
+ * между собой.
  *
- * Свойство, которое стоит знать заранее: порядок внутри дня почти всегда
- * достижим — перестановка уроков в одном дне не меняет ни одной суммы и задевает
- * только занятость педагогов. Приоритет крайне редко делает задачу неразрешимой.
+ * Правило: в дне класса уроки идут по НЕУБЫВАНИЮ приоритета — считая по началу
+ * урока (для спаренного блока это его первая позиция). Пример владельца:
+ * физкультура и математика обе первого приоритета, физкультура одиночная стоит
+ * первой, математика спаренная начинается со второй и занимает вторую и третью;
+ * предмет второго приоритета встаёт четвёртым. Последовательность 1-1-1-2
+ * неубывающая — нарушения нет, хотя третья позиция занята первым приоритетом.
+ *
+ * Следствие, названное явно: **продолжение спаренного блока вправе выходить за
+ * зону своего приоритета**, начало — нет.
  */
-export const PRIORITY_RANKS = [1, 2, 3, 4, 5, 6] as const;
-export type PriorityRank = (typeof PRIORITY_RANKS)[number];
-
-/** Допустимая доля инверсий по рангу — регрессия. Величины `[дефолт]`, вопрос В9. */
-export const PRIORITY_TOLERANCE: Record<PriorityRank, number> = { 1: 0, 2: 0.2, 3: 0.3, 4: 0.4, 5: 0.5, 6: 1 };
+export const PRIORITIES = [1, 2, 3, 4, 5, 6] as const;
+export type Priority = (typeof PRIORITIES)[number];
 
 /**
- * Спаренность — ранг 1…6. Сдвоенный и одиночный урок равноправны как формы;
- * ранг говорит, насколько предмет тяготеет к спариванию.
- * Значение — допустимая доля НЕспаренных часов; ранг 6 запрещает спаривание вовсе.
+ * Цена инверсии (урок меньшего приоритета начался позже большего) убывает с
+ * номером: перестановка первого и второго приоритета дороже, чем четвёртого и
+ * пятого. Формула — вес, а не выдуманная доля допуска: `6 − min(p, q)`.
+ *
+ * Приоритет 1 инверсий не допускает вовсе (жёсткое H15); для остальных это
+ * штраф. **Точная форма убывания — вопрос владельца В9**, здесь она линейная.
  */
-export const PAIRING_RANKS = [1, 2, 3, 4, 5, 6] as const;
-export type PairingRank = (typeof PAIRING_RANKS)[number];
+export const inversionCost = (p: Priority, q: Priority): number => 6 - Math.min(p, q);
 
-export const PAIRING_TOLERANCE: Record<PairingRank, number> = { 1: 0, 2: 0.2, 3: 0.4, 4: 0.6, 5: 0.8, 6: 0 };
+/**
+ * **Спаренность** — 1…6, шкала владельца: 1 строго обязательно (0 %
+ * неспаренности), 2 очень важно (20 %), 3 умеренно (40 %), 4 достаточно (60 %),
+ * 5 необязательно (80 %), 6 запрещено (спаренных часов нет вовсе).
+ */
+export const PAIRING_LEVELS = [1, 2, 3, 4, 5, 6] as const;
+export type PairingLevel = (typeof PAIRING_LEVELS)[number];
 
-export const PAIRING_TITLES: Record<PairingRank, string> = {
+export const PAIRING_TOLERANCE: Record<PairingLevel, number> = { 1: 0, 2: 0.2, 3: 0.4, 4: 0.6, 5: 0.8, 6: 0 };
+
+export const PAIRING_TITLES: Record<PairingLevel, string> = {
   1: 'строго обязательно',
   2: 'очень важно',
   3: 'умеренно необходимо',
@@ -101,23 +114,52 @@ export const PAIRING_TITLES: Record<PairingRank, string> = {
   6: 'запрещено',
 };
 
-/** Ранг 1 недоступен для 1–4 параллелей: сдвоенных уроков в начальной школе нет. */
-export const PAIRING_RANK1_MIN_PARALLEL = 5;
+/**
+ * Приоритет и спаренность СВЯЗАНЫ: чем выше приоритет урока, тем больше
+ * вероятность, что его поставят спаренным (слова владельца). Поэтому уровень
+ * спаренности по умолчанию берётся равным приоритету, а не выбирается заново.
+ * Совпадение шкал — прочтение, а не цитата: **вопрос В13**.
+ */
+export const defaultPairingFor = (priority: Priority): PairingLevel => priority as unknown as PairingLevel;
+
+/**
+ * Спаренный блок — два часа предмета у класса в один день, занимающие смежные
+ * позиции **либо позиции, разделённые большой переменой** (слова владельца:
+ * «вполне допустимо, что пара может быть разделена пополам большой переменой»).
+ */
+export const pairingIsAdjacent = (slotA: number, slotB: number, bigBreakAfter: number): boolean =>
+  Math.abs(slotA - slotB) === 1 || (Math.min(slotA, slotB) === bigBreakAfter && Math.abs(slotA - slotB) === 1);
+
+/**
+ * Запрет сдвоенных уроков касается **1-х классов**, а не всей начальной школы,
+ * и имеет исключения — физкультура по лыжной подготовке и плаванию.
+ * Проверено 2026-08-27 (базис #14); прежняя формулировка «в 1–4 классах
+ * сдвоенных уроков нет» была ошибкой автора спеки, а не нормой.
+ */
+export const PAIRING_RESTRICTED_PARALLEL = 1;
+export const PAIRING_RESTRICTION_EXCEPTIONS = ['лыжная подготовка', 'плавание'] as const;
 
 // ─────────────────────────── скелет дня ───────────────────────────
 
 /**
  * Скелет дня — сетка звонков, в которую расписание укладывается. Отдельный
- * блок, а не поля расписания: скелетов бывает больше одного (начальная школа с
- * уроком 35–40 минут и старшая с 45 — два звонковых расписания), скелет нужен
- * журналу и печати, и меняется он раз в год против ежечетвертной нагрузки.
- * Норма первого класса живёт ЗДЕСЬ, а не среди параметров расписания.
+ * блок, а не поля расписания.
+ *
+ * **Скелет привязан к ДНЯМ НЕДЕЛИ, а не только к параллелям.** В школах
+ * понедельник и четверг обычно имеют своё расписание — линейка, классные часы,
+ * — поэтому у них своя сетка клеток, а вторник, среда и пятница делят общую.
+ * Четверг иногда совпадает с общим рядом, поэтому нужны две операции:
+ * **обособить день** (выделить в собственный скелет) и **вернуть день в общий
+ * ряд**. Параллели — второе измерение: если у младшей школы свой звонок, у неё
+ * свой скелет на те же дни.
  */
 export interface DaySkeleton {
   id: string;
   name: string;
-  /** Параллели, к которым скелет применяется. */
-  appliesTo: number[];
+  /** Дни недели, к которым скелет применён; 0 = понедельник. */
+  days: number[];
+  /** Параллели; пусто — скелет общий для всей школы. */
+  parallels: number[];
   startTime: string;
   lessonMin: number;
   breakMin: number;
@@ -125,6 +167,11 @@ export interface DaySkeleton {
   bigBreakMin: number;
   positions: number;
 }
+
+/** Обособить день: вынести его из общего скелета в собственный. */
+export interface SkeletonSplit { fromSkeletonId: string; day: number; name: string }
+/** Вернуть день в общий ряд: слить его скелет с названным. */
+export interface SkeletonMerge { skeletonId: string; day: number; intoSkeletonId: string }
 
 export const SKELETON_NORMS = {
   lessonMaxMin: 45,
@@ -152,6 +199,19 @@ export type SearchDepth = keyof typeof SEARCH_DEPTHS;
 /** Прогресс — модальное окно с анимацией. Ни одной цифры человеку не показывается. */
 export const PROGRESS_SHOWS_NUMBERS = false;
 
+/**
+ * Минимум окон педагога — **вывод**, а не константа. Норму ставит завуч на
+ * школу; для конкретного педагога она масштабируется его объёмом часов, иначе
+ * приходящий педагог с четырьмя часами и предмет, начинающийся в четвёртой
+ * четверти, получают ту же норму, что педагог на полной нагрузке.
+ *
+ * Форма масштабирования — **вопрос В11**: здесь пропорция от объёма часов к
+ * полной ставке, и величина ставки приходит из блока нагрузки, а не из этого
+ * файла.
+ */
+export const restGapsFor = (norm: number, teacherHours: number, fullLoadHours: number): number =>
+  fullLoadHours <= 0 ? 0 : Math.min(norm, Math.floor((norm * teacherHours) / fullLoadHours));
+
 export const SCHEDULE_PARAMS: readonly ScheduleParam[] = [
   // ─── шаг 1 · нагрузка ───
   { id: 'load.yearHours', step: 'load', label: 'Часов в год', kind: 'input', status: 'new', control: 'number',
@@ -166,13 +226,13 @@ export const SCHEDULE_PARAMS: readonly ScheduleParam[] = [
     refusals: ['GROUPS_UNASSIGNED', 'GROUP_HOURS_UNEQUAL'] },
 
   // ─── шаг 2 · приоритет ───
-  { id: 'subject.priorityRank', step: 'priority', label: 'Приоритет', kind: 'input', status: 'new', control: 'select',
-    values: PRIORITY_RANKS, default: 3, feeds: ['H15', 'маркер order'], refusals: ['PRIORITY_RANK1_OVERFLOW'] },
+  { id: 'subject.priority', step: 'priority', label: 'Приоритет', kind: 'input', status: 'new', control: 'select',
+    values: PRIORITIES, default: 3, feeds: ['H15', 'маркер order'], refusals: ['PRIORITY_START_OVERFLOW'] },
 
   // ─── шаг 3 · спаренность ───
-  { id: 'subject.pairingRank', step: 'pairing', label: 'Спаренность', kind: 'input', status: 'new', control: 'select',
-    values: PAIRING_RANKS, default: 5, feeds: ['H16', 'маркер pairing'],
-    refusals: ['PAIRING_HOURS_ODD', 'PAIRING_FORBIDDEN_IN_PRIMARY'] },
+  { id: 'subject.pairing', step: 'pairing', label: 'Спаренность', kind: 'input', status: 'new', control: 'select',
+    values: PAIRING_LEVELS, feeds: ['H16', 'маркер pairing'],
+    refusals: ['PAIRING_HOURS_ODD', 'PAIRING_FORBIDDEN_FIRST_GRADE'] },
 
   // ─── шаг 4 · педагоги ───
   { id: 'teacher.methodDay', step: 'teacher', label: 'Методический день', kind: 'input', status: 'new', control: 'select',
@@ -185,8 +245,10 @@ export const SCHEDULE_PARAMS: readonly ScheduleParam[] = [
     min: 3, max: 7, default: 5, feeds: ['H18'], refusals: ['TEACHER_LUNCH_IMPOSSIBLE'] },
   { id: 'teacher.lunchSlots', step: 'teacher', label: 'Длина обеда', kind: 'input', status: 'new', control: 'number',
     min: 1, max: 2, default: 1, feeds: ['H18'], refusals: ['TEACHER_LUNCH_IMPOSSIBLE'] },
-  { id: 'teacher.minWeekGaps', step: 'teacher', label: 'Окон в неделю на отдых, не менее', kind: 'input', status: 'new', control: 'number',
-    min: 0, max: 10, default: 2, feeds: ['маркер teacherRest'] },
+  { id: 'rest.norm', step: 'teacher', label: 'Норма окон на отдых (ставит завуч)', kind: 'input', status: 'new', control: 'number',
+    min: 0, max: 10, feeds: ['teacher.minWeekGaps'] },
+  { id: 'teacher.minWeekGaps', step: 'teacher', label: 'Окон в неделю на отдых, не менее', kind: 'derived', status: 'new', control: 'readonly',
+    min: 0, feeds: ['маркер teacherRest'] },
   { id: 'teacher.maxPerDay', step: 'teacher', label: 'Уроков в день не больше', kind: 'input', status: 'new', control: 'number',
     min: 1, max: 8, feeds: ['H13'], refusals: ['TEACHER_TIME_SHORT'] },
   { id: 'teacher.unavailable', step: 'teacher', label: 'Недоступные уроки', kind: 'input', status: 'slot', control: 'grid',
@@ -226,9 +288,9 @@ export const SCHEDULE_REFUSALS = [
   'TEACHER_TIME_SHORT',
   'TEACHER_LUNCH_IMPOSSIBLE',
   'METHOD_GROUP_NO_WINDOW',
-  'PRIORITY_RANK1_OVERFLOW',
+  'PRIORITY_START_OVERFLOW',
   'PAIRING_HOURS_ODD',
-  'PAIRING_FORBIDDEN_IN_PRIMARY',
+  'PAIRING_FORBIDDEN_FIRST_GRADE',
   'SKELETON_TOO_SHORT',
   'RELAXATION_SUGGESTED',
   'PLAN_OR_CALENDAR_INVALID',
@@ -237,10 +299,10 @@ export type ScheduleRefusal = (typeof SCHEDULE_REFUSALS)[number];
 
 /** Требования, которые диагностика вправе снять на ступени 2. Порядок — порядок снятия. */
 export const RELAXABLE = [
-  'subject.pairingRank',
-  'subject.priorityRank',
+  'subject.pairing',
+  'subject.priority',
   'teacher.maxPerDay',
-  'teacher.minWeekGaps',
+  'rest.norm',
   'teacher.methodDay',
 ] as const;
 
@@ -255,9 +317,9 @@ export const SCHEDULE_REFUSAL_TEXTS: Record<ScheduleRefusal, string> = {
   TEACHER_TIME_SHORT: '{teacher}: {hours} ч при {available} доступных уроках — методический день и обед оставляют меньше места, чем нагрузка.',
   TEACHER_LUNCH_IMPOSSIBLE: '{teacher}: {lessons} уроков в день без места под обеденный перерыв.',
   METHOD_GROUP_NO_WINDOW: 'Методическое объединение «{group}»: {teacher} ведёт урок в это время.',
-  PRIORITY_RANK1_OVERFLOW: '{class}: предметов первого приоритета {count} при {days} учебных днях — первым уроком все не встанут.',
+  PRIORITY_START_OVERFLOW: '{class}: часов первого приоритета {count} — они не помещаются в начала {days} учебных дней.',
   PAIRING_HOURS_ODD: '{subject}, {class}: спаренность обязательна, но часов нечётное число ({hours}).',
-  PAIRING_FORBIDDEN_IN_PRIMARY: '{subject}, {class}: сдвоенные уроки в 1–4 классах не проводятся — СанПиН 1.2.3685-21.',
+  PAIRING_FORBIDDEN_FIRST_GRADE: '{subject}, {class}: сдвоенные уроки в 1-х классах не проводятся, кроме физкультуры по лыжной подготовке и плаванию.',
   SKELETON_TOO_SHORT: 'Скелет «{skeleton}»: {positions} позиций при потребности {needed}.',
   RELAXATION_SUGGESTED: 'Расписание собирается, если {action}. Сделать?',
   PLAN_OR_CALENDAR_INVALID: 'Расписание не собирается при текущем учебном плане: {detail}.',

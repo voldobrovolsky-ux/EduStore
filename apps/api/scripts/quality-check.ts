@@ -28,11 +28,15 @@ import {
   EXTERNAL_SOURCES,
   PAIRING_TOLERANCE,
   PARAM_STEPS,
-  PRIORITY_TOLERANCE,
+  PRIORITIES,
   PROGRESS_SHOWS_NUMBERS,
   QUALITY_MARKERS,
   QUALITY_WEIGHTS,
   RELAXABLE,
+  defaultPairingFor,
+  inversionCost,
+  pairingIsAdjacent,
+  restGapsFor,
   SCHEDULE_BLOCK_ERRORS,
   SCHEDULE_BLOCK_ERROR_TEXTS,
   SCHEDULE_INVARIANTS,
@@ -356,22 +360,34 @@ check(SCHEDULE_BLOCK_ERROR_TEXTS.SHARE_EXPIRED === SCHEDULE_BLOCK_ERROR_TEXTS.SH
   check(EXTERNAL_SOURCES.length === 5 && EXTERNAL_SOURCES.every((s) => s.gives.length > 0),
     `названы все ${EXTERNAL_SOURCES.length} блоков-владельцев, у каждого перечислено, что он даёт расписанию`);
 
-  // Ранги приоритета и спаренности: полнота таблиц допусков.
+  // Приоритет: цена инверсии убывает с номером, приоритеты повторяемы.
+  check(PRIORITIES.length === 6 && PRIORITIES[0] === 1,
+    'приоритет — шкала 1…6, где 1 самый главный; приоритеты повторяются у нескольких предметов');
   check(
-    [1, 2, 3, 4, 5, 6].every((r) => PRIORITY_TOLERANCE[r as 1] >= 0 && PRIORITY_TOLERANCE[r as 1] <= 1),
-    'допуск смешения задан для всех шести рангов приоритета и лежит в [0,1]',
+    [1, 2, 3, 4, 5].every((p) => inversionCost((p + 1) as 2, 6) < inversionCost(p as 1, 6)),
+    'цена инверсии убывает с номером приоритета: перестановка первого со вторым дороже, чем четвёртого с пятым',
   );
-  check(PRIORITY_TOLERANCE[1] === 0, 'первый приоритет жёсткий: допуск смешения ровно ноль');
-  check(
-    [1, 2, 3, 4, 5].every((r) => PRIORITY_TOLERANCE[(r + 1) as 2] >= PRIORITY_TOLERANCE[r as 1]),
-    'допуски приоритета не убывают с рангом — регрессия задана монотонной, а не набором чисел',
-  );
+  check(inversionCost(1, 2) > inversionCost(4, 5), `инверсия 1↔2 стоит ${inversionCost(1, 2)}, инверсия 4↔5 — ${inversionCost(4, 5)}`);
+
+  // Спаренность: шкала владельца дословно, и связь с приоритетом.
   check(PAIRING_TOLERANCE[1] === 0 && PAIRING_TOLERANCE[6] === 0,
-    'спаренность: ранг 1 не допускает неспаренных часов, ранг 6 запрещает спаривание вовсе — оба жёсткие');
+    'спаренность: уровень 1 не допускает неспаренных часов, уровень 6 запрещает спаривание вовсе — оба жёсткие');
   check(
     PAIRING_TOLERANCE[2] === 0.2 && PAIRING_TOLERANCE[3] === 0.4 && PAIRING_TOLERANCE[4] === 0.6 && PAIRING_TOLERANCE[5] === 0.8,
-    'допуски неспаренности рангов 2…5 — 20 / 40 / 60 / 80 процентов, как названо владельцем',
+    'допуски неспаренности уровней 2…5 — 20 / 40 / 60 / 80 процентов, как названо владельцем',
   );
+  check(
+    PRIORITIES.every((p) => defaultPairingFor(p) === (p as unknown)),
+    'спаренность по умолчанию следует за приоритетом: чем выше приоритет, тем сильнее тяга к спариванию',
+  );
+  check(pairingIsAdjacent(2, 3, 2) && pairingIsAdjacent(3, 2, 2),
+    'пара, разделённая большой переменой, остаётся парой — блок 2–3 при большой перемене после второго урока');
+  check(!pairingIsAdjacent(2, 5, 2), 'два часа через три позиции парой не считаются');
+
+  // Норма отдыха — вывод из нормы завуча и объёма часов, а не константа.
+  check(restGapsFor(3, 18, 18) === 3 && restGapsFor(3, 4, 18) === 0,
+    'минимум окон масштабируется объёмом часов: приходящий педагог с четырьмя часами не получает норму полной ставки');
+  check(restGapsFor(3, 18, 0) === 0, 'при неизвестной ставке норма не выдумывается, а обнуляется');
 
   // Отказ «нет решения» выведен из обихода (AR-136).
   check(!(SCHEDULE_REFUSALS as readonly string[]).includes('NO_SOLUTION'),
