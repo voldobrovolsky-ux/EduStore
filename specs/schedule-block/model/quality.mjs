@@ -34,7 +34,12 @@ const classDayCap = (parallel, slotsPerDay) => Math.min(slotsPerDay, DAY_SLOTS_C
  * завершения локального поиска (свойство Q8) опирается на сравнение чисел с
  * плавающей точкой и разваливается на первом же ε.
  */
-const WEIGHTS = { prio: 8, dayBalance: 5, subjectSpread: 6, teacherGap: 7, teacherBalance: 3, groupEdge: 2, stability: 4, firstLast: 2 };
+// Правил удобства семь. «Окно у педагога» снято решением владельца (AR-135,
+// редакция 6): окна возникают как следствие расстановки, и продукт мнения о них
+// не имеет — трудовые нормы принадлежат кадрам, а не расписанию. Модель обязана
+// считать ту же величину, что реализация (packages/shared/src/schedule-quality.ts),
+// иначе «модель зелёная» ничего не доказывает про поставляемый продукт.
+const WEIGHTS = { prio: 8, dayBalance: 5, subjectSpread: 6, teacherBalance: 3, groupEdge: 2, stability: 4, firstLast: 2 };
 const MARKER_IDS = Object.keys(WEIGHTS);
 
 // ───────────────────────── 1. Единицы планирования ─────────────────────────
@@ -326,10 +331,6 @@ function penalties(units, x, input, baseline = null) {
   for (const n of subjDay.values()) subjectSpread += Math.max(0, n - 1);
   for (const h of unitsBySubjClass.values()) subjectSpreadMax += Math.max(0, h - 1);
 
-  // π-teacherGap: окно педагога — свободная позиция между двумя занятыми.
-  let teacherGap = 0;
-  const teacherGapMax = teachers.size * days * Math.max(0, slotsPerDay - 2);
-  for (const td of teacherDay.values()) if (td.n >= 2) teacherGap += td.max - td.min + 1 - td.n;
 
   // π-groupEdge: групповой час не на краю дня класса.
   // π-firstLast: приоритетный предмет последним уроком дня.
@@ -344,7 +345,6 @@ function penalties(units, x, input, baseline = null) {
     prio: { pi: prio, max: Math.max(1, prioMax) },
     dayBalance: { pi: dayBalance, max: Math.max(1, dayBalanceMax) },
     subjectSpread: { pi: subjectSpread, max: Math.max(1, subjectSpreadMax) },
-    teacherGap: { pi: teacherGap, max: Math.max(1, teacherGapMax) },
     teacherBalance: { pi: teacherBalance, max: Math.max(1, teacherBalanceMax) },
     groupEdge: { pi: groupEdge, max: Math.max(1, groupEdgeMax) },
     stability: { pi: stability, max: baseline ? Math.max(1, baseline.size) : 1 },
