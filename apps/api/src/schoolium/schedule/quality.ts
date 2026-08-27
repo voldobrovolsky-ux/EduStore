@@ -255,7 +255,6 @@ export function penalties(units: PlacedUnit[], ctx: QualityContext, baseline?: M
 
   const out: PenaltyVector = {
     prio: emptyMarker(),
-    teacherGap: emptyMarker(),
     subjectSpread: emptyMarker(),
     dayBalance: emptyMarker(),
     stability: emptyMarker(),
@@ -358,16 +357,9 @@ export function penalties(units: PlacedUnit[], ctx: QualityContext, baseline?: M
   for (const h of perSubjClass.values()) subjectSpreadMax += Math.max(0, h - 1);
   out.subjectSpread.max = Math.max(1, subjectSpreadMax);
 
-  // teacherGap: окно педагога — свободная позиция между двумя занятыми.
-  for (const [k, td] of teacherDay) {
-    if (td.n < 2) continue;
-    const gap = td.max - td.min + 1 - td.n;
-    if (gap > 0) {
-      out.teacherGap.pi += gap;
-      out.teacherGap.cells.push(k);
-    }
-  }
-  out.teacherGap.max = Math.max(1, teachers.size * days * Math.max(0, slotsPerDay - 2));
+  // Окна педагога не штрафуются и не поощряются: продукт мнения об этом не
+  // имеет (см. QUALITY_MARKERS). Индекс `teacherDay` остаётся — он нужен
+  // маркеру равномерности нагрузки педагога.
 
   // groupEdge и firstLast — вторым проходом: обоим нужен конец дня класса.
   for (const u of units) {
@@ -408,14 +400,14 @@ export const totalPenalty = (pen: PenaltyVector): number =>
  *   subjectSpread — часов предмета больше, чем дней: сгущение неизбежно;
  *   prio — приоритетных часов больше, чем ранних позиций недели;
  *   firstLast — последние уроки дней нечем закрыть, кроме приоритетных часов.
- * Для teacherGap, groupEdge и stability предел равен нулю: он достижим в
- * принципе, и объявлять его выше нуля значило бы занизить требование к слою.
+ * Для groupEdge и stability предел равен нулю: он достижим в принципе, и
+ * объявлять его выше нуля значило бы занизить требование к слою.
  */
 export function lowerBound(units: PlacedUnit[], ctx: QualityContext): { markers: Record<QualityMarker, number>; total: number } {
   const { days, slotsPerDay } = ctx.params;
   const half = Math.ceil(slotsPerDay / 2);
   const lb: Record<QualityMarker, number> = {
-    prio: 0, teacherGap: 0, subjectSpread: 0, dayBalance: 0, stability: 0, teacherBalance: 0, groupEdge: 0, firstLast: 0,
+    prio: 0, subjectSpread: 0, dayBalance: 0, stability: 0, teacherBalance: 0, groupEdge: 0, firstLast: 0,
   };
 
   for (const c of ctx.classes) {

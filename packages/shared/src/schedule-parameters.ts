@@ -15,7 +15,7 @@ export const PARAM_STEPS = [
   { no: 1, id: 'load', title: 'Нагрузка' },
   { no: 2, id: 'priority', title: 'Приоритет предмета' },
   { no: 3, id: 'pairing', title: 'Спаренность уроков' },
-  { no: 4, id: 'teacher', title: 'Педагоги: время и отдых' },
+  { no: 4, id: 'teacher', title: 'Педагоги: методическая работа' },
   { no: 5, id: 'search', title: 'Глубина поиска' },
 ] as const;
 export type ParamStep = (typeof PARAM_STEPS)[number]['id'];
@@ -260,29 +260,17 @@ export const teacherWeekHours = (pairsWeekHours: readonly number[]): number =>
   pairsWeekHours.reduce((a, h) => a + h, 0);
 
 /**
- * Минимум окон на отдых у педагога — **вывод**, а не константа.
+ * **Трудовых норм в этом блоке нет.** Обеденный перерыв, окна на отдых,
+ * предельная занятость в день — вопросы кадров и бухгалтерии, а не завуча:
+ * завуч распределяет учебную работу, а не считает режим труда. Всё это придёт
+ * вместе с блоком бухгалтерии и кабинетом педагога, где пожелания вносит сам
+ * педагог, а утверждает директор (решение владельца 2026-08-27).
  *
- * Завуч ставит одну величину в понятных ему единицах: **на сколько часов
- * нагрузки полагается одно окно отдыха**. Понятия ставки в расчёте нет вовсе —
- * норма считается от собственной нагрузки педагога, которая, в свою очередь,
- * посчитана от годовых часов его предметов:
- *
- *   окон(H) = round(H / часов-на-окно),  но не больше свободных слотов недели
- *
- * Пропорция, а не константа: приходящий педагог с четырьмя часами и предмет,
- * начинающийся в четвёртой четверти, не нуждаются в отдыхе того же объёма, что
- * педагог с восемнадцатью часами. Округление к БЛИЖАЙШЕМУ, а не вниз: вниз
- * систематически недодаёт — при одном окне на 6 часов педагог с 11 часами
- * получил бы одно окно вместо двух.
- *
- * **Обеденные окна в этот счёт не входят.** Обед — отдельное жёсткое требование
- * дня (H18); если засчитывать его как отдых, педагог с пятью обедами формально
- * «отдохнул» пять раз и не получил ни одного свободного окна сверх еды.
+ * Окна в расписании возникают как следствие расстановки: сколько нужно, столько
+ * и получится. Требовать их числом было ошибкой — при малом числе педагогов
+ * сетка плотная, и норма «четыре окна» превратилась бы в отказ на ровном месте.
  */
-export const restGapsFor = (hoursPerGap: number, teacherHours: number, freeSlotsInWeek: number): number => {
-  if (hoursPerGap <= 0 || teacherHours <= 0) return 0;
-  return Math.max(0, Math.min(Math.round(teacherHours / hoursPerGap), freeSlotsInWeek));
-};
+export const LABOUR_NORMS_OWNER = 'блок бухгалтерии и кадров; в расписании не задаются' as const;
 
 export const SCHEDULE_PARAMS: readonly ScheduleParam[] = [
   // ─── шаг 1 · нагрузка ───
@@ -313,18 +301,8 @@ export const SCHEDULE_PARAMS: readonly ScheduleParam[] = [
     feeds: ['H17'], refusals: ['METHOD_GROUP_NO_WINDOW'] },
   { id: 'method.group.slot', step: 'teacher', label: 'Методическое объединение: когда', kind: 'input', status: 'new', control: 'grid',
     feeds: ['H17'], refusals: ['METHOD_GROUP_NO_WINDOW'] },
-  { id: 'teacher.lunchAfterLessons', step: 'teacher', label: 'Обед обязателен, если уроков в день от', kind: 'input', status: 'new', control: 'number',
-    min: 3, max: 7, default: 5, feeds: ['H18'], refusals: ['TEACHER_LUNCH_IMPOSSIBLE'] },
-  { id: 'teacher.lunchSlots', step: 'teacher', label: 'Длина обеда', kind: 'input', status: 'new', control: 'number',
-    min: 1, max: 2, default: 1, feeds: ['H18'], refusals: ['TEACHER_LUNCH_IMPOSSIBLE'] },
-  { id: 'rest.hoursPerGap', step: 'teacher', label: 'Одно окно отдыха на каждые ... часов нагрузки', kind: 'input', status: 'new', control: 'number',
-    min: 1, max: 40, feeds: ['teacher.minWeekGaps'] },
   { id: 'teacher.weekHours', step: 'teacher', label: 'Нагрузка педагога, часов в неделю', kind: 'derived', status: 'new', control: 'readonly',
-    min: 0, feeds: ['teacher.minWeekGaps', 'H12', 'H13'] },
-  { id: 'teacher.minWeekGaps', step: 'teacher', label: 'Окон в неделю на отдых, не менее', kind: 'derived', status: 'new', control: 'readonly',
-    min: 0, feeds: ['маркер teacherRest'] },
-  { id: 'teacher.maxPerDay', step: 'teacher', label: 'Уроков в день не больше', kind: 'input', status: 'new', control: 'number',
-    min: 1, max: 8, feeds: ['H13'], refusals: ['TEACHER_TIME_SHORT'] },
+    min: 0, feeds: ['H12', 'вместимость педагога'] },
   { id: 'teacher.unavailable', step: 'teacher', label: 'Недоступные уроки', kind: 'input', status: 'slot', control: 'grid',
     feeds: ['H12'] },
 
@@ -360,7 +338,6 @@ export const SCHEDULE_REFUSALS = [
   'GROUPS_UNASSIGNED',
   'GROUP_HOURS_UNEQUAL',
   'TEACHER_TIME_SHORT',
-  'TEACHER_LUNCH_IMPOSSIBLE',
   'METHOD_GROUP_NO_WINDOW',
   'PRIORITY_START_OVERFLOW',
   'PAIRING_HOURS_ODD',
@@ -375,8 +352,6 @@ export type ScheduleRefusal = (typeof SCHEDULE_REFUSALS)[number];
 export const RELAXABLE = [
   'subject.pairing',
   'subject.priority',
-  'teacher.maxPerDay',
-  'rest.hoursPerGap',
   'teacher.methodDay',
 ] as const;
 
@@ -389,7 +364,6 @@ export const SCHEDULE_REFUSAL_TEXTS: Record<ScheduleRefusal, string> = {
   GROUPS_UNASSIGNED: '{class}: группы объявлены, состав не назначен.',
   GROUP_HOURS_UNEQUAL: '{subject} в {class}: часы групп не равны ({hours}).',
   TEACHER_TIME_SHORT: '{teacher}: {hours} ч при {available} доступных уроках — методический день и обед оставляют меньше места, чем нагрузка.',
-  TEACHER_LUNCH_IMPOSSIBLE: '{teacher}: {lessons} уроков в день без места под обеденный перерыв.',
   METHOD_GROUP_NO_WINDOW: 'Методическое объединение «{group}»: {teacher} ведёт урок в это время.',
   PRIORITY_START_OVERFLOW: '{class}: часов первого приоритета {count} — они не помещаются в начала {days} учебных дней.',
   PAIRING_HOURS_ODD: '{subject}, {class}: спаренность обязательна, но часов нечётное число ({hours}).',
