@@ -281,7 +281,7 @@ export const SCHEDULE_BLOCK_ERRORS = [
   // модератор ждёт пять минут ради `NO_SOLUTION` без диагноза.
   'SUBJECT_MAX_PER_DAY_UNREACHABLE',
   'PAIRED_HOURS_ODD',
-  'PAIRED_FORBIDDEN_IN_PRIMARY',
+  'PAIRED_FORBIDDEN_FIRST_GRADE',
   'SUBJECT_POSITION_IMPOSSIBLE',
   'GROUP_EDGE_UNREACHABLE',
   'TEACHER_UNAVAILABLE_OVERBOOKED',
@@ -305,7 +305,7 @@ export const SCHEDULE_BLOCK_ERROR_TEXTS: Record<ScheduleBlockError, string> = {
   EXPORT_FORMAT_UNSUPPORTED: 'Формат «{format}» не поддерживается. Доступны: {formats}.',
   SUBJECT_MAX_PER_DAY_UNREACHABLE: '{subject} в {class}: {hours} ч в неделю не помещаются при ограничении {maxPerDay} ч в день и {days} учебных днях.',
   PAIRED_HOURS_ODD: '{subject} в {class}: сдвоенные уроки обязательны, но часов нечётное число ({hours}).',
-  PAIRED_FORBIDDEN_IN_PRIMARY: '{subject} в {class}: сдвоенные уроки в 1–4 классах не проводятся — СанПиН 1.2.3685-21.',
+  PAIRED_FORBIDDEN_FIRST_GRADE: '{subject} в {class}: сдвоенные уроки в 1-х классах не проводятся, кроме физкультуры по лыжной подготовке и плаванию.',
   SUBJECT_POSITION_IMPOSSIBLE: '{subject} в {class}: {hours} ч не помещаются в {available} разрешённых позиций недели.',
   GROUP_EDGE_UNREACHABLE: '{class}: групповых часов {hours}, а краёв дня за неделю только {available}.',
   TEACHER_UNAVAILABLE_OVERBOOKED: '{teacher}: {hours} ч при {available} доступных уроках — методический день и отметки занятости оставляют меньше места, чем нагрузка.',
