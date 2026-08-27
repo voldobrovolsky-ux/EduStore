@@ -26,6 +26,7 @@
     "access:check": "ts-node scripts/access-circuit-check.ts",
     "onboarding:check": "ts-node scripts/onboarding-check.ts",
     "generator:check": "ts-node scripts/generator-check.ts",
+    "quality:check": "ts-node scripts/quality-check.ts",
     "schooljournal:check": "ts-node scripts/school-journal-check.ts",
     "qr:check": "ts-node scripts/qr-activation-check.ts",
     "moderator:check": "ts-node scripts/moderator-audit-check.ts",
