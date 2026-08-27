@@ -25,16 +25,21 @@
  * Запуск: npm --workspace apps/api run quality:check
  */
 import {
-  GENERATION_BUDGETS,
+  EXTERNAL_SOURCES,
+  PAIRING_TOLERANCE,
   PARAM_STEPS,
+  PRIORITY_TOLERANCE,
+  PROGRESS_SHOWS_NUMBERS,
   QUALITY_MARKERS,
-  QUALITY_PROFILES,
   QUALITY_WEIGHTS,
+  RELAXABLE,
   SCHEDULE_BLOCK_ERRORS,
   SCHEDULE_BLOCK_ERROR_TEXTS,
   SCHEDULE_INVARIANTS,
   SCHEDULE_PARAMS,
-  plannedRestarts,
+  SCHEDULE_REFUSALS,
+  SCHEDULE_REFUSAL_TEXTS,
+  SEARCH_DEPTHS,
   type ScheduleMove,
 } from '@edustore/shared';
 import { generate, type GenInput, type GenPair } from '../src/schoolium/schedule/generator';
@@ -322,7 +327,7 @@ check(SCHEDULE_BLOCK_ERROR_TEXTS.SHARE_EXPIRED === SCHEDULE_BLOCK_ERROR_TEXTS.SH
   check(new Set(ids).size === ids.length, `реестр параметров: ${ids.length} записей, идентификаторы уникальны`);
 
   const steps = new Set(PARAM_STEPS.map((s) => s.id));
-  check(SCHEDULE_PARAMS.every((p) => steps.has(p.step)), 'каждый параметр приписан к существующему шагу мастера');
+  check(SCHEDULE_PARAMS.every((p) => steps.has(p.step)), `каждый параметр приписан к одному из ${PARAM_STEPS.length} шагов мастера`);
 
   check(
     SCHEDULE_PARAMS.every((p) => p.label.length > 0 && p.feeds.length > 0),
@@ -334,7 +339,7 @@ check(SCHEDULE_BLOCK_ERROR_TEXTS.SHARE_EXPIRED === SCHEDULE_BLOCK_ERROR_TEXTS.SH
   );
   check(outOfRange.length === 0, `дефолт каждого параметра лежит внутри его области${outOfRange.length ? `: нарушают ${outOfRange.map((p) => p.id).join(', ')}` : ''}`);
 
-  const listed = SCHEDULE_PARAMS.filter((p) => p.values !== undefined && typeof p.default !== 'boolean');
+  const listed = SCHEDULE_PARAMS.filter((p) => p.values !== undefined);
   check(
     listed.every((p) => p.default === undefined || (p.values as readonly (string | number)[]).includes(p.default as string | number)),
     'дефолт перечислимого параметра принадлежит перечню его значений',
@@ -343,40 +348,58 @@ check(SCHEDULE_BLOCK_ERROR_TEXTS.SHARE_EXPIRED === SCHEDULE_BLOCK_ERROR_TEXTS.SH
   // Норму можно ужесточить, ослабить нельзя (AR-131).
   const loosening = SCHEDULE_PARAMS.filter((p) => p.normCap !== undefined && (p.max === undefined || p.max > p.normCap));
   check(loosening.length === 0, `ни один параметр ввода не ослабляет норму${loosening.length ? `: ${loosening.map((p) => p.id).join(', ')}` : ''} — ужесточить можно, ослабить нет`);
+
+  // Величины чужих блоков в реестр расписания не попадают (AR-133): второй ввод
+  // тех же дат и звонков означал бы второй источник истины.
+  const foreign = SCHEDULE_PARAMS.filter((p) => /^(year|skeleton|day|week)\./.test(p.id) && p.kind === 'input');
+  check(foreign.length === 0, `величины календаря и скелета дня не собираются расписанием${foreign.length ? `: ${foreign.map((p) => p.id).join(', ')}` : ''} — оно их читает`);
+  check(EXTERNAL_SOURCES.length === 5 && EXTERNAL_SOURCES.every((s) => s.gives.length > 0),
+    `названы все ${EXTERNAL_SOURCES.length} блоков-владельцев, у каждого перечислено, что он даёт расписанию`);
+
+  // Ранги приоритета и спаренности: полнота таблиц допусков.
   check(
-    SCHEDULE_PARAMS.filter((p) => p.normCap !== undefined).every((p) => (p.normSource ?? '').length > 0),
-    'у каждого нормируемого параметра назван источник нормы — он печатается в тексте отказа',
+    [1, 2, 3, 4, 5, 6].every((r) => PRIORITY_TOLERANCE[r as 1] >= 0 && PRIORITY_TOLERANCE[r as 1] <= 1),
+    'допуск смешения задан для всех шести рангов приоритета и лежит в [0,1]',
+  );
+  check(PRIORITY_TOLERANCE[1] === 0, 'первый приоритет жёсткий: допуск смешения ровно ноль');
+  check(
+    [1, 2, 3, 4, 5].every((r) => PRIORITY_TOLERANCE[(r + 1) as 2] >= PRIORITY_TOLERANCE[r as 1]),
+    'допуски приоритета не убывают с рангом — регрессия задана монотонной, а не набором чисел',
+  );
+  check(PAIRING_TOLERANCE[1] === 0 && PAIRING_TOLERANCE[6] === 0,
+    'спаренность: ранг 1 не допускает неспаренных часов, ранг 6 запрещает спаривание вовсе — оба жёсткие');
+  check(
+    PAIRING_TOLERANCE[2] === 0.2 && PAIRING_TOLERANCE[3] === 0.4 && PAIRING_TOLERANCE[4] === 0.6 && PAIRING_TOLERANCE[5] === 0.8,
+    'допуски неспаренности рангов 2…5 — 20 / 40 / 60 / 80 процентов, как названо владельцем',
   );
 
-  // Каждый вход генератора покрыт параметром: иначе поле снова окажется
-  // несобираемым ни одним экраном, как «уроков в день» до AR-103.
-  const covered = new Set(ids);
-  const generatorInputs = ['week.days', 'day.slotsPerDay', 'day.lessonMin', 'day.breakMin', 'day.bigBreakAfter', 'day.bigBreakMin', 'load.hours', 'load.scope', 'subject.priority', 'budget.seed'];
-  const missing = generatorInputs.filter((k) => !covered.has(k));
-  check(missing.length === 0, `каждый вход генератора покрыт параметром реестра${missing.length ? `: не покрыты ${missing.join(', ')}` : ''}`);
-
-  // Каждый отказ, названный параметром, существует в перечне кодов.
-  const known = new Set<string>([...SCHEDULE_BLOCK_ERRORS, 'CALENDAR_YEAR_MISSING', 'TERM_OVERLAP', 'TERM_REVERSED', 'LOAD_EXCEEDS_SANPIN', 'LOAD_EXCEEDS_GRID', 'TEACHER_OVERBOOKED', 'GROUP_HOURS_UNEQUAL', 'SUBJECT_UNCOVERED', 'GROUPS_UNASSIGNED', 'DAY_EXCEEDS_SANPIN', 'DAY_TOO_LONG', 'NO_SOLUTION']);
-  const unknown = SCHEDULE_PARAMS.flatMap((p) => p.refusals ?? []).filter((c) => !known.has(c));
-  check(unknown.length === 0, `каждый отказ, названный параметром, существует в перечне кодов${unknown.length ? `: неизвестны ${[...new Set(unknown)].join(', ')}` : ''}`);
+  // Отказ «нет решения» выведен из обихода (AR-136).
+  check(!(SCHEDULE_REFUSALS as readonly string[]).includes('NO_SOLUTION'),
+    'кода NO_SOLUTION в перечне отказов расписания нет: у любого отказа есть адрес и имя');
   check(
-    SCHEDULE_BLOCK_ERRORS.every((c) => (SCHEDULE_BLOCK_ERROR_TEXTS[c] ?? '').length > 0),
-    `у всех ${SCHEDULE_BLOCK_ERRORS.length} кодов блока есть текст`,
+    SCHEDULE_REFUSALS.every((c) => (SCHEDULE_REFUSAL_TEXTS[c] ?? '').includes('{') || c === 'CALENDAR_NOT_READY'),
+    `все ${SCHEDULE_REFUSALS.length} отказов несут подстановку с объектом и цифрами, а не общую фразу`,
   );
+  check((SCHEDULE_REFUSALS as readonly string[]).includes('RELAXATION_SUGGESTED') && SCHEDULE_REFUSAL_TEXTS.RELAXATION_SUGGESTED.includes('{action}'),
+    'диагностика релаксацией отвечает ДЕЙСТВИЕМ («собирается, если …»), а не диагнозом');
+  check(RELAXABLE.length > 0 && RELAXABLE.every((r) => ids.includes(r)),
+    `все ${RELAXABLE.length} снимаемых требований существуют в реестре параметров — снимать нечего не будет`);
 
-  // Профили качества покрывают ровно восемь маркеров целыми весами.
-  for (const [name, w] of Object.entries(QUALITY_PROFILES)) {
-    check(
-      QUALITY_MARKERS.every((m) => Number.isInteger((w as Record<string, number>)[m])),
-      `профиль «${name}» задаёт целый вес каждому из ${QUALITY_MARKERS.length} маркеров`,
-    );
-  }
+  const unknownRefusal = SCHEDULE_PARAMS.flatMap((p) => p.refusals ?? []).filter((c) => !(SCHEDULE_REFUSALS as readonly string[]).includes(c));
+  check(unknownRefusal.length === 0, `каждый отказ, названный параметром, существует в перечне${unknownRefusal.length ? `: неизвестны ${[...new Set(unknownRefusal)].join(', ')}` : ''}`);
 
-  // Бюджет: число перезапусков — вывод, а не ввод.
-  check(GENERATION_BUDGETS.length === 3 && GENERATION_BUDGETS[2] === 300, `бюджет генерации: ${GENERATION_BUDGETS.join(' · ')} секунд`);
-  check(plannedRestarts(300, 3600) === 83 && plannedRestarts(30, 3600) === 8,
-    'число перезапусков выводится из бюджета и замера цикла, а не спрашивается у человека');
-  check(plannedRestarts(30, 10 ** 9) === 1, 'при цикле длиннее бюджета перезапуск всё равно один — деления на ноль и пустого результата не бывает');
+  // Глубина поиска: работа измеряется вариантами, а не секундами.
+  const depths = Object.values(SEARCH_DEPTHS);
+  check(depths.length === 3 && depths.every((d) => d.variants > 0 && d.flatStop > 0),
+    `глубина поиска: ${depths.map((d) => `${d.label} — ${d.variants} вариантов`).join(', ')}`);
+  check(
+    depths[0].variants < depths[1].variants && depths[1].variants < depths[2].variants,
+    'глубины упорядочены: тщательнее значит больше вариантов, а не дольше секунд',
+  );
+  check(SCHEDULE_PARAMS.every((p) => !/seconds|minutes|время/i.test(p.id + p.label)) ,
+    'ни один параметр не спрашивает у человека секунды: время — следствие числа классов и жёсткости требований');
+  check(PROGRESS_SHOWS_NUMBERS === false,
+    'прогресс генерации — модальное окно с анимацией: ни одной цифры человеку не показывается');
 }
 
 report('G-56…G-61 · СЛОЙ КАЧЕСТВА И РЕЕСТР ПАРАМЕТРОВ');
