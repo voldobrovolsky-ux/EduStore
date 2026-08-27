@@ -1,7 +1,7 @@
 /**
- * G-56…G-60 (AR-118…AR-127) — **слой качества расписания доказуем.**
+ * G-56…G-61 (AR-118…AR-132) — **слой качества расписания доказуем.**
  *
- * Пять ворот одним прогоном, потому что все пять живут на одних и тех же чистых
+ * Шесть ворот одним прогоном, потому что все пять живут на одних и тех же чистых
  * функциях и разделять их значило бы пять раз собирать одну сетку:
  *
  *   G-56 · квалиметрия: πᵢ — целые неотрицательные, Qᵢ ∈ [0,1], верхняя граница
@@ -14,7 +14,10 @@
  *   G-59 · ручной ход: жёсткий инвариант не переступается, ухудшающий ход
  *          называет маркер и величину, у каждого хода есть обратный;
  *   G-60 · выдача: печатная и календарная проекции совпадают со снимком,
- *          подпись воспроизводима и меняется вместе с версией сетки.
+ *          подпись воспроизводима и меняется вместе с версией сетки;
+ *   G-61 · реестр параметров: у каждого параметра есть область, дефолт внутри
+ *          неё и названный потребитель; каждый вход генератора покрыт; ни один
+ *          параметр ввода не ослабляет норму.
  *
  * Эталон — `specs/schedule-block/model/quality.mjs` (свойства Q1…Q12).
  * Ни БД, ни сети: слой чист, и его поведение перечисляется, а не наблюдается.
@@ -22,11 +25,16 @@
  * Запуск: npm --workspace apps/api run quality:check
  */
 import {
+  GENERATION_BUDGETS,
+  PARAM_STEPS,
   QUALITY_MARKERS,
+  QUALITY_PROFILES,
   QUALITY_WEIGHTS,
   SCHEDULE_BLOCK_ERRORS,
   SCHEDULE_BLOCK_ERROR_TEXTS,
   SCHEDULE_INVARIANTS,
+  SCHEDULE_PARAMS,
+  plannedRestarts,
   type ScheduleMove,
 } from '@edustore/shared';
 import { generate, type GenInput, type GenPair } from '../src/schoolium/schedule/generator';
@@ -307,4 +315,68 @@ check(SCHEDULE_BLOCK_ERRORS.every((c) => (SCHEDULE_BLOCK_ERROR_TEXTS[c] ?? '').l
 check(SCHEDULE_BLOCK_ERROR_TEXTS.SHARE_EXPIRED === SCHEDULE_BLOCK_ERROR_TEXTS.SHARE_REVOKED,
   'истёкшая и отозванная ссылки отвечают одинаково: различить снаружи причину нельзя');
 
-report('G-56…G-60 · СЛОЙ КАЧЕСТВА РАСПИСАНИЯ');
+// ─────────────────────── G-61 · реестр параметров ───────────────────────
+
+{
+  const ids = SCHEDULE_PARAMS.map((p) => p.id);
+  check(new Set(ids).size === ids.length, `реестр параметров: ${ids.length} записей, идентификаторы уникальны`);
+
+  const steps = new Set(PARAM_STEPS.map((s) => s.id));
+  check(SCHEDULE_PARAMS.every((p) => steps.has(p.step)), 'каждый параметр приписан к существующему шагу мастера');
+
+  check(
+    SCHEDULE_PARAMS.every((p) => p.label.length > 0 && p.feeds.length > 0),
+    'у каждого параметра есть подпись и НАЗВАННЫЙ потребитель — мёртвого ввода в реестре нет (дыра AR-103 закрыта перечислением)',
+  );
+
+  const outOfRange = SCHEDULE_PARAMS.filter(
+    (p) => typeof p.default === 'number' && ((p.min !== undefined && p.default < p.min) || (p.max !== undefined && p.default > p.max)),
+  );
+  check(outOfRange.length === 0, `дефолт каждого параметра лежит внутри его области${outOfRange.length ? `: нарушают ${outOfRange.map((p) => p.id).join(', ')}` : ''}`);
+
+  const listed = SCHEDULE_PARAMS.filter((p) => p.values !== undefined && typeof p.default !== 'boolean');
+  check(
+    listed.every((p) => p.default === undefined || (p.values as readonly (string | number)[]).includes(p.default as string | number)),
+    'дефолт перечислимого параметра принадлежит перечню его значений',
+  );
+
+  // Норму можно ужесточить, ослабить нельзя (AR-131).
+  const loosening = SCHEDULE_PARAMS.filter((p) => p.normCap !== undefined && (p.max === undefined || p.max > p.normCap));
+  check(loosening.length === 0, `ни один параметр ввода не ослабляет норму${loosening.length ? `: ${loosening.map((p) => p.id).join(', ')}` : ''} — ужесточить можно, ослабить нет`);
+  check(
+    SCHEDULE_PARAMS.filter((p) => p.normCap !== undefined).every((p) => (p.normSource ?? '').length > 0),
+    'у каждого нормируемого параметра назван источник нормы — он печатается в тексте отказа',
+  );
+
+  // Каждый вход генератора покрыт параметром: иначе поле снова окажется
+  // несобираемым ни одним экраном, как «уроков в день» до AR-103.
+  const covered = new Set(ids);
+  const generatorInputs = ['week.days', 'day.slotsPerDay', 'day.lessonMin', 'day.breakMin', 'day.bigBreakAfter', 'day.bigBreakMin', 'load.hours', 'load.scope', 'subject.priority', 'budget.seed'];
+  const missing = generatorInputs.filter((k) => !covered.has(k));
+  check(missing.length === 0, `каждый вход генератора покрыт параметром реестра${missing.length ? `: не покрыты ${missing.join(', ')}` : ''}`);
+
+  // Каждый отказ, названный параметром, существует в перечне кодов.
+  const known = new Set<string>([...SCHEDULE_BLOCK_ERRORS, 'CALENDAR_YEAR_MISSING', 'TERM_OVERLAP', 'TERM_REVERSED', 'LOAD_EXCEEDS_SANPIN', 'LOAD_EXCEEDS_GRID', 'TEACHER_OVERBOOKED', 'GROUP_HOURS_UNEQUAL', 'SUBJECT_UNCOVERED', 'GROUPS_UNASSIGNED', 'DAY_EXCEEDS_SANPIN', 'DAY_TOO_LONG', 'NO_SOLUTION']);
+  const unknown = SCHEDULE_PARAMS.flatMap((p) => p.refusals ?? []).filter((c) => !known.has(c));
+  check(unknown.length === 0, `каждый отказ, названный параметром, существует в перечне кодов${unknown.length ? `: неизвестны ${[...new Set(unknown)].join(', ')}` : ''}`);
+  check(
+    SCHEDULE_BLOCK_ERRORS.every((c) => (SCHEDULE_BLOCK_ERROR_TEXTS[c] ?? '').length > 0),
+    `у всех ${SCHEDULE_BLOCK_ERRORS.length} кодов блока есть текст`,
+  );
+
+  // Профили качества покрывают ровно восемь маркеров целыми весами.
+  for (const [name, w] of Object.entries(QUALITY_PROFILES)) {
+    check(
+      QUALITY_MARKERS.every((m) => Number.isInteger((w as Record<string, number>)[m])),
+      `профиль «${name}» задаёт целый вес каждому из ${QUALITY_MARKERS.length} маркеров`,
+    );
+  }
+
+  // Бюджет: число перезапусков — вывод, а не ввод.
+  check(GENERATION_BUDGETS.length === 3 && GENERATION_BUDGETS[2] === 300, `бюджет генерации: ${GENERATION_BUDGETS.join(' · ')} секунд`);
+  check(plannedRestarts(300, 3600) === 83 && plannedRestarts(30, 3600) === 8,
+    'число перезапусков выводится из бюджета и замера цикла, а не спрашивается у человека');
+  check(plannedRestarts(30, 10 ** 9) === 1, 'при цикле длиннее бюджета перезапуск всё равно один — деления на ноль и пустого результата не бывает');
+}
+
+report('G-56…G-61 · СЛОЙ КАЧЕСТВА И РЕЕСТР ПАРАМЕТРОВ');

@@ -239,6 +239,17 @@ export const SCHEDULE_BLOCK_ERRORS = [
   'SHARE_REVOKED',
   'SHARE_VERSION_STALE',
   'EXPORT_FORMAT_UNSUPPORTED',
+  // Леммы параметров шагов 4 и 5 (AR-132): каждое новое жёсткое ограничение
+  // сужает область допустимых сеток, поэтому несёт отказ ДО перебора — иначе
+  // модератор ждёт пять минут ради `NO_SOLUTION` без диагноза.
+  'SUBJECT_MAX_PER_DAY_UNREACHABLE',
+  'PAIRED_HOURS_ODD',
+  'PAIRED_FORBIDDEN_IN_PRIMARY',
+  'SUBJECT_POSITION_IMPOSSIBLE',
+  'GROUP_EDGE_UNREACHABLE',
+  'TEACHER_UNAVAILABLE_OVERBOOKED',
+  'TEACHER_MAX_PER_DAY_UNREACHABLE',
+  'TEACHER_NO_GAPS_UNREACHABLE',
 ] as const;
 export type ScheduleBlockError = (typeof SCHEDULE_BLOCK_ERRORS)[number];
 
@@ -255,6 +266,14 @@ export const SCHEDULE_BLOCK_ERROR_TEXTS: Record<ScheduleBlockError, string> = {
   SHARE_REVOKED: 'Срок действия ссылки истёк. Запросите новую у школы.',
   SHARE_VERSION_STALE: 'Расписание изменилось после выдачи ссылки. Запросите новую у школы.',
   EXPORT_FORMAT_UNSUPPORTED: 'Формат «{format}» не поддерживается. Доступны: {formats}.',
+  SUBJECT_MAX_PER_DAY_UNREACHABLE: '{subject} в {class}: {hours} ч в неделю не помещаются при ограничении {maxPerDay} ч в день и {days} учебных днях.',
+  PAIRED_HOURS_ODD: '{subject} в {class}: сдвоенные уроки обязательны, но часов нечётное число ({hours}).',
+  PAIRED_FORBIDDEN_IN_PRIMARY: '{subject} в {class}: сдвоенные уроки в 1–4 классах не проводятся — СанПиН 1.2.3685-21.',
+  SUBJECT_POSITION_IMPOSSIBLE: '{subject} в {class}: {hours} ч не помещаются в {available} разрешённых позиций недели.',
+  GROUP_EDGE_UNREACHABLE: '{class}: групповых часов {hours}, а краёв дня за неделю только {available}.',
+  TEACHER_UNAVAILABLE_OVERBOOKED: '{teacher}: {hours} ч при {available} доступных уроках — методический день и отметки занятости оставляют меньше места, чем нагрузка.',
+  TEACHER_MAX_PER_DAY_UNREACHABLE: '{teacher}: {hours} ч в неделю не помещаются при ограничении {maxPerDay} уроков в день и {days} учебных днях.',
+  TEACHER_NO_GAPS_UNREACHABLE: '{teacher}: требование «без окон» невыполнимо при {hours} ч и текущих отметках занятости.',
 };
 
 /** Право на выдачу расписания наружу — отдельно от права его строить (§11.1 спеки). */
