@@ -37,6 +37,7 @@ import {
   evaluateManualMove,
   inverseMove,
   invariants,
+  lowerBound,
   maxSpread,
   neighbourhood,
   penalties,
@@ -116,8 +117,19 @@ check(QUALITY_MARKERS.every((m) => Number.isInteger(QUALITY_WEIGHTS[m]) && QUALI
 const P = totalPenalty(pen);
 check(Number.isInteger(P) && P >= 0, `свёртка Π(x₀) = ${P} — неотрицательное целое`);
 
-const dto = qualityDto(pen, false);
+const floor = lowerBound(units, ctx);
+const dto = qualityDto(pen, false, floor);
 check(dto.aggregate >= 0 && dto.aggregate <= 1, `агрегат качества ${(dto.aggregate * 100).toFixed(1)} % лежит в [0,1]`);
+check(floor.total <= P, `нижняя граница Π_LB = ${floor.total} не выше достигнутой Π = ${P}: граница выводится из арифметики, а не из удачи перебора`);
+check(
+  QUALITY_MARKERS.every((m) => floor.markers[m] <= pen[m].pi && floor.markers[m] <= pen[m].max),
+  'нижняя граница каждого маркера не выше ни его достигнутого штрафа, ни его верхней границы',
+);
+check(
+  dto.ceiling !== undefined && dto.ceiling >= dto.aggregate && dto.ceiling <= 1,
+  `панель называет потолок качества ${((dto.ceiling ?? 0) * 100).toFixed(1)} % рядом с агрегатом ${(dto.aggregate * 100).toFixed(1)} %: число без шкалы прочитать нельзя`,
+);
+check(qualityDto(pen, false).ceiling === undefined, 'без вычисленной границы потолок не выдумывается, а отсутствует');
 check(dto.markers.length === QUALITY_MARKERS.length, `панель качества показывает все ${QUALITY_MARKERS.length} маркеров`);
 check(dto.markers.find((m) => m.id === 'stability')?.active === false,
   'без подтверждённой сетки маркер стабильности неактивен, а не равен единице: сравнивать было не с чем');
@@ -173,6 +185,14 @@ check(fixed.trace.every((t) => t.to < t.from), 'каждый принятый х
 check(invariants(fixed.units, ctx).length === 0, 'после автокорректировки жёсткие инварианты держатся');
 check(fixed.localMinimum, 'поиск встал в локальном минимуме, а не упёрся в бюджет');
 check(repair(fixed.units, ctx).movesApplied === 0, 'повторный прогон из локального минимума не делает ни одного хода');
+check(totalPenalty(penalties(fixed.units, ctx)) >= lowerBound(fixed.units, ctx).total,
+  `найденный локальный минимум ${totalPenalty(penalties(fixed.units, ctx))} не ниже аналитической границы ${lowerBound(fixed.units, ctx).total} — «эталон» и локальный минимум это разные величины`);
+check(
+  fixed.traded.every((t) => t.after > t.before) && Array.isArray(fixed.traded),
+  fixed.traded.length
+    ? `размен показан: при падении Π ухудшились маркеры ${fixed.traded.map((t) => `«${t.title}» ${t.before}→${t.after}`).join(', ')} — скалярная свёртка обязана разменивать, и прятать это за агрегатом нельзя`
+    : 'размена не потребовалось: ни один маркер не ухудшился',
+);
 check(
   JSON.stringify(repair(units, ctx).units) === JSON.stringify(fixed.units),
   'автокорректировка детерминирована: два прогона на одном входе дают одну сетку',

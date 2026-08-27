@@ -72,12 +72,24 @@ export interface MarkerPenalty {
 
 export type PenaltyVector = Record<QualityMarker, MarkerPenalty>;
 
-/** Ответ `GET /api/v1/schedule/quality`: агрегат, маркеры и свёртка. */
+/** Ответ `GET /api/v1/schedule/quality`: агрегат, потолок, маркеры и свёртка. */
 export interface ScheduleQualityDto {
   /** Q(x) ∈ [0,1] — взвешенное среднее нормированных маркеров. Представление. */
   aggregate: number;
   /** Π(x) ∈ ℤ≥0 — то, что минимизирует автокорректировка. */
   penalty: number;
+  /**
+   * Аналитическая нижняя граница Π: величина, ниже которой не опускается
+   * никакая расстановка при данной нагрузке. Не обязана быть достижимой —
+   * настоящий минимум лежит между ней и найденным локальным.
+   */
+  floor?: number;
+  /**
+   * Агрегат, который дала бы сетка, взявшая нижнюю границу по каждому маркеру.
+   * Показывается рядом с `aggregate`: «88 % при пределе 93 %» — суждение,
+   * «88 %» — число без шкалы.
+   */
+  ceiling?: number;
   markers: {
     id: QualityMarker;
     title: string;

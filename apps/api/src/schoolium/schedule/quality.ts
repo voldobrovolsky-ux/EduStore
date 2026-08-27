@@ -392,8 +392,72 @@ export function penalties(units: PlacedUnit[], ctx: QualityContext, baseline?: M
 export const totalPenalty = (pen: PenaltyVector): number =>
   QUALITY_MARKERS.reduce((a, k) => a + QUALITY_WEIGHTS[k] * pen[k].pi, 0);
 
-/** Ответ панели качества `S-40`: агрегат, восемь маркеров, адреса виновных ячеек. */
-export function qualityDto(pen: PenaltyVector, hasBaseline: boolean): ScheduleQualityDto {
+/**
+ * Аналитическая нижняя граница штрафа: величина, ниже которой не опускается
+ * НИКАКАЯ расстановка при данной нагрузке — она следует из арифметики, а не из
+ * удачи перебора.
+ *
+ * Без неё число «качество 88 %» нечитаемо: непонятно, это близко к пределу или
+ * вдвое хуже достижимого. Граница не обязана быть достижимой (ограничения
+ * взаимодействуют), поэтому она честно называется границей, а не эталоном:
+ * настоящий минимум лежит между ней и найденным локальным.
+ *
+ * Считается по маркерам, у которых предел выводится:
+ *   dayBalance / teacherBalance — самое ровное распределение H часов по d дням
+ *     даёт ровно 2·r·(d−r), где r = H mod d;
+ *   subjectSpread — часов предмета больше, чем дней: сгущение неизбежно;
+ *   prio — приоритетных часов больше, чем ранних позиций недели;
+ *   firstLast — последние уроки дней нечем закрыть, кроме приоритетных часов.
+ * Для teacherGap, groupEdge и stability предел равен нулю: он достижим в
+ * принципе, и объявлять его выше нуля значило бы занизить требование к слою.
+ */
+export function lowerBound(units: PlacedUnit[], ctx: QualityContext): { markers: Record<QualityMarker, number>; total: number } {
+  const { days, slotsPerDay } = ctx.params;
+  const half = Math.ceil(slotsPerDay / 2);
+  const lb: Record<QualityMarker, number> = {
+    prio: 0, teacherGap: 0, subjectSpread: 0, dayBalance: 0, stability: 0, teacherBalance: 0, groupEdge: 0, firstLast: 0,
+  };
+
+  for (const c of ctx.classes) {
+    const own = units.filter((u) => u.classId === c.id);
+    const H = own.length;
+    if (H === 0) continue;
+    const cap = classDayCap(c.parallel, slotsPerDay);
+    const r = H % days;
+    lb.dayBalance += 2 * r * (days - r);
+
+    const prioCount = own.filter((u) => u.priority).length;
+    let excess = Math.max(0, prioCount - days * Math.min(half, cap));
+    for (let pos = half + 1; pos <= cap && excess > 0; pos += 1) {
+      const take = Math.min(excess, days);
+      lb.prio += take * (pos - half);
+      excess -= take;
+    }
+
+    const bySubject = new Map<string, number>();
+    for (const u of own) bySubject.set(u.subjectId, (bySubject.get(u.subjectId) ?? 0) + 1);
+    for (const h of bySubject.values()) lb.subjectSpread += Math.max(0, h - days);
+
+    lb.firstLast += Math.max(0, Math.min(days, H) - (H - prioCount));
+  }
+
+  const byTeacher = new Map<string, number>();
+  for (const u of units) for (const p of u.parts) byTeacher.set(p.teacherId, (byTeacher.get(p.teacherId) ?? 0) + 1);
+  for (const h of byTeacher.values()) {
+    const r = h % days;
+    lb.teacherBalance += 2 * r * (days - r);
+  }
+
+  return { markers: lb, total: QUALITY_MARKERS.reduce((a, k) => a + QUALITY_WEIGHTS[k] * lb[k], 0) };
+}
+
+/**
+ * Ответ панели качества `S-40`: агрегат, восемь маркеров, адреса виновных ячеек
+ * и **потолок** — агрегат, который дала бы сетка, взявшая нижнюю границу по
+ * каждому маркеру. Потолок показывается рядом с агрегатом: «88 % при пределе
+ * 93 %» — суждение, а «88 %» — число без шкалы.
+ */
+export function qualityDto(pen: PenaltyVector, hasBaseline: boolean, floor?: { markers: Record<QualityMarker, number>; total: number }): ScheduleQualityDto {
   const markers = QUALITY_MARKERS.map((id: QualityMarker) => ({
     id,
     title: QUALITY_MARKER_TITLES[id],
@@ -409,9 +473,15 @@ export function qualityDto(pen: PenaltyVector, hasBaseline: boolean): ScheduleQu
   }));
   const active = markers.filter((m) => m.active);
   const w = active.reduce((a, m) => a + m.weight, 0);
+  const ceiling =
+    floor === undefined || w === 0
+      ? undefined
+      : active.reduce((a, m) => a + m.weight * (1 - floor.markers[m.id] / pen[m.id].max), 0) / w;
   return {
     aggregate: w === 0 ? 1 : active.reduce((a, m) => a + m.weight * m.value, 0) / w,
     penalty: totalPenalty(pen),
+    floor: floor?.total,
+    ceiling,
     markers,
   };
 }
@@ -489,6 +559,17 @@ export interface RepairOutcome {
   /** Поиск встал в локальном минимуме, а не упёрся в бюджет. */
   localMinimum: boolean;
   trace: { move: ScheduleMove; from: number; to: number }[];
+  /**
+   * Маркеры, ухудшившиеся при падении общей Π, — **размен**.
+   *
+   * Скалярная свёртка обязана разменивать: уменьшая Π на 5·Δ по весомому
+   * маркеру, она платит 2·δ по лёгкому, и это её правильное поведение, а не
+   * дефект. Дефектом это становится в момент, когда размен не показан: человек
+   * видит «качество выросло», а в его школе приоритетный предмет стал последним
+   * уроком вдвое чаще. Поэтому размен возвращается всегда и печатается на
+   * `S-42` рядом с итогом, а не прячется за агрегатом.
+   */
+  traded: { marker: QualityMarker; title: string; before: number; after: number }[];
 }
 
 /**
@@ -510,7 +591,8 @@ export function repair(
   now: () => number = Date.now,
 ): RepairOutcome {
   const started = now();
-  const penaltyBefore = totalPenalty(penalties(units0, ctx, baseline));
+  const before = penalties(units0, ctx, baseline);
+  const penaltyBefore = totalPenalty(before);
   let units = units0;
   let cur = penaltyBefore;
   const trace: RepairOutcome['trace'] = [];
@@ -534,7 +616,15 @@ export function repair(
     cur = best.t;
   }
 
-  return { units, movesApplied: trace.length, penaltyBefore, penaltyAfter: cur, localMinimum, trace };
+  const after = penalties(units, ctx, baseline);
+  const traded = QUALITY_MARKERS.filter((k) => after[k].pi > before[k].pi).map((k) => ({
+    marker: k,
+    title: QUALITY_MARKER_TITLES[k],
+    before: before[k].pi,
+    after: after[k].pi,
+  }));
+
+  return { units, movesApplied: trace.length, penaltyBefore, penaltyAfter: cur, localMinimum, trace, traded };
 }
 
 export interface ManualMoveVerdict {
