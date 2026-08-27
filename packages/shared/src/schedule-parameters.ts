@@ -247,32 +247,41 @@ export type SearchDepth = keyof typeof SEARCH_DEPTHS;
 export const PROGRESS_SHOWS_NUMBERS = false;
 
 /**
+ * Недельная нагрузка педагога — **вывод**, и никто её не вводит. Вся цепочка
+ * начинается от годовых часов предмета (решение владельца 2026-08-27: понятия
+ * «полная ставка педагога» в системе пока нет):
+ *
+ *   годовые часы предмета → недельные часы предмета → недельная нагрузка
+ *   педагога (сумма его пар «предмет × класс/группа») → норма отдыха
+ *
+ * Ни одно звено цепочки человек не набивает руками дважды.
+ */
+export const teacherWeekHours = (pairsWeekHours: readonly number[]): number =>
+  pairsWeekHours.reduce((a, h) => a + h, 0);
+
+/**
  * Минимум окон на отдых у педагога — **вывод**, а не константа.
  *
- * Завуч ставит одну величину: сколько окон в неделю полагается педагогу **на
- * полной ставке**. Для конкретного человека она пересчитывается пропорционально
- * его объёму часов — «всё рассчитывается из головного объёма часов»:
+ * Завуч ставит одну величину в понятных ему единицах: **на сколько часов
+ * нагрузки полагается одно окно отдыха**. Понятия ставки в расчёте нет вовсе —
+ * норма считается от собственной нагрузки педагога, которая, в свою очередь,
+ * посчитана от годовых часов его предметов:
  *
- *   окон(H) = round(норма × H / ставка),  но не больше свободных слотов недели
+ *   окон(H) = round(H / часов-на-окно),  но не больше свободных слотов недели
  *
- * Пропорция, а не константа, потому что приходящий педагог с четырьмя часами и
- * предмет, начинающийся в четвёртой четверти, не нуждаются в отдыхе от полной
- * ставки. Округление к БЛИЖАЙШЕМУ, а не вниз: округление вниз систематически
- * недодаёт — педагог на 0,6 ставки при норме 3 получил бы 1 окно вместо 2.
+ * Пропорция, а не константа: приходящий педагог с четырьмя часами и предмет,
+ * начинающийся в четвёртой четверти, не нуждаются в отдыхе того же объёма, что
+ * педагог с восемнадцатью часами. Округление к БЛИЖАЙШЕМУ, а не вниз: вниз
+ * систематически недодаёт — при одном окне на 6 часов педагог с 11 часами
+ * получил бы одно окно вместо двух.
  *
  * **Обеденные окна в этот счёт не входят.** Обед — отдельное жёсткое требование
  * дня (H18); если засчитывать его как отдых, педагог с пятью обедами формально
  * «отдохнул» пять раз и не получил ни одного свободного окна сверх еды.
  */
-export const restGapsFor = (
-  normAtFullLoad: number,
-  teacherHours: number,
-  fullLoadHours: number,
-  freeSlotsInWeek: number,
-): number => {
-  if (fullLoadHours <= 0 || normAtFullLoad <= 0) return 0;
-  const proportional = Math.round((normAtFullLoad * teacherHours) / fullLoadHours);
-  return Math.max(0, Math.min(proportional, freeSlotsInWeek));
+export const restGapsFor = (hoursPerGap: number, teacherHours: number, freeSlotsInWeek: number): number => {
+  if (hoursPerGap <= 0 || teacherHours <= 0) return 0;
+  return Math.max(0, Math.min(Math.round(teacherHours / hoursPerGap), freeSlotsInWeek));
 };
 
 export const SCHEDULE_PARAMS: readonly ScheduleParam[] = [
@@ -308,10 +317,10 @@ export const SCHEDULE_PARAMS: readonly ScheduleParam[] = [
     min: 3, max: 7, default: 5, feeds: ['H18'], refusals: ['TEACHER_LUNCH_IMPOSSIBLE'] },
   { id: 'teacher.lunchSlots', step: 'teacher', label: 'Длина обеда', kind: 'input', status: 'new', control: 'number',
     min: 1, max: 2, default: 1, feeds: ['H18'], refusals: ['TEACHER_LUNCH_IMPOSSIBLE'] },
-  { id: 'rest.normAtFullLoad', step: 'teacher', label: 'Окон на отдых при полной ставке (ставит завуч)', kind: 'input', status: 'new', control: 'number',
-    min: 0, max: 10, feeds: ['teacher.minWeekGaps'] },
-  { id: 'rest.fullLoadHours', step: 'teacher', label: 'Полная ставка, часов в неделю', kind: 'input', status: 'new', control: 'number',
+  { id: 'rest.hoursPerGap', step: 'teacher', label: 'Одно окно отдыха на каждые ... часов нагрузки', kind: 'input', status: 'new', control: 'number',
     min: 1, max: 40, feeds: ['teacher.minWeekGaps'] },
+  { id: 'teacher.weekHours', step: 'teacher', label: 'Нагрузка педагога, часов в неделю', kind: 'derived', status: 'new', control: 'readonly',
+    min: 0, feeds: ['teacher.minWeekGaps', 'H12', 'H13'] },
   { id: 'teacher.minWeekGaps', step: 'teacher', label: 'Окон в неделю на отдых, не менее', kind: 'derived', status: 'new', control: 'readonly',
     min: 0, feeds: ['маркер teacherRest'] },
   { id: 'teacher.maxPerDay', step: 'teacher', label: 'Уроков в день не больше', kind: 'input', status: 'new', control: 'number',
@@ -367,7 +376,7 @@ export const RELAXABLE = [
   'subject.pairing',
   'subject.priority',
   'teacher.maxPerDay',
-  'rest.normAtFullLoad',
+  'rest.hoursPerGap',
   'teacher.methodDay',
 ] as const;
 
