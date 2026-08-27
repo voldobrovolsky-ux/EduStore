@@ -31,16 +31,20 @@ import {
   PRIORITIES,
   PROGRESS_SHOWS_NUMBERS,
   QUALITY_MARKERS,
+  QUALITY_MARKER_TITLES,
   QUALITY_WEIGHTS,
   RELAXABLE,
   DEFAULT_PAIRING,
   PRIORITY_WEIGHT,
   inversionCost,
   pairingIsAdjacent,
+  GLOSSARY,
+  JARGON,
   LABOUR_NORMS_OWNER,
   teacherWeekHours,
   SCHEDULE_BLOCK_ERRORS,
   SCHEDULE_BLOCK_ERROR_TEXTS,
+  INVARIANT_TITLES,
   SCHEDULE_INVARIANTS,
   SCHEDULE_PARAMS,
   SCHEDULE_REFUSALS,
@@ -452,4 +456,32 @@ check(SCHEDULE_BLOCK_ERROR_TEXTS.SHARE_EXPIRED === SCHEDULE_BLOCK_ERROR_TEXTS.SH
     'прогресс генерации — модальное окно с анимацией: ни одной цифры человеку не показывается');
 }
 
-report('G-56…G-61 · СЛОЙ КАЧЕСТВА И РЕЕСТР ПАРАМЕТРОВ');
+// ─────────────────── G-62 · единый словарь без жаргона ───────────────────
+
+{
+  const hasJargon = (s: string): string | null => JARGON.find((w) => s.toLowerCase().includes(w)) ?? null;
+
+  check(GLOSSARY.length >= 10 && GLOSSARY.every((g) => g.human && g.code && g.means),
+    `словарь блока: ${GLOSSARY.length} понятий, у каждого слово для человека, имя в коде и объяснение`);
+  check(
+    new Set(GLOSSARY.map((g) => g.human)).size === GLOSSARY.length,
+    'одно понятие — одно слово: человеческие названия в словаре не повторяются',
+  );
+
+  const dirtyMarker = QUALITY_MARKERS.map((m) => QUALITY_MARKER_TITLES[m]).find((s) => hasJargon(s));
+  check(dirtyMarker === undefined, `названия правил удобства без жаргона${dirtyMarker ? `: «${dirtyMarker}»` : ''}`);
+
+  const dirtyInvariant = SCHEDULE_INVARIANTS.map((i) => INVARIANT_TITLES[i]).find((s) => hasJargon(s));
+  check(dirtyInvariant === undefined, `названия запретов без жаргона${dirtyInvariant ? `: «${dirtyInvariant}»` : ''}`);
+
+  const dirtyParam = SCHEDULE_PARAMS.map((p) => p.label).find((s) => hasJargon(s));
+  check(dirtyParam === undefined, `подписи параметров на экранах без жаргона${dirtyParam ? `: «${dirtyParam}»` : ''}`);
+
+  const dirtyRefusal = SCHEDULE_REFUSALS.map((c) => SCHEDULE_REFUSAL_TEXTS[c]).find((s) => hasJargon(s));
+  check(dirtyRefusal === undefined, `тексты отказов без жаргона${dirtyRefusal ? `: «${dirtyRefusal}»` : ''}`);
+
+  const dirtyBlock = SCHEDULE_BLOCK_ERRORS.map((c) => SCHEDULE_BLOCK_ERROR_TEXTS[c]).find((s) => hasJargon(s));
+  check(dirtyBlock === undefined, `тексты отказов слоя без жаргона${dirtyBlock ? `: «${dirtyBlock}»` : ''}`);
+}
+
+report('G-56…G-62 · СЛОЙ КАЧЕСТВА, ПАРАМЕТРЫ И СЛОВАРЬ');
