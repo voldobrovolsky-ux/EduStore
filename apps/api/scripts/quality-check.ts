@@ -33,7 +33,8 @@ import {
   QUALITY_MARKERS,
   QUALITY_WEIGHTS,
   RELAXABLE,
-  defaultPairingFor,
+  DEFAULT_PAIRING,
+  PRIORITY_WEIGHT,
   inversionCost,
   pairingIsAdjacent,
   restGapsFor,
@@ -363,11 +364,25 @@ check(SCHEDULE_BLOCK_ERROR_TEXTS.SHARE_EXPIRED === SCHEDULE_BLOCK_ERROR_TEXTS.SH
   // Приоритет: цена инверсии убывает с номером, приоритеты повторяемы.
   check(PRIORITIES.length === 6 && PRIORITIES[0] === 1,
     'приоритет — шкала 1…6, где 1 самый главный; приоритеты повторяются у нескольких предметов');
+  // Шкала приоритета выведена из свойства, а не подобрана: один урок приоритета
+  // p важнее всех уроков более низких приоритетов вместе взятых. Именно это
+  // делает порядок приоритетов порядком, а не предметом размена.
   check(
-    [1, 2, 3, 4, 5].every((p) => inversionCost((p + 1) as 2, 6) < inversionCost(p as 1, 6)),
-    'цена инверсии убывает с номером приоритета: перестановка первого со вторым дороже, чем четвёртого с пятым',
+    PRIORITIES.every((p) => {
+      const lower = PRIORITIES.filter((q) => q > p).reduce((a, q) => a + PRIORITY_WEIGHT[q], 0);
+      return PRIORITY_WEIGHT[p] > lower;
+    }),
+    `вес приоритета (${PRIORITIES.map((p) => PRIORITY_WEIGHT[p]).join(', ')}): каждый весомее суммы всех, что ниже — размен «сильный ради нескольких слабых» невыгоден`,
   );
-  check(inversionCost(1, 2) > inversionCost(4, 5), `инверсия 1↔2 стоит ${inversionCost(1, 2)}, инверсия 4↔5 — ${inversionCost(4, 5)}`);
+  check(
+    PRIORITIES.every((p) => Number.isInteger(PRIORITY_WEIGHT[p]) && PRIORITY_WEIGHT[p] > 0),
+    'веса приоритета целые и положительные — доказательство завершения поиска не ломается',
+  );
+  check(
+    [1, 2, 3, 4].every((p) => inversionCost((p + 1) as 2, (p + 2) as 3) < inversionCost(p as 1, (p + 1) as 2)),
+    `цена инверсии убывает с номером: 1↔2 стоит ${inversionCost(1, 2)}, 4↔5 — ${inversionCost(4, 5)}`,
+  );
+  check(inversionCost(3, 3) === 0, 'инверсии между равными приоритетами не существует: приоритеты повторяемы');
 
   // Спаренность: шкала владельца дословно, и связь с приоритетом.
   check(PAIRING_TOLERANCE[1] === 0 && PAIRING_TOLERANCE[6] === 0,
@@ -377,17 +392,20 @@ check(SCHEDULE_BLOCK_ERROR_TEXTS.SHARE_EXPIRED === SCHEDULE_BLOCK_ERROR_TEXTS.SH
     'допуски неспаренности уровней 2…5 — 20 / 40 / 60 / 80 процентов, как названо владельцем',
   );
   check(
-    PRIORITIES.every((p) => defaultPairingFor(p) === (p as unknown)),
-    'спаренность по умолчанию следует за приоритетом: чем выше приоритет, тем сильнее тяга к спариванию',
+    SCHEDULE_PARAMS.find((x) => x.id === 'subject.pairing')?.default === DEFAULT_PAIRING && DEFAULT_PAIRING === 5,
+    'спаренность из приоритета НЕ выводится и ставится вручную; дефолт 5 — движок не навязывает спаривание и не запрещает его',
   );
   check(pairingIsAdjacent(2, 3, 2) && pairingIsAdjacent(3, 2, 2),
     'пара, разделённая большой переменой, остаётся парой — блок 2–3 при большой перемене после второго урока');
   check(!pairingIsAdjacent(2, 5, 2), 'два часа через три позиции парой не считаются');
 
   // Норма отдыха — вывод из нормы завуча и объёма часов, а не константа.
-  check(restGapsFor(3, 18, 18) === 3 && restGapsFor(3, 4, 18) === 0,
-    'минимум окон масштабируется объёмом часов: приходящий педагог с четырьмя часами не получает норму полной ставки');
-  check(restGapsFor(3, 18, 0) === 0, 'при неизвестной ставке норма не выдумывается, а обнуляется');
+  check(restGapsFor(3, 18, 18, 20) === 3, 'педагог на полной ставке получает полную норму отдыха');
+  check(restGapsFor(3, 4, 18, 20) === 1, 'приходящий педагог с четырьмя часами получает 1 окно, а не норму полной ставки');
+  check(restGapsFor(3, 11, 18, 20) === 2,
+    'округление к ближайшему, а не вниз: 0,6 ставки при норме 3 даёт 2 окна, округление вниз недодало бы 1');
+  check(restGapsFor(3, 18, 0, 20) === 0, 'при неназванной ставке норма не выдумывается, а обнуляется');
+  check(restGapsFor(5, 18, 18, 2) === 2, 'норма отдыха не превышает числа свободных слотов недели');
 
   // Отказ «нет решения» выведен из обихода (AR-136).
   check(!(SCHEDULE_REFUSALS as readonly string[]).includes('NO_SOLUTION'),

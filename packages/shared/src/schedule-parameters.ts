@@ -86,14 +86,33 @@ export const PRIORITIES = [1, 2, 3, 4, 5, 6] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
 /**
- * Цена инверсии (урок меньшего приоритета начался позже большего) убывает с
- * номером: перестановка первого и второго приоритета дороже, чем четвёртого и
- * пятого. Формула — вес, а не выдуманная доля допуска: `6 − min(p, q)`.
+ * Вес приоритета. Шкала удваивающаяся, и это не вкус, а следствие требования
+ * «сначала первые, потом вторые»:
  *
- * Приоритет 1 инверсий не допускает вовсе (жёсткое H15); для остальных это
- * штраф. **Точная форма убывания — вопрос владельца В9**, здесь она линейная.
+ *   W(p) = 2^(6−p)  →  32, 16, 8, 4, 2, 1
+ *
+ * При такой шкале **один урок приоритета p важнее всех уроков более низких
+ * приоритетов вместе взятых** (32 > 16+8+4+2+1 = 31). Это единственное с
+ * точностью до множителя семейство целых весов, при котором размен «уступить
+ * один сильный приоритет ради нескольких слабых» никогда не выгоден — то есть
+ * порядок приоритетов остаётся порядком, а не превращается в торг.
+ *
+ * Линейная шкала (6−p) этим свойством не обладает: она делает перестановку
+ * первого со вторым такой же дешёвой, как четвёртого с пятым.
  */
-export const inversionCost = (p: Priority, q: Priority): number => 6 - Math.min(p, q);
+export const PRIORITY_WEIGHT: Record<Priority, number> = { 1: 32, 2: 16, 3: 8, 4: 4, 5: 2, 6: 1 };
+
+/**
+ * Цена инверсии — разность весов участников: `W(min) − W(max)`. Целое, как
+ * требует доказательство завершения локального поиска.
+ *
+ * Перестановка первого со вторым стоит 16, четвёртого с пятым — 2: ровно то
+ * убывание, которое назвал владелец, но выведенное из свойства шкалы, а не
+ * подобранное. Приоритет 1 инверсий не допускает вовсе (жёсткое H15), поэтому
+ * его вес работает лишь как верхняя опора шкалы.
+ */
+export const inversionCost = (p: Priority, q: Priority): number =>
+  Math.abs(PRIORITY_WEIGHT[Math.min(p, q) as Priority] - PRIORITY_WEIGHT[Math.max(p, q) as Priority]);
 
 /**
  * **Спаренность** — 1…6, шкала владельца: 1 строго обязательно (0 %
@@ -115,12 +134,15 @@ export const PAIRING_TITLES: Record<PairingLevel, string> = {
 };
 
 /**
- * Приоритет и спаренность СВЯЗАНЫ: чем выше приоритет урока, тем больше
- * вероятность, что его поставят спаренным (слова владельца). Поэтому уровень
- * спаренности по умолчанию берётся равным приоритету, а не выбирается заново.
- * Совпадение шкал — прочтение, а не цитата: **вопрос В13**.
+ * Спаренность **из приоритета не выводится** — решение владельца 2026-08-27:
+ * шкалы не совпадают, уровень ставится вручную на предмет и не более того.
+ * Прежняя связь «спаренность по умолчанию равна приоритету» была прочтением
+ * автора спеки и вытеснена.
+ *
+ * Дефолт — 5 («необязательно», допуск 80 %): движок не навязывает спаривание
+ * там, где школа его не просила, и не запрещает там, где оно сложилось само.
  */
-export const defaultPairingFor = (priority: Priority): PairingLevel => priority as unknown as PairingLevel;
+export const DEFAULT_PAIRING: PairingLevel = 5;
 
 /**
  * Спаренный блок — два часа предмета у класса в один день, занимающие смежные
@@ -168,6 +190,31 @@ export interface DaySkeleton {
   positions: number;
 }
 
+/**
+ * Режим периода — **временный скелет на диапазон дат**, а не пересборка сетки.
+ *
+ * Так это устроено потому, что расписание внутри четверти держится неизменным
+ * (AR-140): «щадящий режим перед каникулами» не вправе переставить уроки — он
+ * вправе укоротить звонки. Уроки те же, в том же порядке, просто день короче.
+ * Ровно так же нормативно устроен адаптационный период первых классов: это не
+ * другое расписание, а другие звонки на сентябрь-октябрь.
+ *
+ * Что режим МОЖЕТ менять: длину урока, длину перемен, число позиций в дне,
+ * время начала. Что НЕ может: нагрузку, приоритеты, спаренность, кто ведёт —
+ * иначе он перестаёт быть режимом и становится второй сеткой.
+ */
+export interface SkeletonPeriod {
+  id: string;
+  name: string;
+  /** Даты действия; вне их школа возвращается к обычному скелету сама. */
+  from: string;
+  to: string;
+  /** Какой скелет действует в эти даты вместо обычного. */
+  skeletonId: string;
+  /** Параллели, которых режим касается; пусто — вся школа. */
+  parallels: number[];
+}
+
 /** Обособить день: вынести его из общего скелета в собственный. */
 export interface SkeletonSplit { fromSkeletonId: string; day: number; name: string }
 /** Вернуть день в общий ряд: слить его скелет с названным. */
@@ -200,17 +247,33 @@ export type SearchDepth = keyof typeof SEARCH_DEPTHS;
 export const PROGRESS_SHOWS_NUMBERS = false;
 
 /**
- * Минимум окон педагога — **вывод**, а не константа. Норму ставит завуч на
- * школу; для конкретного педагога она масштабируется его объёмом часов, иначе
- * приходящий педагог с четырьмя часами и предмет, начинающийся в четвёртой
- * четверти, получают ту же норму, что педагог на полной нагрузке.
+ * Минимум окон на отдых у педагога — **вывод**, а не константа.
  *
- * Форма масштабирования — **вопрос В11**: здесь пропорция от объёма часов к
- * полной ставке, и величина ставки приходит из блока нагрузки, а не из этого
- * файла.
+ * Завуч ставит одну величину: сколько окон в неделю полагается педагогу **на
+ * полной ставке**. Для конкретного человека она пересчитывается пропорционально
+ * его объёму часов — «всё рассчитывается из головного объёма часов»:
+ *
+ *   окон(H) = round(норма × H / ставка),  но не больше свободных слотов недели
+ *
+ * Пропорция, а не константа, потому что приходящий педагог с четырьмя часами и
+ * предмет, начинающийся в четвёртой четверти, не нуждаются в отдыхе от полной
+ * ставки. Округление к БЛИЖАЙШЕМУ, а не вниз: округление вниз систематически
+ * недодаёт — педагог на 0,6 ставки при норме 3 получил бы 1 окно вместо 2.
+ *
+ * **Обеденные окна в этот счёт не входят.** Обед — отдельное жёсткое требование
+ * дня (H18); если засчитывать его как отдых, педагог с пятью обедами формально
+ * «отдохнул» пять раз и не получил ни одного свободного окна сверх еды.
  */
-export const restGapsFor = (norm: number, teacherHours: number, fullLoadHours: number): number =>
-  fullLoadHours <= 0 ? 0 : Math.min(norm, Math.floor((norm * teacherHours) / fullLoadHours));
+export const restGapsFor = (
+  normAtFullLoad: number,
+  teacherHours: number,
+  fullLoadHours: number,
+  freeSlotsInWeek: number,
+): number => {
+  if (fullLoadHours <= 0 || normAtFullLoad <= 0) return 0;
+  const proportional = Math.round((normAtFullLoad * teacherHours) / fullLoadHours);
+  return Math.max(0, Math.min(proportional, freeSlotsInWeek));
+};
 
 export const SCHEDULE_PARAMS: readonly ScheduleParam[] = [
   // ─── шаг 1 · нагрузка ───
@@ -231,7 +294,7 @@ export const SCHEDULE_PARAMS: readonly ScheduleParam[] = [
 
   // ─── шаг 3 · спаренность ───
   { id: 'subject.pairing', step: 'pairing', label: 'Спаренность', kind: 'input', status: 'new', control: 'select',
-    values: PAIRING_LEVELS, feeds: ['H16', 'маркер pairing'],
+    values: PAIRING_LEVELS, default: DEFAULT_PAIRING, feeds: ['H16', 'маркер pairing'],
     refusals: ['PAIRING_HOURS_ODD', 'PAIRING_FORBIDDEN_FIRST_GRADE'] },
 
   // ─── шаг 4 · педагоги ───
@@ -245,8 +308,10 @@ export const SCHEDULE_PARAMS: readonly ScheduleParam[] = [
     min: 3, max: 7, default: 5, feeds: ['H18'], refusals: ['TEACHER_LUNCH_IMPOSSIBLE'] },
   { id: 'teacher.lunchSlots', step: 'teacher', label: 'Длина обеда', kind: 'input', status: 'new', control: 'number',
     min: 1, max: 2, default: 1, feeds: ['H18'], refusals: ['TEACHER_LUNCH_IMPOSSIBLE'] },
-  { id: 'rest.norm', step: 'teacher', label: 'Норма окон на отдых (ставит завуч)', kind: 'input', status: 'new', control: 'number',
+  { id: 'rest.normAtFullLoad', step: 'teacher', label: 'Окон на отдых при полной ставке (ставит завуч)', kind: 'input', status: 'new', control: 'number',
     min: 0, max: 10, feeds: ['teacher.minWeekGaps'] },
+  { id: 'rest.fullLoadHours', step: 'teacher', label: 'Полная ставка, часов в неделю', kind: 'input', status: 'new', control: 'number',
+    min: 1, max: 40, feeds: ['teacher.minWeekGaps'] },
   { id: 'teacher.minWeekGaps', step: 'teacher', label: 'Окон в неделю на отдых, не менее', kind: 'derived', status: 'new', control: 'readonly',
     min: 0, feeds: ['маркер teacherRest'] },
   { id: 'teacher.maxPerDay', step: 'teacher', label: 'Уроков в день не больше', kind: 'input', status: 'new', control: 'number',
@@ -302,7 +367,7 @@ export const RELAXABLE = [
   'subject.pairing',
   'subject.priority',
   'teacher.maxPerDay',
-  'rest.norm',
+  'rest.normAtFullLoad',
   'teacher.methodDay',
 ] as const;
 
