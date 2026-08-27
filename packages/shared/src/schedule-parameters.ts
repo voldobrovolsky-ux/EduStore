@@ -272,6 +272,67 @@ export const teacherWeekHours = (pairsWeekHours: readonly number[]): number =>
  */
 export const LABOUR_NORMS_OWNER = 'блок бухгалтерии и кадров; в расписании не задаются' as const;
 
+
+// ─────────────── годовая норма, добор и подстраховка (AR-144…AR-146) ───────────────
+
+/**
+ * **Годовая норма — закон для сборки, а не пожелание.** Учебный план задаёт
+ * часы на год; сборка обязана уложить ровно их. Расхождение с планом может
+ * появиться **только от правки рукой** — машина его не создаёт и потому не
+ * вправе о нём предупреждать: сообщение «за год выйдет 136 вместо 102» после
+ * автоматической сборки означало бы, что сборка не выполнила свою работу.
+ */
+export const PLAN_IS_LAW_FOR_GENERATION = true;
+
+/**
+ * Неделя редко даёт ровно норму: праздник съедает урок, годовые часы не делятся
+ * нацело, человек передвинул занятие. Час при этом **не теряется и не заменяет
+ * собой другой предмет** — он уходит в долг и добирается следующей неделей.
+ *
+ * Долг к дате = сколько часов положено по плану − сколько уже проведено.
+ * Положительный долг означает недобор, отрицательный — забег вперёд.
+ */
+export const hoursDebt = (plannedByDate: number, heldByDate: number): number => plannedByDate - heldByDate;
+
+/**
+ * Предложение добора: вместо «урок пропал» система называет **конкретный слот
+ * следующей недели**, куда этот час встаёт, не ломая ни одного запрета.
+ */
+export interface MakeUpSlot {
+  subjectName: string;
+  classLabel: string;
+  /** Почему час выпал: праздник, правка человека, уход педагога. */
+  reason: 'holiday' | 'manual' | 'teacher-left';
+  debtHours: number;
+  /** Куда предлагается поставить: дата, день недели и номер урока. */
+  date: string;
+  dayNo: number;
+  slotNo: number;
+}
+
+/**
+ * **Режим подстраховки.** Аккаунт педагога убран из школы — расписание не
+ * ломается и не ждёт человека: предмет снимается с сетки, оставшиеся уроки
+ * дня подтягиваются (у класса окон не появляется), часы уходят в долг.
+ *
+ * Срок — четыре недели: это время на поиск замены. Отметки, выставленные до
+ * ухода, не трогаются никогда; новых колонок по снятому предмету не появляется.
+ * По истечении срока система не решает за школу — она называет накопленный долг
+ * и оставляет выбор: назначить педагога и добрать часы либо сократить программу.
+ */
+export const COVER_MODE_WEEKS = 4;
+
+export interface CoverMode {
+  subjectName: string;
+  classLabel: string;
+  formerTeacher: string;
+  since: string;
+  /** Сколько недель подстраховки осталось; 0 — срок вышел. */
+  weeksLeft: number;
+  /** Накопленный недобор часов по этому предмету. */
+  debtHours: number;
+}
+
 export const SCHEDULE_PARAMS: readonly ScheduleParam[] = [
   // ─── шаг 1 · нагрузка ───
   { id: 'load.yearHours', step: 'load', label: 'Часов в год', kind: 'input', status: 'new', control: 'number',
@@ -345,6 +406,11 @@ export const SCHEDULE_REFUSALS = [
   'SKELETON_TOO_SHORT',
   'RELAXATION_SUGGESTED',
   'PLAN_OR_CALENDAR_INVALID',
+  'MAKE_UP_OFFERED',
+  'MAKE_UP_NO_ROOM',
+  'COVER_MODE_ON',
+  'COVER_MODE_EXPIRED',
+  'PLAN_DIVERGES_BY_HAND',
 ] as const;
 export type ScheduleRefusal = (typeof SCHEDULE_REFUSALS)[number];
 
@@ -371,6 +437,11 @@ export const SCHEDULE_REFUSAL_TEXTS: Record<ScheduleRefusal, string> = {
   SKELETON_TOO_SHORT: 'Скелет «{skeleton}»: {positions} позиций при потребности {needed}.',
   RELAXATION_SUGGESTED: 'Расписание собирается, если {action}. Сделать?',
   PLAN_OR_CALENDAR_INVALID: 'Расписание не собирается при текущем учебном плане: {detail}.',
+  MAKE_UP_OFFERED: '{subject} в {class}: час не проведён ({reason}). Добавить {date}, {slot} уроком?',
+  MAKE_UP_NO_ROOM: '{subject} в {class}: добрать час на следующей неделе некуда — все дни заполнены до потолка.',
+  COVER_MODE_ON: '{class}: {subject} снят с расписания — {teacher} больше не работает в школе. Подстраховка ещё {weeks} нед.',
+  COVER_MODE_EXPIRED: '{class}: {subject} без педагога уже месяц, не проведено {debt} ч. Назначьте педагога или измените учебный план.',
+  PLAN_DIVERGES_BY_HAND: '{subject} в {class}: после правки вручную за год выйдет {actual} ч вместо {planned} по учебному плану.',
 };
 
 /** Состояния асинхронной задачи генерации (AR-130). */

@@ -38,8 +38,11 @@ import {
   PRIORITY_WEIGHT,
   inversionCost,
   pairingIsAdjacent,
+  COVER_MODE_WEEKS,
   GLOSSARY,
   JARGON,
+  PLAN_IS_LAW_FOR_GENERATION,
+  hoursDebt,
   LABOUR_NORMS_OWNER,
   teacherWeekHours,
   SCHEDULE_BLOCK_ERRORS,
@@ -484,4 +487,45 @@ check(SCHEDULE_BLOCK_ERROR_TEXTS.SHARE_EXPIRED === SCHEDULE_BLOCK_ERROR_TEXTS.SH
   check(dirtyBlock === undefined, `тексты отказов слоя без жаргона${dirtyBlock ? `: «${dirtyBlock}»` : ''}`);
 }
 
-report('G-56…G-62 · СЛОЙ КАЧЕСТВА, ПАРАМЕТРЫ И СЛОВАРЬ');
+// ─────────── G-63 · годовая норма, добор часов и подстраховка ───────────
+
+{
+  check(PLAN_IS_LAW_FOR_GENERATION === true,
+    'годовая норма — закон для сборки: машина обязана уложить ровно часы учебного плана');
+
+  // Расхождение с планом появляется ТОЛЬКО от руки человека, и текст об этом
+  // существует ровно один — после автоматической сборки его быть не может.
+  check(
+    SCHEDULE_REFUSAL_TEXTS.PLAN_DIVERGES_BY_HAND.includes('после правки вручную'),
+    'о расхождении с планом система говорит только про правку рукой — после автоматической сборки такого сообщения нет',
+  );
+
+  // Час не теряется и не заменяет собой другой предмет: он уходит в долг.
+  check(hoursDebt(12, 11) === 1 && hoursDebt(12, 12) === 0 && hoursDebt(12, 13) === -1,
+    'недобор, ровный счёт и забег вперёд считаются одной величиной: положено минус проведено');
+  check(
+    SCHEDULE_REFUSAL_TEXTS.MAKE_UP_OFFERED.includes('{date}') && SCHEDULE_REFUSAL_TEXTS.MAKE_UP_OFFERED.includes('{slot}'),
+    'вместо «урок пропал» система называет конкретный день и номер урока, куда час встаёт',
+  );
+  check(
+    SCHEDULE_REFUSAL_TEXTS.MAKE_UP_NO_ROOM.includes('некуда'),
+    'когда добрать негде, это сказано прямо, а не спрятано за молчанием',
+  );
+
+  // Подстраховка при уходе педагога.
+  check(COVER_MODE_WEEKS === 4, `режим подстраховки длится ${COVER_MODE_WEEKS} недели — время на поиск замены`);
+  check(
+    SCHEDULE_REFUSAL_TEXTS.COVER_MODE_ON.includes('{weeks}') && SCHEDULE_REFUSAL_TEXTS.COVER_MODE_ON.includes('снят'),
+    'школа видит, что предмет снят и сколько недель подстраховки осталось',
+  );
+  check(
+    SCHEDULE_REFUSAL_TEXTS.COVER_MODE_EXPIRED.includes('{debt}'),
+    'по истечении срока называется накопленный недобор в часах, а решение остаётся за школой',
+  );
+  check(
+    !SCHEDULE_REFUSAL_TEXTS.COVER_MODE_EXPIRED.includes('автоматическ'),
+    'система не решает за школу, что делать с непроведёнными часами',
+  );
+}
+
+report('G-56…G-63 · СЛОЙ КАЧЕСТВА, ПАРАМЕТРЫ, СЛОВАРЬ И ГОДОВАЯ НОРМА');
