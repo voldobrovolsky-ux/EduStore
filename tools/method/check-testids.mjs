@@ -45,6 +45,11 @@ const HOME = {
   'S-40': ['screens/schedule.tsx'], 'S-41': ['screens/schedule.tsx'], 'S-42': ['screens/schedule.tsx'],
   'S-50': ['screens/journal.tsx'], 'S-51': ['screens/journal.tsx'], 'S-52': ['screens/journal.tsx'],
   'S-60': ['screens/misc.tsx'], 'S-70': ['screens/misc.tsx'], 'S-80': ['screens/misc.tsx'],
+  // 1.2.0 (specs/school-launch/20-cabinets.md §7)
+  'S-14': ['screens/family.tsx'],
+  'S-23': ['screens/subjects.tsx'],
+  'S-32': ['screens/misc.tsx'],
+  'S-90': ['screens/diary.tsx'], 'S-91': ['screens/diary.tsx'],
 };
 
 const spec = fs.readFileSync(SPEC, 'utf8');
