@@ -6,6 +6,7 @@ import type {
   BindTeacherDto,
   ConfirmScheduleDto,
   CreateClassesDto,
+  CreateGuardianDto,
   CreateStaffCardDto,
   CreateSubjectDto,
   DayParamsDto,
@@ -26,6 +27,9 @@ import { schoolToday } from './calendar/school-day';
 import { ContingentService } from './contingent/contingent.service';
 import { SubjectsService } from './subjects/subjects.service';
 import { StaffService } from './staff/staff.service';
+import { AccountsService } from './access/accounts.service';
+import { DiaryService } from './diary/diary.service';
+import { SchoolError } from './schoolium.errors';
 import { CalendarContractService, CalendarService } from './calendar/calendar.service';
 import { ScheduleService } from './schedule/schedule.service';
 import { JournalService } from './journal/journal.service';
@@ -99,7 +103,10 @@ export class ClassesController {
 
 @Controller('v1/students')
 export class StudentsController {
-  constructor(private readonly svc: ContingentService) {}
+  constructor(
+    private readonly svc: ContingentService,
+    private readonly accounts: AccountsService,
+  ) {}
 
   @RequirePermission('classes.read')
   @Get(':id')
@@ -134,6 +141,164 @@ export class StudentsController {
   reactivate(@Req() req: Req0, @Param('id') id: string) {
     return this.svc.reactivateStudent(id, actorOf(req));
   }
+
+  // ─── доступ ученика 1.2.0 (AR-155): та же механика, что у персонала ───
+
+  @RequirePermission('classes.read')
+  @Get(':id/access')
+  access(@Param('id') id: string) {
+    return this.accounts.studentAccess(id);
+  }
+
+  /** `S-13.btn.createAccess`: ФИО уже в записи, модератор задаёт только креды. */
+  @RequirePermission('contingent.write')
+  @Post(':id/access')
+  createAccess(@Param('id') id: string, @Body() body: { username?: string | null; password?: string | null }) {
+    return this.accounts.createStudentAccess(id, body ?? {});
+  }
+
+  @RequirePermission('classes.read')
+  @Get(':id/activation-token')
+  activationStatus(@Param('id') id: string) {
+    return this.accounts.studentActivationStatus(id);
+  }
+
+  /** `S-13.qr`: именной QR ученика (AR-161). */
+  @RequirePermission('contingent.write')
+  @Post(':id/activation-token')
+  activationToken(@Param('id') id: string) {
+    return this.accounts.studentActivationToken(id);
+  }
+
+  /** `S-13.btn.revokeActivation` (AR-153). */
+  @RequirePermission('contingent.write')
+  @Post(':id/revoke-activation')
+  revokeActivation(@Req() req: Req0, @Param('id') id: string) {
+    return this.accounts.revokeStudentActivation(id, actorOf(req));
+  }
+
+  @RequirePermission('contingent.write')
+  @Post(':id/credentials')
+  credentials(@Param('id') id: string) {
+    return this.accounts.studentCredentials(id);
+  }
+}
+
+// ─────────────────────────── родители (S-14, AR-155) ───────────────────────────
+
+@Controller('v1/guardians')
+export class GuardiansController {
+  constructor(private readonly accounts: AccountsService) {}
+
+  @RequirePermission('classes.read')
+  @Get()
+  list() {
+    return this.accounts.listGuardians();
+  }
+
+  /** `S-14.btn.addGuardian`: учётка + связи с детьми, креды в ответе один раз. */
+  @RequirePermission('contingent.write')
+  @Post()
+  create(@Body() body: CreateGuardianDto) {
+    return this.accounts.createGuardian(body);
+  }
+
+  @RequirePermission('classes.read')
+  @Get(':id')
+  get(@Param('id') id: string) {
+    return this.accounts.getGuardian(id);
+  }
+
+  @RequirePermission('contingent.write')
+  @Delete(':id')
+  remove(@Req() req: Req0, @Param('id') id: string) {
+    return this.accounts.removeGuardian(id, actorOf(req));
+  }
+
+  /** Связи родитель→ребёнок ведёт модератор вручную (решение владельца 2026-08-28). */
+  @RequirePermission('contingent.write')
+  @Post(':id/links')
+  addLink(@Param('id') id: string, @Body() body: { studentId: string }) {
+    return this.accounts.addLink(id, String(body?.studentId ?? ''));
+  }
+
+  @RequirePermission('contingent.write')
+  @Delete(':id/links/:sid')
+  removeLink(@Param('id') id: string, @Param('sid') sid: string) {
+    return this.accounts.removeLink(id, sid);
+  }
+
+  @RequirePermission('classes.read')
+  @Get(':id/activation-token')
+  activationStatus(@Param('id') id: string) {
+    return this.accounts.guardianActivationStatus(id);
+  }
+
+  @RequirePermission('contingent.write')
+  @Post(':id/activation-token')
+  activationToken(@Param('id') id: string) {
+    return this.accounts.guardianActivationToken(id);
+  }
+
+  @RequirePermission('contingent.write')
+  @Post(':id/revoke-activation')
+  revokeActivation(@Req() req: Req0, @Param('id') id: string) {
+    return this.accounts.revokeGuardianActivation(id, actorOf(req));
+  }
+
+  @RequirePermission('contingent.write')
+  @Post(':id/credentials')
+  credentials(@Param('id') id: string) {
+    return this.accounts.guardianCredentials(id);
+  }
+}
+
+// ─────────────────────── дневник и успеваемость (S-90, S-91) ───────────────────────
+
+/**
+ * Проекции ученика и родителя (AR-158, AR-159). Гейт — идентичность, а не
+ * каталог (AR-151): экран отдаёт ровно детей учётки; штатная роль со связью
+ * `GuardianLink` видит своих детей без роли `parent`. Мутаций нет ни одной
+ * (G-67); в воротах G-10 маршруты не участвуют — это чтения.
+ */
+@Controller('v1/diary')
+export class DiaryController {
+  constructor(private readonly svc: DiaryService) {}
+
+  @Get('children')
+  children(@Req() req: Req0) {
+    const u = req.user;
+    if (!u?.workspaceId) throw new SchoolError('ACCESS_REVOKED');
+    return this.svc.childrenOf(u.florusUserId);
+  }
+
+  @Get()
+  week(@Req() req: Req0, @Query('child') child?: string, @Query('week') week?: string) {
+    const u = req.user;
+    if (!u?.workspaceId) throw new SchoolError('ACCESS_REVOKED');
+    return this.svc.week(u.florusUserId, child || null, week || null);
+  }
+
+  @Get('averages')
+  averages(@Req() req: Req0, @Query('child') child?: string) {
+    const u = req.user;
+    if (!u?.workspaceId) throw new SchoolError('ACCESS_REVOKED');
+    return this.svc.averages(u.florusUserId, child || null);
+  }
+}
+
+// ─────────────────── «Не авторизованные» (S-32) ───────────────────
+
+@Controller('v1/access')
+export class PendingController {
+  constructor(private readonly accounts: AccountsService) {}
+
+  /** Рабочий экран модератора на событии: заведено, но не активировано. */
+  @RequirePermission('school.manage')
+  @Get('pending')
+  pending() {
+    return this.accounts.pending();
+  }
 }
 
 // ─────────────────────────── предметы ───────────────────────────
@@ -146,6 +311,13 @@ export class SubjectsController {
   @Get()
   list() {
     return this.svc.list();
+  }
+
+  /** `S-23` (AR-160): массовое создание типовых предметов, идемпотентно (G-70). */
+  @RequirePermission('subject.write')
+  @Post('preset')
+  preset() {
+    return this.svc.applyPreset();
   }
 
   /**

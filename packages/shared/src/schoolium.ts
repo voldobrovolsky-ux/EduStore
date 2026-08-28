@@ -451,6 +451,84 @@ export interface LoginCodeDto {
   expiresAt: string;
 }
 
+// ─────────────────── доступы учеников и родителей (AR-155) ───────────────────
+
+/** Состояние входа ученика поверх записи контингента. */
+export interface StudentAccessDto {
+  studentId: string;
+  hasAccount: boolean;
+  username: string | null;
+  activated: boolean;
+}
+
+/** Карточка родителя (`S-14`): учётка + связи с детьми ведутся модератором. */
+export interface GuardianCardDto {
+  id: string;
+  userId: string | null;
+  name: string | null;
+  lastName: string | null;
+  firstName: string | null;
+  middleName: string | null;
+  username: string | null;
+  registered: boolean;
+  children: { studentId: string; name: string; classLabel: string }[];
+}
+
+export interface CreateGuardianDto {
+  lastName: string;
+  firstName: string;
+  middleName?: string | null;
+  username?: string | null;
+  password?: string | null;
+  studentIds?: string[];
+}
+
+/** «Не авторизованные» (`S-32`): рабочий экран модератора на событии. */
+export interface PendingActivationsDto {
+  staff: { cardId: string; name: string; roles: SchoolRole[] }[];
+  students: { classLabel: string; items: { studentId: string; name: string; hasAccount: boolean }[] }[];
+  guardians: { cardId: string; name: string }[];
+}
+
+// ─────────────────── дневник и успеваемость (AR-158, AR-159) ───────────────────
+
+export interface DiaryLessonDto {
+  lessonId: string;
+  slotNo: number;
+  subjectName: string;
+  topic: string | null;
+  mark: MarkValue | null;
+}
+
+export interface DiaryDayDto {
+  date: string; // YYYY-MM-DD
+  lessons: DiaryLessonDto[];
+}
+
+export interface DiaryWeekDto {
+  studentId: string;
+  studentName: string;
+  classLabel: string;
+  monday: string;
+  days: DiaryDayDto[];
+  /** Недели журнала для навигации — как календарь `S-50`. */
+  weeks: { monday: string; hasLessons: boolean }[];
+}
+
+/** Средний балл по предмету за текущую четверть; числовых нет — null («—»). */
+export interface SubjectAverageDto {
+  subjectId: string;
+  subjectName: string;
+  average: number | null;
+  marks: number;
+}
+
+export interface DiaryChildDto {
+  studentId: string;
+  name: string;
+  classLabel: string;
+}
+
 // ─────────────────────────── юзернейм (AR-154, правила Флёруса) ───────────────────────────
 
 /**
@@ -824,6 +902,24 @@ export const SCHOOL_API = {
   student: (id: string) => `/api/v1/students/${id}`,
   studentDeactivate: (id: string) => `/api/v1/students/${id}/deactivate`,
   studentReactivate: (id: string) => `/api/v1/students/${id}/reactivate`,
+  studentAccess: (id: string) => `/api/v1/students/${id}/access`,
+  studentActivationToken: (id: string) => `/api/v1/students/${id}/activation-token`,
+  studentRevokeActivation: (id: string) => `/api/v1/students/${id}/revoke-activation`,
+  studentCredentials: (id: string) => `/api/v1/students/${id}/credentials`,
+  // родители (S-14)
+  guardians: '/api/v1/guardians',
+  guardian: (id: string) => `/api/v1/guardians/${id}`,
+  guardianLinks: (id: string) => `/api/v1/guardians/${id}/links`,
+  guardianLink: (id: string, sid: string) => `/api/v1/guardians/${id}/links/${sid}`,
+  guardianActivationToken: (id: string) => `/api/v1/guardians/${id}/activation-token`,
+  guardianRevokeActivation: (id: string) => `/api/v1/guardians/${id}/revoke-activation`,
+  guardianCredentials: (id: string) => `/api/v1/guardians/${id}/credentials`,
+  // не авторизованные (S-32) и дневник (S-90, S-91)
+  pendingActivations: '/api/v1/access/pending',
+  diaryChildren: '/api/v1/diary/children',
+  diaryWeek: '/api/v1/diary',
+  diaryAverages: '/api/v1/diary/averages',
+  subjectsPreset: '/api/v1/subjects/preset',
   // предметы
   subjects: '/api/v1/subjects',
   subject: (id: string) => `/api/v1/subjects/${id}`,

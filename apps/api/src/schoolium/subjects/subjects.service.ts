@@ -21,6 +21,7 @@ import {
   type TeacherUnboundV1,
 } from '../schoolium.contract';
 import { SchoolError } from '../schoolium.errors';
+import { SUBJECT_PRESET } from './subject-preset';
 import { uncoveredGroups } from '../school-state.service';
 import { ContingentContractService } from '../contingent/contingent.service';
 import type { SchoolActor } from '../actor';
@@ -156,6 +157,28 @@ export class SubjectsService implements OnModuleInit {
       data: { workspaceId: ws, name: dto.name.trim(), classId: dto.classId },
     });
     return this.get(s.id);
+  }
+
+  /**
+   * Пресет типовых предметов (AR-160): для каждого класса школы создаются
+   * карточки «предмет × класс» из справочника по диапазону параллелей.
+   * Идемпотентно (G-70): существующая пара не дублируется (`skipDuplicates` по
+   * уникальности `[workspaceId, name, classId]`), ручные карточки не
+   * затираются. Ручное заведение (`S-20`/`S-21`) сохраняется — пресет
+   * ускоряет, а не заменяет.
+   */
+  async applyPreset(): Promise<{ created: number; skipped: number }> {
+    const ws = TenantContext.require();
+    const classes = await this.prisma.schoolClass.findMany();
+    const rows = classes.flatMap((c) =>
+      SUBJECT_PRESET.filter((p) => c.parallel >= p.from && c.parallel <= p.to).map((p) => ({
+        workspaceId: ws,
+        name: p.name,
+        classId: c.id,
+      })),
+    );
+    const res = await this.prisma.schoolSubject.createMany({ data: rows, skipDuplicates: true });
+    return { created: res.count, skipped: rows.length - res.count };
   }
 
   /**

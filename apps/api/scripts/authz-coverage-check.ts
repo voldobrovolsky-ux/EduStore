@@ -56,6 +56,7 @@ const WHITELIST: Record<string, string> = {
   'SchoolAuthController.deviceLinkToken': 'аноним (§11 строка 1): страница /login заводит токен привязки до всякой сессии',
   'SchoolAuthController.deviceLinkApprove': 'identity-gated (§11 строка 2): подтверждает якорное устройство своей сессией, новая сессия наследует его школу и роли',
   'SchoolAuthController.verifyLoginCode': 'key-gated (§11 строка 36): одноразовый код с карточки, 5 минут (AR-92)',
+  'SchoolAuthController.login': 'key-gated (AR-156): юзернейм+пароль, выданные модератором; LOGIN_FAILED не различает причин отказа',
   'SchoolAuthController.bootstrap': 'key-gated (AR-93): одноразовая ссылка платформенной операции, 24 часа',
   'SchoolAuthController.logout': 'identity-gated (§11 строка 3): человек завершает собственную сессию',
   'SchoolAuthController.endSession': 'identity-gated (§11 строка 38): владелец завершает свою сессию адресно, чужие в выборку не попадают',

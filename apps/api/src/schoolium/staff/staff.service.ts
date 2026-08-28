@@ -11,7 +11,7 @@ import {
   type StaffCardDto,
   type TokenStatus,
 } from '@edustore/shared';
-import { generatePassword, hashPassword, resolveUsername } from './credentials';
+import { createAccountWithMembership, generatePassword, hashPassword } from './credentials';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
 import { OutboxService } from '../../common/outbox/outbox.service';
@@ -133,39 +133,9 @@ export class StaffService {
     dto: FillStaffCardDto,
     roles: SchoolRole[],
   ): Promise<{ userId: string; credentials: CredentialsDto }> {
-    return TenantContext.runAsSystem(async () => {
-      const username = await resolveUsername(this.prisma, dto.username, {
-        lastName: dto.lastName.trim(),
-        firstName: dto.firstName.trim(),
-      });
-      const password = dto.password?.trim() || generatePassword();
-      const passwordHash = hashPassword(password);
-      const userId = `u-${randomUUID()}`;
-      const displayName = `${dto.lastName.trim()} ${dto.firstName.trim()}`.trim();
-      await this.prisma.$transaction(async (tx) => {
-        await tx.user.create({
-          data: {
-            id: userId,
-            firstName: dto.firstName.trim(),
-            lastName: dto.lastName.trim(),
-            middleName: dto.middleName?.trim() || null,
-            displayName,
-            username,
-            passwordHash,
-          },
-        });
-        await tx.membership.create({
-          data: {
-            florusUserId: userId, // legacy-колонка контура КТП (AR-58)
-            userId,
-            workspaceId,
-            florusRole: 'staff',
-            roles,
-          },
-        });
-      });
-      return { userId, credentials: { username, password } };
-    });
+    return TenantContext.runAsSystem(() =>
+      createAccountWithMembership(this.prisma, { workspaceId, ...dto, roles }),
+    );
   }
 
   /** `S-30.btn.addFounder` / `S-30.btn.addTeacher`: карточка + учётка сразу. */
@@ -283,16 +253,23 @@ export class StaffService {
     const t = await TenantContext.runAsSystem(() =>
       this.prisma.activationToken.findUnique({ where: { token } }),
     );
-    if (!t || t.purpose !== 'staff_activation') throw new SchoolError('TOKEN_EXPIRED');
+    const purposes = ['staff_activation', 'student_activation', 'guardian_activation'];
+    if (!t || !purposes.includes(t.purpose)) throw new SchoolError('TOKEN_EXPIRED');
     if (t.state === 'used') throw new SchoolError('TOKEN_USED');
     if (t.expiresAt < new Date() || t.state === 'expired') throw new SchoolError('TOKEN_EXPIRED');
 
     const ws = t.workspaceId;
 
     return TenantContext.runAsSystem(async () => {
-      const card = await this.prisma.staffCard.findUnique({ where: { id: t.targetId } });
-      if (!card?.userId) throw new SchoolError('TOKEN_EXPIRED');
-      const userId = card.userId;
+      // один маршрут скана на все три вида карточек: различие только в том, где
+      // карточка хранит учётку (персонал / запись контингента / родитель)
+      const userId =
+        t.purpose === 'staff_activation'
+          ? (await this.prisma.staffCard.findUnique({ where: { id: t.targetId } }))?.userId
+          : t.purpose === 'student_activation'
+            ? (await this.prisma.schoolStudent.findUnique({ where: { id: t.targetId } }))?.userId
+            : (await this.prisma.guardianCard.findUnique({ where: { id: t.targetId } }))?.userId;
+      if (!userId) throw new SchoolError('TOKEN_EXPIRED');
       const membership = await this.prisma.membership.findFirst({ where: { userId, workspaceId: ws } });
       if (!membership || membership.deactivatedAt) throw new SchoolError('ACCESS_REVOKED');
       const roles = membership.roles as SchoolRole[];
@@ -305,15 +282,20 @@ export class StaffService {
         if (!membership.activatedAt) {
           await tx.membership.update({ where: { id: membership.id }, data: { activatedAt: new Date() } });
         }
-        await this.outbox.enqueue(
-          tx,
-          newEvent<StaffRegisteredV1>({
-            type: SCHOOL_EVENTS.staffRegistered,
-            workspaceId: ws,
-            actor: userId,
-            payload: { userId, roles, registeredVia: 'moderator_qr' },
-          }),
-        );
+        // событие регистрации — только у персонала; вход ученика и родителя
+        // фиксируется фактом сессии (session.started ниже), отдельного
+        // доменного события у него нет — контракт событий не расширяется
+        if (t.purpose === 'staff_activation') {
+          await this.outbox.enqueue(
+            tx,
+            newEvent<StaffRegisteredV1>({
+              type: SCHOOL_EVENTS.staffRegistered,
+              workspaceId: ws,
+              actor: userId,
+              payload: { userId, roles, registeredVia: 'moderator_qr' },
+            }),
+          );
+        }
       });
 
       if (opts.openedByOtherSession) {

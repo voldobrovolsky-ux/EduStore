@@ -1,6 +1,6 @@
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
-import { ACCESS_PARAMS, usernameFromFio, usernameProblem } from '@edustore/shared';
+import { ACCESS_PARAMS, usernameFromFio, usernameProblem, type CredentialsDto } from '@edustore/shared';
 import type { PrismaClient } from '@prisma/client';
 import { SchoolError } from '../schoolium.errors';
 
@@ -41,6 +41,59 @@ type Tx = Pick<PrismaClient, 'user'>;
  * Занятый ЗАДАННЫЙ юзернейм — отказ `USERNAME_TAKEN` модератору, не суффикс:
  * имя выбирал человек, молча изменять его выбор нельзя.
  */
+export interface CreateAccountArgs {
+  workspaceId: string;
+  lastName: string;
+  firstName: string;
+  middleName?: string | null;
+  username?: string | null;
+  password?: string | null;
+  roles: string[];
+}
+
+/**
+ * Учётка целиком за один вызов (AR-154): `User` (юзернейм + хэш) + `Membership`
+ * (роли, `activatedAt: null` — вход появится сканом). Единая точка для
+ * персонала, учеников и родителей — три вида карточек не расходятся правилами.
+ * Вызывать под `TenantContext.runAsSystem`.
+ */
+export async function createAccountWithMembership(
+  prisma: PrismaClient,
+  args: CreateAccountArgs,
+): Promise<{ userId: string; credentials: CredentialsDto }> {
+  const username = await resolveUsername(prisma, args.username, {
+    lastName: args.lastName.trim(),
+    firstName: args.firstName.trim(),
+  });
+  const password = args.password?.trim() || generatePassword();
+  const passwordHash = hashPassword(password);
+  const userId = `u-${randomUUID()}`;
+  const displayName = `${args.lastName.trim()} ${args.firstName.trim()}`.trim();
+  await prisma.$transaction(async (tx) => {
+    await tx.user.create({
+      data: {
+        id: userId,
+        firstName: args.firstName.trim(),
+        lastName: args.lastName.trim(),
+        middleName: args.middleName?.trim() || null,
+        displayName,
+        username,
+        passwordHash,
+      },
+    });
+    await tx.membership.create({
+      data: {
+        florusUserId: userId, // legacy-колонка контура КТП (AR-58)
+        userId,
+        workspaceId: args.workspaceId,
+        florusRole: 'staff',
+        roles: args.roles,
+      },
+    });
+  });
+  return { userId, credentials: { username, password } };
+}
+
 export async function resolveUsername(
   tx: Tx,
   given: string | null | undefined,

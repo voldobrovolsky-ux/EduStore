@@ -130,7 +130,13 @@ export const SCHOOLIUM_PACKAGES: RolePackageDef[] = SCHOOL_ROLES.filter((r) => r
   key: role,
   cabinet: SCHOOLIUM_CABINET[role],
   label: ROLE_LABELS[role],
-  permissions: [...ROLE_PERMISSIONS[role]],
+  permissions: [
+    ...ROLE_PERMISSIONS[role],
+    // «Серьёзная техническая настройка» админа (матрица владельца, AR-150):
+    // устройства-киоски и настройки парсера переходят ему от снятого
+    // legacy-пакета — роуты живут, владелец у них теперь школьный админ.
+    ...(role === 'admin' ? ['structure.devices.manage', 'settings.parser.manage'] : []),
+  ],
 }));
 
 // Каталог строится ТОЛЬКО на доменных ролях (teacher|student|parent|staff·завуч/методист/

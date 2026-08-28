@@ -5,6 +5,8 @@ import { AuthzModule } from '../common/authz/authz.module';
 import { AuditModule } from '../common/audit/audit.module';
 import { SchoolStateService } from './school-state.service';
 import { AccessService } from './access/access.service';
+import { AccountsService } from './access/accounts.service';
+import { DiaryService } from './diary/diary.service';
 import { MeController, SchoolAuthController } from './access/access.controller';
 import { ContingentContractService, ContingentService } from './contingent/contingent.service';
 import { SubjectsContractService, SubjectsService } from './subjects/subjects.service';
@@ -16,6 +18,9 @@ import { JournalProjection } from './journal/journal.projection';
 import {
   CalendarController,
   ClassesController,
+  DiaryController,
+  GuardiansController,
+  PendingController,
   SchoolJournalController,
   ScheduleController,
   SchoolAdminController,
@@ -45,6 +50,9 @@ import {
     StudentsController,
     SubjectsController,
     StaffController,
+    GuardiansController,
+    DiaryController,
+    PendingController,
     CalendarController,
     ScheduleController,
     SchoolJournalController,
@@ -53,6 +61,8 @@ import {
   providers: [
     SchoolStateService,
     AccessService,
+    AccountsService,
+    DiaryService,
     ContingentService,
     ContingentContractService,
     SubjectsService,
@@ -68,6 +78,8 @@ import {
   exports: [
     SchoolStateService,
     AccessService,
+    AccountsService,
+    DiaryService,
     ContingentContractService,
     SubjectsContractService,
     CalendarContractService,
