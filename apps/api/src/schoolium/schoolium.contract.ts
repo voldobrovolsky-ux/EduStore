@@ -80,10 +80,10 @@ export interface StaffReactivatedV1 { userId: string }
 export interface StaffDeletedV1 { userId: string; unboundSubjects: string[] }
 export interface SessionStartedV1 {
   userId: string;
-  via: 'registration' | 'device_link' | 'login_code' | 'bootstrap_link';
+  via: 'registration' | 'device_link' | 'login_code' | 'bootstrap_link' | 'password';
   deviceHint: string;
 }
-export interface SessionRevokedV1 { userId: string; reason: 'deactivated' | 'deleted' | 'manual' }
+export interface SessionRevokedV1 { userId: string; reason: 'deactivated' | 'deleted' | 'manual' | 'activation_revoked' }
 export interface TermSetV1 { termNo: number; dateFrom: string; dateTo: string }
 export interface TemplateConfirmedV1 { templateId: string; seed: number; weekSlots: number }
 export interface LessonMaterializedV1 {

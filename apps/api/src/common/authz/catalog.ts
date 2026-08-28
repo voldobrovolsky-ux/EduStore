@@ -90,6 +90,8 @@ export const PERMISSIONS: PermissionDef[] = [
   { code: 'staff.self.write', section: 'school', screen: 'profile', action: 'write', label: 'Собственная аватарка' },
   // Пять читающих: выдаются всем шести ролям. Записи «*.read» в каталоге не
   // существует — это сокращение текста спеки, а не код (G-10 сверяет коды).
+  // Проекция ученика и родителя (AR-158): дневник и средние по предметам.
+  { code: 'diary.read', section: 'school', screen: 'diary', action: 'read', label: 'Дневник — просмотр' },
   { code: 'classes.read', section: 'school', screen: 'classes', action: 'read', label: 'Классы — просмотр' },
   { code: 'subjects.read', section: 'school', screen: 'subjects', action: 'read', label: 'Предметы — просмотр' },
   { code: 'staff.read', section: 'school', screen: 'staff', action: 'read', label: 'Персонал — просмотр' },
@@ -118,6 +120,10 @@ const SCHOOLIUM_CABINET: Record<SchoolRole, string> = {
   director: 'director',
   deputy_academic: 'deputy_academic',
   deputy_upbringing: 'deputy_upbringing',
+  // 1.2.0 (AR-150): администратор школы и проекции ученика/родителя
+  admin: 'admin',
+  parent: 'parent',
+  student: 'student',
 };
 
 export const SCHOOLIUM_PACKAGES: RolePackageDef[] = SCHOOL_ROLES.filter((r) => r !== 'teacher').map((role) => ({
@@ -135,14 +141,13 @@ export const ROLE_PACKAGES: RolePackageDef[] = [
   { key: 'teacher', cabinet: 'teacher', label: 'Кабинет учителя', permissions: ['journal.grades.view', 'journal.grades.edit', 'planning.ktp.view', 'planning.ktp.edit', 'materials.lesson.generate', 'materials.textbook.upload', 'comm.channel.manage', 'notes.teacher.edit', 'lesson.conduct', 'schedule.view', 'doc.files.manage', 'consent.record', ...ROLE_PERMISSIONS.teacher] },
   { key: 'zavuch', cabinet: 'zavuch', label: 'Кабинет завуча', permissions: ['structure.disciplines.manage', 'structure.distribution.manage', 'structure.classes.manage', 'contingent.students.manage', 'planning.ktp.view', 'planning.ktp.edit', 'planning.ktp.approve', 'planning.kpp.approve', 'standards.assessment.manage', 'standards.org.manage', 'standards.fgos.approve', 'comm.channel.manage', 'comm.announcement.post', 'schedule.build', 'schedule.view', 'doc.files.manage', 'doc.files.publish', 'consent.record', 'consent.deletion.request'] },
   { key: 'methodist', cabinet: 'methodist', label: 'Кабинет методиста', permissions: ['structure.disciplines.manage', 'methodics.umk.view', 'methodics.rp.view', 'standards.timing.manage', 'methodics.manage', 'courses.manage', 'curation.assign', 'comm.channel.manage', 'doc.files.manage', 'doc.files.publish', 'consent.record'] },
-  { key: 'parent', cabinet: 'parent', label: 'Кабинет родителя', permissions: ['diary.child.view', 'grades.child.view', 'schedule.view', 'consent.record', 'consent.deletion.request'] },
-  { key: 'student', cabinet: 'student', label: 'Кабинет ученика', permissions: ['tasks.view', 'schedule.view', 'progress.view', 'consent.record'] },
   { key: 'psychologist', cabinet: 'psychologist', label: 'Кабинет психолога', permissions: ['psych.cases.view', 'psych.sessions.view', 'psych.risk.view', 'consent.record'] },
-  // admin — организационная роль из florus_orgs[].role (провижинится в Membership и сессию),
-  // НЕ путать с tenancy-ролями панели Флёра (operator/workspace_admin, в токен не приходят).
-  // Кабинет админа (AdminApp) работает по этому пакету — уточнение AR-16 в AR-35.
-  { key: 'admin', cabinet: 'admin', label: 'Панель управления школой', permissions: ['structure.classes.manage', 'structure.disciplines.manage', 'structure.distribution.manage', 'structure.devices.manage', 'contingent.students.manage', 'settings.parser.manage', 'consent.record', 'consent.deletion.request'] },
-  // Schoolium 1.1.1: пять оставшихся ролей версии (teacher дополнен выше).
+  // 1.2.0 (AR-150): ключи `admin`, `parent`, `student` ПЕРЕХОДЯТ контуру
+  // Schoolium — их legacy-пакеты (AdminApp, кабинеты родителя/ученика
+  // вытесняемого контура) сняты этим же изменением: один ключ не может
+  // обслуживать два контура (прецедент AR-83), а сессии с этими ролями в
+  // рантайме 1.2.0 выдаёт только контур `sch_sid` (AR-94).
+  // Schoolium 1.2.0: роли версии (teacher дополнен выше).
   ...SCHOOLIUM_PACKAGES,
 ];
 

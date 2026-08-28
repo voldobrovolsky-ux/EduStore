@@ -302,77 +302,49 @@ export function LoginCodeScreen({ code }: { code?: string }) {
 
 
 
-// ─────────────────────────── S-03 · регистрация по QR ───────────────────────────
+// ─────────────────── S-03′ · активация одним сканом (AR-161) ───────────────────
 
 export function JoinScreen({ token }: { token: string }) {
-  const [form, setForm] = useState({ lastName: "", firstName: "", middleName: "", phone: "" });
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [noSession, setNoSession] = useState(false);
 
-  const ready = form.lastName.trim() && form.firstName.trim() && form.phone.trim();
-
-  const submit = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.join(token, {
-        lastName: form.lastName.trim(),
-        firstName: form.firstName.trim(),
-        middleName: form.middleName.trim() || null,
-        phone: form.phone.trim(),
+  // Учётка заведена модератором целиком: скан именного QR и есть «я — это я».
+  // Человек не вводит ничего — страница активирует вход сама и ведёт в кабинет.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .join(token)
+      .then((r) => {
+        if (cancelled) return;
+        if (r.hasSession) navigate(`/join/${token}/photo`);
+        // QR открыт под чужой живой сессией (устройство модератора, AR-91):
+        // якорь не выдан — человек входит кодом с карточки со своего устройства
+        else setNoSession(true);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof SchoolApiError ? e.message : "Не удалось активировать вход");
       });
-      navigate(`/join/${token}/photo`);
-    } catch (e) {
-      setError(e instanceof SchoolApiError ? e.message : "Не удалось зарегистрироваться");
-    } finally {
-      setBusy(false);
-    }
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   return (
     <AuthFrame>
-      <div className="sch-card sch-auth-card sch-auth-card--wide">
-        <h2 data-testid="S-03.header.role">Регистрация сотрудника</h2>
-        <div style={{ marginTop: "var(--sp-16)" }}>
-          <Field
-            label="Фамилия"
-            testId="S-03.input.lastName"
-            value={form.lastName}
-            autoCapitalize="words"
-            onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-          />
-          <Field
-            label="Имя"
-            testId="S-03.input.firstName"
-            value={form.firstName}
-            autoCapitalize="words"
-            onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-          />
-          {/* Отчество опционально — подпись «при наличии» стоит в спеке дословно. */}
-          <Field
-            label="Отчество"
-            hint="при наличии"
-            testId="S-03.input.middleName"
-            value={form.middleName}
-            autoCapitalize="words"
-            onChange={(e) => setForm({ ...form, middleName: e.target.value })}
-          />
-          <Field
-            label="Телефон"
-            testId="S-03.input.phone"
-            value={form.phone}
-            inputMode="tel"
-            autoComplete="tel"
-            placeholder="+7 900 000-00-00"
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-            error={error}
-          />
-        </div>
-        <div className="sch-actions">
-          <Button kind="primary" testId="S-03.btn.submit" disabled={!ready} loading={busy} onClick={submit}>
-            Продолжить
-          </Button>
-        </div>
+      <div className="sch-card sch-auth-card">
+        <h2 data-testid="S-03.header.role">Вход в Schoolium</h2>
+        {error ? (
+          <p className="sch-error" data-testid="S-03.error" role="alert">
+            {error}
+          </p>
+        ) : noSession ? (
+          <p data-testid="S-03.hint.otherDevice">
+            Это устройство уже занято другой учёткой. Откройте ссылку со своего телефона
+            или войдите кодом с карточки: «Вход по коду» на странице входа.
+          </p>
+        ) : (
+          <p data-testid="S-03.hint.progress">Подключаем устройство…</p>
+        )}
       </div>
     </AuthFrame>
   );

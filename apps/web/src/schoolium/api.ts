@@ -17,7 +17,6 @@ import type {
   CreateSubjectDto,
   DayParamsDto,
   ErrorCode,
-  JoinStaffDto,
   JournalDto,
   MarkValue,
   MeDto,
@@ -145,8 +144,9 @@ export const api = {
   deleteStaff: (id: string) => call<{ ok: boolean }>("DELETE", `${V1}/staff/${id}`),
   loginCode: (id: string) => call<{ code: string; expiresAt: string }>("POST", `${V1}/staff/${id}/login-code`),
   revokeSessions: (id: string) => call<{ ok: boolean; revoked: number }>("POST", `${V1}/staff/${id}/sessions/revoke`),
-  join: (token: string, dto: JoinStaffDto) =>
-    call<{ ok: boolean; hasSession: boolean }>("POST", `${V1}/staff/join/${token}`, dto),
+  // Активация одним сканом (AR-161): тела нет — учётка заведена модератором.
+  join: (token: string) =>
+    call<{ ok: boolean; hasSession: boolean }>("POST", `${V1}/staff/join/${token}`, {}),
   setAvatar: (url: string) => call<{ ok: boolean }>("POST", `${V1}/staff/me/avatar`, { url }),
   clearAvatar: () => call<{ ok: boolean }>("DELETE", `${V1}/staff/me/avatar`),
 

@@ -34,8 +34,8 @@ async function main(): Promise<void> {
 
   await inSchool(school.workspaceId, async () => {
     // ─── QR активации карточки сотрудника ───
-    const cardA = await staff.addCard('teacher');
-    const cardB = await staff.addCard('teacher');
+    const { card: cardA } = await staff.addCard({ role: 'teacher', lastName: 'Иванова', firstName: 'Мария', middleName: 'Петровна' });
+    const { card: cardB } = await staff.addCard({ role: 'teacher', lastName: 'Резервная', firstName: 'Карточка' });
     const tokenA = await staff.createActivationToken(cardA.id);
     const ttl = Math.round((new Date(tokenA.expiresAt).getTime() - Date.now()) / 60_000);
     check(ttl === ACCESS_PARAMS.activationTtlMinutes,
@@ -47,20 +47,16 @@ async function main(): Promise<void> {
     const other = await staff.activationStatus(cardB.id);
     check(other.token !== tokenA.token, 'у другой карточки другой токен — QR привязан к своей карточке');
 
-    const joined = await staff.join(
-      tokenA.token,
-      { lastName: 'Иванова', firstName: 'Мария', middleName: 'Петровна', phone: `+7913${Math.floor(Math.random() * 10_000_000)}` },
-      { openedByOtherSession: false, deviceHint: 'телефон' },
-    );
+    check(tokenA.fullName === 'Иванова Мария', `над QR — ФИО владельца: «${tokenA.fullName}» (AR-161)`);
+    const joined = await staff.activate(tokenA.token, { openedByOtherSession: false, deviceHint: 'телефон' });
     await drain();
-    check(joined.sessionToken !== null, 'после регистрации сотрудник в СВОЁМ кабинете, а не на экране входа (AR-91)');
+    check(joined.sessionToken !== null, 'после скана человек в СВОЁМ кабинете, ничего не вводя (AR-91, AR-161)');
     const after = await staff.activationStatus(cardA.id);
-    check(after.status === 'used', `статус токена после регистрации: ${after.status}`);
+    check(after.status === 'used', `статус токена после активации: ${after.status}`);
     check(after.registeredName === 'Иванова Мария', `карточка показывает имя: ${after.registeredName}`);
 
     await refuses(
-      () => staff.join(tokenA.token, { lastName: 'Второй', firstName: 'Человек', phone: '+79990000001' },
-        { openedByOtherSession: false, deviceHint: 'телефон' }),
+      () => staff.activate(tokenA.token, { openedByOtherSession: false, deviceHint: 'телефон' }),
       'TOKEN_USED',
       'повторный скан использованного QR отклонён с внятным текстом',
     );
@@ -72,8 +68,7 @@ async function main(): Promise<void> {
     check((await staff.activationStatus(cardB.id)).status === 'expired',
       'закрытие карточки ГАСИТ QR — код не переживает встречу (AR-76)');
     await refuses(
-      () => staff.join(tokenB.token, { lastName: 'Поздний', firstName: 'Гость', phone: '+79990000002' },
-        { openedByOtherSession: false, deviceHint: 'телефон' }),
+      () => staff.activate(tokenB.token, { openedByOtherSession: false, deviceHint: 'телефон' }),
       'TOKEN_EXPIRED',
       'скан погашенного QR отклонён',
     );

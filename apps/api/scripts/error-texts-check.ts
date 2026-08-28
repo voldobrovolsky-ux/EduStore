@@ -73,6 +73,12 @@ const SAMPLE: Record<ErrorCode, Record<string, unknown>> = {
   LOGIN_CODE_EXPIRED: {},
   ACCESS_REVOKED: {},
   STUDENT_INACTIVE: {},
+  // контур учётки 1.2.0 (specs/school-launch/10-identity.md §9)
+  USERNAME_TAKEN: { username: 'm_ivanova' },
+  USERNAME_INVALID: { username: 'Мария!' },
+  PASSWORD_TOO_SHORT: {},
+  LOGIN_FAILED: {},
+  ACTIVATION_REVOKED: {},
 };
 
 /** Строки §9, чей текст объявлен НЕ показываемым пользователю. */

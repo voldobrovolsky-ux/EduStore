@@ -2,7 +2,8 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { ERROR_CODES, type ErrorCode } from '@edustore/shared';
 
 /**
- * Двадцать девять кодов отказа версии с текстами из `70-screens.md` §9.
+ * Коды отказа версии с текстами из `70-screens.md` §9 (29 кодов 1.1.1 + пять
+ * кодов контура учётки 1.2.0, specs/school-launch/10-identity.md §9).
  *
  * Правило: текст называет **объект и цифры**, а не «произошла ошибка». Поэтому
  * шаблоны здесь — функции от деталей отказа, а не константные строки: сообщение
@@ -21,6 +22,13 @@ const TEXTS: Record<ErrorCode, (d: D) => string> = {
   TOKEN_USED: () => 'Код уже использован, откройте карточку заново',
   TOKEN_EXPIRED: () => 'Код погас, откройте карточку заново',
   PHONE_TAKEN_IN_SCHOOL: () => 'Этот номер уже зарегистрирован в школе',
+  // контур учётки 1.2.0 (AR-153…AR-156); первые три видит модератор на формах КПЦ
+  USERNAME_TAKEN: (d) => `Юзернейм ${n(d, 'username')} занят — выберите другой`,
+  USERNAME_INVALID: (d) =>
+    `Юзернейм ${n(d, 'username')} не подходит: строчные латинские буквы, цифры и подчёркивание, от 3 до 30 знаков`,
+  PASSWORD_TOO_SHORT: () => 'Пароль короче 8 знаков — удлините или оставьте поле пустым, пароль сгенерируется',
+  LOGIN_FAILED: () => 'Войти не удалось: проверьте юзернейм и пароль или попросите модератора показать код входа',
+  ACTIVATION_REVOKED: () => 'Активация отозвана модератором. Отсканируйте свой QR заново',
   CLASSES_ALREADY_EXIST: () => 'Классы уже созданы; добавьте класс из списка',
   // §9 и §S-41 требуют римского номера и НАЗЫВАЮТ обе четверти: «II четверть
   // начинается раньше, чем кончается I». Пара номеров и есть объект отказа.
@@ -71,6 +79,9 @@ const STATUS: Partial<Record<ErrorCode, HttpStatus>> = {
   LOGIN_CODE_EXPIRED: HttpStatus.GONE,
   ACCESS_REVOKED: HttpStatus.FORBIDDEN,
   LOGIN_CODE_INVALID: HttpStatus.UNAUTHORIZED,
+  USERNAME_TAKEN: HttpStatus.CONFLICT,
+  LOGIN_FAILED: HttpStatus.UNAUTHORIZED,
+  ACTIVATION_REVOKED: HttpStatus.FORBIDDEN,
 };
 
 /** Отказ версии: код + человекочитаемая причина с объектом и цифрами + requestId. */

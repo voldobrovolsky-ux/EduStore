@@ -131,7 +131,7 @@ export class SchoolSessionService {
   }
 
   /** Адресное завершение: убивает ровно одну сессию, остальные устройства живут. */
-  async revoke(sessionId: string, reason: 'manual' | 'deactivated' | 'deleted'): Promise<number> {
+  async revoke(sessionId: string, reason: 'manual' | 'deactivated' | 'deleted' | 'activation_revoked'): Promise<number> {
     const r = await TenantContext.runAsSystem(() =>
       this.prisma.appSession.updateMany({
         where: { id: sessionId, revokedAt: null },
@@ -142,7 +142,7 @@ export class SchoolSessionService {
   }
 
   /** Отзыв всех сессий человека — деактивация и удаление делают это немедленно. */
-  async revokeAllForUser(userId: string, reason: 'deactivated' | 'deleted' | 'manual'): Promise<number> {
+  async revokeAllForUser(userId: string, reason: 'deactivated' | 'deleted' | 'manual' | 'activation_revoked'): Promise<number> {
     const r = await TenantContext.runAsSystem(() =>
       this.prisma.appSession.updateMany({
         where: { userId, revokedAt: null },

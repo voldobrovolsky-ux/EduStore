@@ -78,23 +78,30 @@ async function main(): Promise<void> {
     'bypass включается ТОЛЬКО явным dev|test|ci — опечатка в env не открывает аутентификацию молча');
   check(/return false;/.test(guardSrc), 'иначе — отказ: fail-closed по построению');
 
-  // ─── 4. регистрация по QR создаёт User + Membership + сессию 90 дней ───
+  // ─── 4. учётку заводит модератор; активация одним сканом — сессия 90 дней ───
   const school = await bootstrapSchool(b, 'Школа доступа');
-  const phone = `+7900${Math.floor(Math.random() * 10_000_000)}`;
+  const uname = `olga_${Math.floor(Math.random() * 10_000_000)}`;
   await inSchool(school.workspaceId, async () => {
-    const card = await staff.addCard('teacher');
+    const { card, credentials } = await staff.addCard({
+      role: 'teacher',
+      lastName: 'Смирнова',
+      firstName: 'Ольга',
+      username: uname,
+    });
+    check(credentials.username === uname && credentials.password.length >= 8,
+      'учётка заведена модератором целиком: юзернейм + сгенерированный пароль (AR-154, AR-156)');
+    check(card.registered === false, 'до скана карточка «не авторизована» — учётка есть, входа не было (AR-161)');
+
     const token = await staff.createActivationToken(card.id);
-    const joined = await staff.join(
-      token.token,
-      { lastName: 'Смирнова', firstName: 'Ольга', phone },
-      { openedByOtherSession: false, deviceHint: 'телефон сотрудника' },
-    );
+    check(token.fullName === 'Смирнова Ольга', `над QR — ФИО владельца карточки: «${token.fullName}» (AR-161)`);
+
+    const joined = await staff.activate(token.token, { openedByOtherSession: false, deviceHint: 'телефон сотрудника' });
     await drain();
-    check(joined.sessionToken !== null, 'регистрация со своего устройства заканчивается СЕССИЕЙ — человек в кабинете, а не на экране входа (AR-91)');
+    check(joined.sessionToken !== null, 'скан со своего устройства заканчивается СЕССИЕЙ — человек в кабинете, ничего не вводя (AR-91, AR-161)');
 
     const session = await sessions.read(joined.sessionToken!);
     check(session !== null, 'сессия читается и несёт школу и роли');
-    check(session?.workspaceId === school.workspaceId, 'сессия называет школу сама — переключателя школ в 1.1.1 нет');
+    check(session?.workspaceId === school.workspaceId, 'сессия называет школу сама — переключателя школ нет');
     check(session?.roles?.includes('teacher') === true, `роли в сессии: ${session?.roles?.join(', ')}`);
 
     const row = await TenantContext.runAsSystem(() =>
@@ -103,33 +110,37 @@ async function main(): Promise<void> {
     const days = Math.round(((row?.expiresAt.getTime() ?? 0) - Date.now()) / (24 * 3600 * 1000));
     check(days === ACCESS_PARAMS.sessionDays, `срок сессии — ${days} дней`);
 
-    const user = await TenantContext.runAsSystem(() => b.prisma.user.findUnique({ where: { phone } }));
-    check(user !== null, 'создан User с телефоном — идентичность пользователя это номер (AR-46)');
+    const user = await TenantContext.runAsSystem(() => b.prisma.user.findUnique({ where: { username: uname } }));
+    check(user !== null, 'создан User с юзернеймом — идентичность пользователя это юзернейм (AR-154)');
     const memberships = await TenantContext.runAsSystem(() =>
-      b.prisma.membership.count({ where: { userId: user!.id } }),
+      b.prisma.membership.findMany({ where: { userId: user!.id } }),
     );
-    check(memberships === 1, 'создано одно членство — принадлежность школе выражается членством, а не полем User (AR-47)');
+    check(memberships.length === 1, 'создано одно членство — принадлежность школе выражается членством (AR-154)');
+    check(memberships[0]?.activatedAt !== null, 'активация проставила activatedAt — карточка ушла из «Не авторизованных»');
+
+    // отзыв активации (AR-153): сессии закрыты, карточка снова не авторизована
+    const revoked = await staff.revokeActivation(card.id, { userId: 'op-moderator', roles: ['moderator'] } as never);
+    check(revoked.registered === false, 'отзыв активации вернул карточку в «Не авторизованные» (AR-153)');
+    check((await sessions.read(joined.sessionToken!)) === null, 'сессия чужого устройства закрыта отзывом (AR-153)');
+    const again = await staff.createActivationToken(card.id);
+    const re = await staff.activate(again.token, { openedByOtherSession: false, deviceHint: 'телефон сотрудника' });
+    check(re.sessionToken !== null, 'повторная активация после отзыва проходит — отзыв не удаление');
   });
 
-  // ─── 5. телефон уникален на инсталляцию, второе членство не конфликтует ───
+  // ─── 5. юзернейм уникален на инсталляцию (AR-154) ───
   const school2 = await bootstrapSchool(b, 'Вторая школа доступа');
   await inSchool(school2.workspaceId, async () => {
-    const card = await staff.addCard('teacher');
-    const token = await staff.createActivationToken(card.id);
-    await staff.join(
-      token.token,
-      { lastName: 'Смирнова', firstName: 'Ольга', phone },
-      { openedByOtherSession: false, deviceHint: 'телефон сотрудника' },
-    );
+    const taken = await staff
+      .addCard({ role: 'teacher', lastName: 'Смирнова', firstName: 'Ольга', username: uname })
+      .then(() => null)
+      .catch((e) => e);
+    check(taken?.code === 'USERNAME_TAKEN',
+      'занятый юзернейм в другой школе — USERNAME_TAKEN: область уникальности вся инсталляция; привязка существующей учётки ко второй школе — отложенное (00-scope §4)');
+    const auto = await staff.addCard({ role: 'teacher', lastName: 'Смирнова', firstName: 'Ольга' });
+    check(auto.credentials.username !== uname && auto.credentials.username.length >= 3,
+      `пустой юзернейм предзаполнен транслитерацией с суффиксом занятости: ${auto.credentials.username}`);
     await drain();
   });
-  const { users, both } = await TenantContext.runAsSystem(async () => {
-    const found = await b.prisma.user.findMany({ where: { phone } });
-    const count = found.length ? await b.prisma.membership.count({ where: { userId: found[0].id } }) : 0;
-    return { users: found.length, both: count };
-  });
-  check(users === 1, `запись User одна на инсталляцию: ${users} — уникальность телефона глобальна (AR-47)`);
-  check(both === 2, `членств у неё ${both} — регистрация во второй школе не конфликтует с первой (AR-66)`);
 
   await b.close();
   report('G-24 · КОНТУР ДОСТУПА БЕЗ SMS ДОКАЗАН');

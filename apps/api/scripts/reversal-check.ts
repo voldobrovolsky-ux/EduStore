@@ -108,11 +108,13 @@ async function main(): Promise<void> {
     await staff.addRole(s.teacher.cardId, 'moderator', s.moderator);
     check((await staff.get(s.teacher.cardId)).roles.includes('moderator'),
       'роль модератора выдана кнопкой «Добавить роль» — отдельной секции «Модераторы» на S-30 нет');
-    // У карточки bootstrap-модератора роль одна: `LAST_MODERATOR` уже не мешает
-    // (модераторов двое), но `LAST_ROLE` мешает — сотрудник без единой роли это
-    // запись, о правах которой невозможно рассуждать (AR-102).
-    await refuses(() => staff.removeRole(modCard!.id, 'moderator', s.moderator), 'LAST_ROLE',
-      'при двух модераторах у первого роль всё равно не снимается: она у него единственная');
+    // 1.2.0: у bootstrap-оператора ролей две (admin + moderator, AR-148), при
+    // втором модераторе `moderator` у него снимается свободно; `LAST_ROLE`
+    // проверяется ниже на сотруднике с единственной ролью (AR-102).
+    await staff.removeRole(modCard!.id, 'moderator', s.moderator);
+    check(!(await staff.get(modCard!.id)).roles.includes('moderator'),
+      'при двух модераторах роль снимается у оператора с двумя ролями — LAST_ROLE его не держит');
+    await staff.addRole(modCard!.id, 'moderator', s.moderator);
     await staff.removeRole(s.teacher.cardId, 'moderator', s.moderator);
     check(!(await staff.get(s.teacher.cardId)).roles.includes('moderator'),
       'при двух модераторах роль снимается свободно у того, у кого есть вторая — правило защищает школу, а не должность');

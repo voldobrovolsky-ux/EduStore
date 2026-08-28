@@ -42,11 +42,25 @@ async function main(): Promise<void> {
 
   console.log('G-41 · полные права модератора и аудит (AR-88, AR-30)\n');
 
-  // ─── 1. пакеты ролей: модератор держит все тринадцать ───
+  // ─── 1. пакеты ролей — матрица владельца 2026-08-28 (AR-150…AR-152, G-66) ───
+  const admin = await authz.resolveForRoles(['admin']);
+  check([...MUTATION_PERMISSIONS, ...READ_PERMISSIONS].every((p) => admin.permissions.includes(p)),
+    'администратор школы держит все мутации и чтения версии — полнота прав переехала к нему (AR-148, AR-150)');
+  const MOD_MUT = ['school.manage', 'contingent.write', 'staff.manage', 'staff.self.write'];
   const mod = await authz.resolveForRoles(['moderator']);
-  check(SCHOOL_PERMISSIONS.every((p) => mod.permissions.includes(p)),
-    `модератор держит все ${SCHOOL_PERMISSIONS.length} кодов версии — любая мутация проходит для него (AR-88)`);
-  for (const role of ['founder', 'director', 'deputy_academic', 'deputy_upbringing'] as const) {
+  check(
+    MOD_MUT.every((p) => mod.permissions.includes(p)) &&
+      MUTATION_PERMISSIONS.filter((p) => !MOD_MUT.includes(p)).every((p) => !mod.permissions.includes(p)),
+    'модератор держит ровно КПЦ: классы, контингент, персонал, активации — и ничего из панели УТЦ (AR-152)',
+  );
+  const DEP_MUT = ['schedule.build', 'subject.write', 'staff.self.write'];
+  const deputy = await authz.resolveForRoles(['deputy_academic']);
+  check(
+    DEP_MUT.every((p) => deputy.permissions.includes(p)) &&
+      MUTATION_PERMISSIONS.filter((p) => !DEP_MUT.includes(p)).every((p) => !deputy.permissions.includes(p)),
+    'завуч держит ровно панель УТЦ: предметы, привязки, расписание — и ничего из КПЦ (AR-152)',
+  );
+  for (const role of ['founder', 'director', 'deputy_upbringing'] as const) {
     const acc = await authz.resolveForRoles([role]);
     const mut = MUTATION_PERMISSIONS.filter((p) => acc.permissions.includes(p) && p !== 'staff.self.write');
     check(mut.length === 0, `${role}: ни одного мутационного права школы (кроме собственной аватарки) — ${mut.join(', ') || 'пусто'}`);
@@ -57,7 +71,12 @@ async function main(): Promise<void> {
     'педагог держит отметки и темы — но принадлежность урока проверяется сервисом, а не каталогом');
   check(!teacher.permissions.includes('contingent.write') && !teacher.permissions.includes('staff.manage'),
     'педагог не ведёт контингент и не ведёт персонал');
-  check(SCHOOL_ROLES.every((r) => ROLE_PERMISSIONS[r].length > 0), 'у каждой из шести ролей непустой пакет прав');
+  for (const role of ['parent', 'student'] as const) {
+    const acc = await authz.resolveForRoles([role]);
+    check(acc.permissions.length === 1 && acc.permissions[0] === 'diary.read',
+      `${role}: ровно одна проекция diary.read — ни одной мутации и ни одного школьного чтения (AR-155, AR-158)`);
+  }
+  check(SCHOOL_ROLES.every((r) => ROLE_PERMISSIONS[r].length > 0), 'у каждой из девяти ролей непустой пакет прав');
 
   // ─── 2. перечисление мутаций контроллеров версии ───
   const container = b.app.get(ModulesContainer);
@@ -85,10 +104,16 @@ async function main(): Promise<void> {
   }
   check(rows.length >= 38, `мутаций контура 1.1.1 обнаружено: ${rows.length} (в §11 их 38)`);
   const gated = rows.filter((r) => r.perm);
+  const forAdmin = gated.filter((r) => admin.permissions.includes(r.perm!));
+  check(forAdmin.length === gated.length,
+    `администратор школы проходит ВСЕ ${gated.length} гейченных мутаций — отказа по праву он получить не может (AR-148)`);
   const forModerator = gated.filter((r) => mod.permissions.includes(r.perm!));
-  check(forModerator.length === gated.length,
-    `модератор проходит ВСЕ ${gated.length} гейченных мутаций — отказа по праву он получить не может`);
-  for (const role of ['founder', 'director', 'deputy_academic', 'deputy_upbringing'] as const) {
+  check(forModerator.every((r) => MOD_MUT.includes(r.perm!)) && forModerator.length > 0,
+    `модератор проходит только мутации КПЦ: ${[...new Set(forModerator.map((r) => r.perm))].join(', ')} (AR-152)`);
+  const forDeputy = gated.filter((r) => deputy.permissions.includes(r.perm!));
+  check(forDeputy.every((r) => DEP_MUT.includes(r.perm!)) && forDeputy.length > 0,
+    `завуч проходит только мутации панели УТЦ: ${[...new Set(forDeputy.map((r) => r.perm))].join(', ')} (AR-152)`);
+  for (const role of ['founder', 'director', 'deputy_upbringing'] as const) {
     const acc = await authz.resolveForRoles([role]);
     const passes = gated.filter((r) => acc.permissions.includes(r.perm!) && r.perm !== 'staff.self.write');
     check(passes.length === 0, `${role} не проходит ни одной мутации школы (${passes.map((p) => p.route).join(', ') || 'ноль'})`);
@@ -113,16 +138,18 @@ async function main(): Promise<void> {
       future = page.columns.find((c) => c.future);
     }
     if (!future) throw new Error('в сетке нет ни одного будущего урока — гейт даты нечем проверить');
-    const modActor = { userId: s.moderator.userId, roles: s.moderator.roles, name: s.moderator.name };
+    // 1.2.0 (AR-152): полные права журнала — у администратора школы; в стенде
+    // bootstrap-оператор несёт обе роли, actor здесь действует КАК admin
+    const modActor = { userId: s.moderator.userId, roles: ['admin' as const], name: s.moderator.name };
     const teacherActor = { userId: s.teacher.userId, roles: ['teacher' as const], name: 'Иванова Мария' };
     const strangerActor = { userId: 'u-stranger', roles: ['teacher' as const], name: 'Чужой педагог' };
 
     await journal.postMark(past.lessonId, s.studentIds[0], '5', modActor);
     await drain();
-    check(true, 'модератор ставит отметку в ЧУЖОМ уроке — права полные (AR-88)');
+    check(true, 'администратор ставит отметку в ЧУЖОМ уроке — полнота прав у него (AR-148, AR-152)');
 
     await refuses(() => journal.postMark(future.lessonId, s.studentIds[0], '5', modActor),
-      'LESSON_NOT_HELD', 'модератор НЕ обходит гейт даты: непроведённый урок закрыт и для полных прав');
+      'LESSON_NOT_HELD', 'администратор НЕ обходит гейт даты: непроведённый урок закрыт и для полных прав');
 
     await refuses(() => journal.postMark(past.lessonId, s.studentIds[0], '5', strangerActor),
       'нет права записи в этот урок', 'педагог в чужом уроке — отказ по принадлежности');
@@ -140,7 +167,7 @@ async function main(): Promise<void> {
     check(modEntries.length > 0,
       `действий модератора в аудите: ${modEntries.length} — противовес полномочиям работает (AR-88)`);
     const markEntry = entries.find((e) => e.action === 'journal.mark.posted.v1' && e.actor === s.moderator.userId);
-    check(Boolean(markEntry), 'отметка модератора в чужом уроке записана в аудит с его идентичностью');
+    check(Boolean(markEntry), 'отметка администратора в чужом уроке записана в аудит с его идентичностью');
   });
 
   // ─── 5. все 22 события версии аудируются ───

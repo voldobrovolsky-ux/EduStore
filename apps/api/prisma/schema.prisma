@@ -100,14 +100,18 @@ model User {
   lastName    String
   displayName String
   email       String?
-  // Schoolium 1.1.1 (AR-104): телефон — идентичность пользователя (AR-46) и ключ
-  // входа; область уникальности — вся инсталляция (AR-47), принадлежность школе
-  // выражается членством. Отчество опционально («при наличии», S-03/S-13).
-  phone       String?  @unique
-  middleName  String?
-  avatarUrl   String?
-  teacher     Teacher?
-  createdAt   DateTime @default(now())
+  // Schoolium 1.2.0 (AR-154, заменяет AR-46/47): идентичность — юзернейм по
+  // правилам Флёруса, область уникальности — вся инсталляция, принадлежность
+  // школе выражается членством. Телефон опционален и ключом не является.
+  phone        String?  @unique
+  username     String?  @unique
+  // Пароль — резервный вход (AR-156): bcrypt cost 12, байт-в-байт совместим с
+  // bcryptjs Флёруса — при миграции хэш переносится, пароль не спрашивается.
+  passwordHash String?
+  middleName   String?
+  avatarUrl    String?
+  teacher      Teacher?
+  createdAt    DateTime @default(now())
 }
 
 // Организация = САМА ПЛАТФОРМА EduStore (арендатор у Флёра, flor_owned, org_type=platform).
@@ -175,6 +179,10 @@ model Membership {
   userId        String?
   roles         String[]  @default([])
   deactivatedAt DateTime? // AR-92: деактивация закрывает доступ и отзывает сессии
+  // 1.2.0 (AR-161): учётка заведена модератором целиком, «активирован» = у
+  // членства появился верифицированный носитель (первая сессия). Отзыв
+  // активации (AR-153) возвращает NULL — карточка снова в «Не авторизованных».
+  activatedAt   DateTime?
   createdAt     DateTime  @default(now())
 
   @@unique([florusUserId, workspaceId])
@@ -1282,10 +1290,16 @@ model SchoolStudent {
   middleName    String? // опционально, «при наличии»
   sex           String? // 'm' | 'f' — обязателен при заполнении профиля
   deactivatedAt DateTime? // AR-78: ученик с отметками деактивируется, а не удаляется
+  // 1.2.0 (AR-155): у ученика может быть учётка (роль student, данные-минимум:
+  // ФИО уже здесь, новых ПДн-полей не заводится — G-69). NULL = входа нет,
+  // записи и журнал работают без него.
+  userId        String?
+  guardians     GuardianLink[]
   createdAt     DateTime      @default(now())
 
   @@index([workspaceId])
   @@index([classId])
+  @@index([userId])
 }
 
 /// Карточка предмета заводится на ПАРУ «предмет × класс»: математика-5 и
@@ -1514,12 +1528,43 @@ model StaffCard {
   id           String   @id @default(cuid())
   workspaceId  String
   section      Int // 1 учредители и директор · 2 заместители · 3 преподаватели
-  plannedRoles String[] // намеченные роли до регистрации
-  userId       String? // заполняется регистрацией по QR
+  plannedRoles String[] // намеченные роли пустой карточки-слота
+  // 1.2.0 (AR-154): заполняется при заведении учётки модератором, а не сканом —
+  // ФИО и креды существуют до активации, над QR печатается ФИО из User.
+  userId       String?
   seq          Int      @default(0)
   createdAt    DateTime @default(now())
 
   @@index([workspaceId])
+}
+
+/// Карточка родителя (AR-155): заводится модератором в КПЦ (`S-14`),
+/// связи с детьми ведёт модератор вручную (решение владельца 2026-08-28).
+model GuardianCard {
+  id          String         @id @default(cuid())
+  workspaceId String
+  userId      String? // учётка родителя, заводится вместе с карточкой
+  seq         Int            @default(0)
+  links       GuardianLink[]
+  createdAt   DateTime       @default(now())
+
+  @@index([workspaceId])
+}
+
+/// Связь родитель → ребёнок. Открывает дневник и средние ребёнка (AR-158)
+/// и блок «Мои дети» у штатной роли с той же учёткой (AR-151).
+model GuardianLink {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  guardianCardId String
+  guardian       GuardianCard  @relation(fields: [guardianCardId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        SchoolStudent @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+
+  @@unique([guardianCardId, studentId])
+  @@index([workspaceId])
+  @@index([studentId])
 }
 
 /// Сессия 90 дней (httpOnly-cookie, AR-94). Несёт `workspaceId` активного

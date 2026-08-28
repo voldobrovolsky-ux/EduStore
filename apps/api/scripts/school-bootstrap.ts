@@ -107,7 +107,7 @@ async function main(): Promise<void> {
       userId: user.id,
       workspaceId: workspace.id,
       florusRole: 'staff', // legacy-колонка контура КТП; роли версии — в roles[]
-      roles: ['moderator'],
+      roles: ['admin', 'moderator'], // AR-148/AR-152: оператор школы несёт обе роли
     },
   });
   // карточка модератора на экране «Персонал» — секция 1, роль уже действующая

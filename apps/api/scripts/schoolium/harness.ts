@@ -67,15 +67,17 @@ export async function bootstrapSchool(b: Bench, name: string, phone?: string): P
       },
     });
     await b.prisma.membership.create({
-      data: { florusUserId: user.id, userId: user.id, workspaceId: ws.id, florusRole: 'staff', roles: ['moderator'] },
+      // 1.2.0 (AR-148/AR-152): оператор школы из bootstrap несёт ОБЕ роли — полный
+      // доступ администратора и КПЦ-рутину модератора; роли совместимы (AR-150)
+      data: { florusUserId: user.id, userId: user.id, workspaceId: ws.id, florusRole: 'staff', roles: ['admin', 'moderator'] },
     });
     await b.prisma.staffCard.create({
-      data: { workspaceId: ws.id, section: 1, plannedRoles: ['moderator'], userId: user.id, seq: 0 },
+      data: { workspaceId: ws.id, section: 1, plannedRoles: ['admin', 'moderator'], userId: user.id, seq: 0 },
     });
     await b.prisma.schoolState.create({ data: { workspaceId: ws.id } });
     return {
       workspaceId: ws.id,
-      moderator: { userId: user.id, workspaceId: ws.id, roles: ['moderator'] as SchoolRole[], name: user.displayName },
+      moderator: { userId: user.id, workspaceId: ws.id, roles: ['admin', 'moderator'] as SchoolRole[], name: user.displayName },
     };
   });
 }

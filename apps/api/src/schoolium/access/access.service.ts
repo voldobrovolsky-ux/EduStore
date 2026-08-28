@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomBytes, randomInt } from 'node:crypto';
 import { ACCESS_PARAMS, type SchoolRole } from '@edustore/shared';
+import { verifyPassword } from '../staff/credentials';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
 import { SchoolSessionService } from '../../common/auth/school-session.service';
@@ -141,6 +142,45 @@ export class AccessService {
       deviceHint,
     });
     await this.publishSessionStarted(row.userId, row.workspaceId, 'login_code', deviceHint);
+    return { session, roles: membership.roles as SchoolRole[] };
+  }
+
+  // ─────────────── вход по юзернейму и паролю (AR-156, `S-05′`) ───────────────
+
+  /**
+   * Фолбэк слетевшей сессии: креды заведены модератором вместе с учёткой.
+   * Отказ не различает «нет такого юзернейма» и «пароль неверен» (`LOGIN_FAILED`,
+   * защита от перечисления); сравнение выравнено по времени фиктивным хэшем.
+   * Школу маршрут не называет — берётся последнее активное членство с ролями
+   * [дефолт: мультишкольный выбор школы — отложенное, `00-scope.md` §4].
+   */
+  async loginWithPassword(username: string, password: string, deviceHint: string) {
+    const u = username.trim().toLowerCase();
+    const user = await TenantContext.runAsSystem(() => this.prisma.user.findUnique({ where: { username: u } }));
+    const ok = verifyPassword(password, user?.passwordHash ?? null);
+    if (!user || !ok) throw new SchoolError('LOGIN_FAILED');
+
+    const membership = await TenantContext.runAsSystem(() =>
+      this.prisma.membership.findFirst({
+        where: { userId: user.id, deactivatedAt: null, NOT: { roles: { isEmpty: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+    );
+    if (!membership) throw new SchoolError('ACCESS_REVOKED');
+
+    // вход по паролю тоже делает устройство верифицированным носителем
+    if (!membership.activatedAt) {
+      await TenantContext.runAsSystem(() =>
+        this.prisma.membership.update({ where: { id: membership.id }, data: { activatedAt: new Date() } }),
+      );
+    }
+    const session = await this.sessions.issue({
+      userId: user.id,
+      workspaceId: membership.workspaceId,
+      roles: membership.roles,
+      deviceHint,
+    });
+    await this.publishSessionStarted(user.id, membership.workspaceId, 'password', deviceHint);
     return { session, roles: membership.roles as SchoolRole[] };
   }
 

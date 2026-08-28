@@ -191,9 +191,11 @@ export class JournalService {
     const col = await this.prisma.journalColumn.findUnique({ where: { lessonId } });
     if (!col) throw new SchoolError('LESSON_NOT_HELD');
 
-    // 1. полномочия: модератор — любой урок школы (AR-88); педагог — свой
+    // 1. полномочия (AR-152): администратор школы — любой урок; педагог — свой.
+    // Модератор с 1.2.0 отметки не ставит (роут закрыт каталогом), проверка
+    // сервиса дублирует это намеренно — гейт живёт в контракте, не в UI.
     const may =
-      actor.roles.includes('moderator') ||
+      actor.roles.includes('admin') ||
       (actor.roles.includes('teacher') && col.teacherId === actor.userId);
     if (!may) throw new ForbiddenException('нет права записи в этот урок');
 

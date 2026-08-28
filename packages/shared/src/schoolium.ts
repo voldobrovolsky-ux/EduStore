@@ -9,9 +9,15 @@
  * `specs/school-onboarding/70-screens.md` §0, §9, §11 (экраны, коды, мутации).
  */
 
-// ─────────────────────────── роли (AR-60) ───────────────────────────
+// ─────────────────────────── роли (AR-150) ───────────────────────────
 
-/** Шесть ролей версии. Роли совместимы: у пользователя МАССИВ ролей. */
+/**
+ * Восемь ролей версии 1.2.0 (AR-150). Роли совместимы: у пользователя МАССИВ
+ * ролей. `admin` — полное управление workspace (реализует AR-148); `parent` и
+ * `student` — читающие проекции (AR-155, AR-158). Слова словаря владельца,
+ * ролями не являющиеся (`hostess`, `methodist`), зарезервированы именами и в
+ * версии не существуют.
+ */
 export const SCHOOL_ROLES = [
   'founder',
   'director',
@@ -19,6 +25,9 @@ export const SCHOOL_ROLES = [
   'deputy_upbringing',
   'teacher',
   'moderator',
+  'admin',
+  'parent',
+  'student',
 ] as const;
 export type SchoolRole = (typeof SCHOOL_ROLES)[number];
 
@@ -29,7 +38,21 @@ export const ROLE_LABELS: Record<SchoolRole, string> = {
   deputy_upbringing: 'Заместитель по воспитательной работе',
   teacher: 'Преподаватель',
   moderator: 'Модератор школы',
+  admin: 'Администратор школы',
+  parent: 'Родитель',
+  student: 'Ученик',
 };
+
+/** Штатные роли — те, чьи карточки живут на экране «Персонал» (`S-30`). */
+export const STAFF_ROLES: SchoolRole[] = [
+  'founder',
+  'director',
+  'deputy_academic',
+  'deputy_upbringing',
+  'teacher',
+  'moderator',
+  'admin',
+];
 
 /**
  * Секции экрана «Персонал» (`S-30`). Кнопка «Добавить» стоит только у
@@ -59,7 +82,7 @@ export const MUTATION_PERMISSIONS = [
   'staff.self.write',
 ] as const;
 
-/** Пять читающих прав; выдаются всем шести ролям. Шаблона «*.read» не существует. */
+/** Пять читающих прав штатных ролей. Шаблона «*.read» не существует. */
 export const READ_PERMISSIONS = [
   'classes.read',
   'subjects.read',
@@ -68,22 +91,31 @@ export const READ_PERMISSIONS = [
   'journal.read',
 ] as const;
 
-export const SCHOOL_PERMISSIONS = [...MUTATION_PERMISSIONS, ...READ_PERMISSIONS] as const;
+/** Проекции ученика и родителя (AR-158): дневник и средние по предметам. */
+export const PROJECTION_PERMISSIONS = ['diary.read'] as const;
+
+export const SCHOOL_PERMISSIONS = [...MUTATION_PERMISSIONS, ...READ_PERMISSIONS, ...PROJECTION_PERMISSIONS] as const;
 export type SchoolPermission = (typeof SCHOOL_PERMISSIONS)[number];
 
 /**
- * Пакеты прав ролей 1.1.1 (AR-88): модератор держит **все тринадцать** — любая
- * мутация версии проходит для него, включая отметку в чужом уроке. Четыре
- * читающие роли не проходят ни одной мутации; педагог пишет отметки и темы
- * только в своих уроках (проверка принадлежности — в сервисе журнала).
+ * Пакеты прав ролей 1.2.0 — матрица владельца 2026-08-28 (AR-150…AR-152,
+ * `specs/school-launch/20-cabinets.md` §2): все мутации — у администратора
+ * школы; модератор держит КПЦ (классы, контингент, персонал, активации);
+ * панель УТЦ (предметы, привязки, расписание) — у завуча; педагог пишет
+ * отметки и темы только в своих уроках (проверка принадлежности — в сервисе
+ * журнала). Гейты реальности не зависят от роли: `LESSON_NOT_HELD` отклоняет
+ * отметку в непроведённый урок и админу.
  */
 export const ROLE_PERMISSIONS: Record<SchoolRole, SchoolPermission[]> = {
-  moderator: [...SCHOOL_PERMISSIONS],
+  admin: [...MUTATION_PERMISSIONS, ...READ_PERMISSIONS],
+  moderator: [...READ_PERMISSIONS, 'school.manage', 'contingent.write', 'staff.manage', 'staff.self.write'],
+  deputy_academic: [...READ_PERMISSIONS, 'schedule.build', 'subject.write', 'staff.self.write'],
   teacher: [...READ_PERMISSIONS, 'journal.mark.post', 'journal.topic.set', 'staff.self.write'],
   founder: [...READ_PERMISSIONS, 'staff.self.write'],
   director: [...READ_PERMISSIONS, 'staff.self.write'],
-  deputy_academic: [...READ_PERMISSIONS, 'staff.self.write'],
   deputy_upbringing: [...READ_PERMISSIONS, 'staff.self.write'],
+  parent: [...PROJECTION_PERMISSIONS],
+  student: [...PROJECTION_PERMISSIONS],
 };
 
 // ─────────────────────────── отметки (6 значений, AR-79) ───────────────────────────
@@ -111,7 +143,15 @@ export const ERROR_CODES = [
   'LINK_CODE_EXPIRED',
   'TOKEN_USED',
   'TOKEN_EXPIRED',
+  // выведен из употребления в 1.2.0 (AR-154: телефон больше не ключ); код
+  // остаётся в контракте — реестр кодов, как и АР-реестр, журнал, а не срез
   'PHONE_TAKEN_IN_SCHOOL',
+  // контур учётки 1.2.0 (AR-153, AR-154, AR-156)
+  'USERNAME_TAKEN',
+  'USERNAME_INVALID',
+  'PASSWORD_TOO_SHORT',
+  'LOGIN_FAILED',
+  'ACTIVATION_REVOKED',
   'CLASSES_ALREADY_EXIST',
   'TERM_OVERLAP',
   'TERM_REVERSED',
@@ -172,6 +212,8 @@ export interface SchoolErrorBody {
 
 /** Все значения — `[дефолт]`: меняются решением владельца, механики не меняют. */
 export const ACCESS_PARAMS = {
+  /** Минимальная длина пароля при ручной замене сгенерированного (AR-156). */
+  passwordMinLength: 8,
   sessionDays: 90,
   deviceLinkTtlMinutes: 3,
   activationTtlMinutes: 15,
@@ -342,15 +384,53 @@ export interface BindTeacherDto {
 export interface StaffCardDto {
   id: string;
   section: 1 | 2 | 3;
-  /** Роли: до регистрации — намеченные, после — действующие из членства. */
+  /** Роли: у незаполненной карточки — намеченные, дальше — из членства. */
   roles: SchoolRole[];
+  /**
+   * 1.2.0 (AR-161): учётка заведена целиком модератором, поэтому «зарегистрирован»
+   * значит «активировал вход сканом», а не «заполнил форму». Карточки с
+   * `registered: false` и заполненными ФИО — список «Не авторизованные» (`S-32`).
+   */
   registered: boolean;
+  /** Учётка заведена (ФИО+юзернейм+пароль есть); false — пустая карточка-слот. */
+  filled: boolean;
   userId: string | null;
   name: string | null;
+  lastName: string | null;
+  firstName: string | null;
+  middleName: string | null;
+  username: string | null;
   avatarUrl: string | null;
   deactivated: boolean;
   /** Сервер решает: удалить (нет истории) либо деактивировать (AR-89). */
   hasHistory: boolean;
+}
+
+/** Заведение учётки сотрудника модератором (AR-154): ФИО + юзернейм + пароль. */
+export interface CreateStaffCardDto {
+  role: SchoolRole;
+  lastName: string;
+  firstName: string;
+  middleName?: string | null;
+  /** Пустой — сервер предзаполнит транслитерацией ФИО. */
+  username?: string | null;
+  /** Пустой — сервер сгенерирует и вернёт открытым текстом один раз. */
+  password?: string | null;
+}
+
+/** Заполнение существующей пустой карточки (синглтоны из bootstrap). */
+export type FillStaffCardDto = Omit<CreateStaffCardDto, 'role'>;
+
+/** Креды, показанные модератору на карточке. Пароль — открытым текстом, один раз. */
+export interface CredentialsDto {
+  username: string;
+  password: string;
+}
+
+/** Вход по юзернейму и паролю (`S-05′`, AR-156) — фолбэк слетевшей сессии. */
+export interface LoginDto {
+  username: string;
+  password: string;
 }
 
 export type TokenStatus = 'waiting' | 'scanned' | 'used' | 'expired';
@@ -359,21 +439,57 @@ export interface ActivationTokenDto {
   token: string;
   status: TokenStatus;
   expiresAt: string;
+  /** ФИО владельца карточки — подпись над QR (AR-161). */
+  fullName?: string | null;
   /** После скана — идентичность сканировавшего (AR-87). */
   scannedByName?: string | null;
   registeredName?: string | null;
 }
 
-export interface JoinStaffDto {
-  lastName: string;
-  firstName: string;
-  middleName?: string | null;
-  phone: string;
-}
-
 export interface LoginCodeDto {
   code: string;
   expiresAt: string;
+}
+
+// ─────────────────────────── юзернейм (AR-154, правила Флёруса) ───────────────────────────
+
+/**
+ * Правила Флёруса дословно (AR-157: мягкая миграция — юзернейм переносится как
+ * есть): латиница в нижнем регистре, цифры, подчёркивание; 3–30 символов.
+ */
+export const USERNAME_RE = /^[a-z0-9_]{3,30}$/;
+
+/**
+ * Резервный список: маршруты обеих систем и платформенные имена. Подмножество
+ * списка Флёруса, достаточное для Schoolium; сверка полного — при миграции.
+ */
+export const RESERVED_USERNAMES = new Set([
+  'admin', 'administrator', 'moderator', 'root', 'system', 'support', 'help',
+  'schoolium', 'edustore', 'florus', 'flor', 'communitoria',
+  'api', 'login', 'logout', 'join', 'bootstrap', 'link', 'bind', 'code',
+  'account', 'settings', 'me', 'user', 'users', 'school', 'teacher', 'student',
+  'parent', 'director', 'founder', 'diary', 'journal', 'schedule', 'classes',
+]);
+
+const TRANSLIT: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
+  и: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
+  с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch',
+  ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+};
+
+/** Предзаполнение юзернейма транслитерацией ФИО: «Иванова Мария» → `m_ivanova`. */
+export function usernameFromFio(lastName: string, firstName: string): string {
+  const tr = (s: string): string =>
+    s.toLowerCase().split('').map((ch) => TRANSLIT[ch] ?? (/[a-z0-9]/.test(ch) ? ch : '')).join('');
+  const base = [tr(firstName).slice(0, 1), tr(lastName)].filter(Boolean).join('_');
+  return base.slice(0, 30).padEnd(3, '0');
+}
+
+export function usernameProblem(u: string): 'invalid' | 'reserved' | null {
+  if (!USERNAME_RE.test(u)) return 'invalid';
+  if (RESERVED_USERNAMES.has(u)) return 'reserved';
+  return null;
 }
 
 // ─────────────────────────── календарь ───────────────────────────
@@ -654,6 +770,8 @@ export interface MeDto {
 export function startScreenFor(permissions: readonly string[]): string {
   if (permissions.includes('school.manage')) return '/classes';
   if (permissions.includes('journal.mark.post')) return '/journal';
+  // ученик и родитель (AR-158): единственная поверхность — дневник
+  if (permissions.includes('diary.read') && !permissions.includes('journal.read')) return '/diary';
   return '/classes';
 }
 
@@ -676,6 +794,7 @@ export const SCHOOL_API = {
   deviceLinkStatus: (id: string) => `/api/v1/auth/device-link/token/${id}`,
   deviceLinkApprove: '/api/v1/auth/device-link/approve',
   loginCodeVerify: '/api/v1/auth/login-code/verify',
+  login: '/api/v1/auth/login',
   logout: '/api/v1/auth/logout',
   sessions: '/api/v1/auth/sessions',
   session: (sid: string) => `/api/v1/auth/sessions/${sid}`,
@@ -685,6 +804,11 @@ export const SCHOOL_API = {
   staffCard: (id: string) => `/api/v1/staff/${id}`,
   staffActivationToken: (id: string) => `/api/v1/staff/${id}/activation-token`,
   staffJoin: (token: string) => `/api/v1/staff/join/${token}`,
+  staffCards: '/api/v1/staff/cards',
+  staffFill: (id: string) => `/api/v1/staff/${id}/fill`,
+  staffCredentials: (id: string) => `/api/v1/staff/${id}/credentials`,
+  staffRevokeActivation: (id: string) => `/api/v1/staff/${id}/revoke-activation`,
+  staffUsernameFree: '/api/v1/staff/username-free',
   staffAvatar: '/api/v1/staff/me/avatar',
   staffRoles: (id: string) => `/api/v1/staff/${id}/roles`,
   staffRole: (id: string, role: string) => `/api/v1/staff/${id}/roles/${role}`,

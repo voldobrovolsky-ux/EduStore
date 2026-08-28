@@ -95,6 +95,9 @@ export const TENANT_COLUMN: Record<string, string> = {
   JournalRow: 'workspaceId',
   // регистр школы (версии агрегатов AR-109, параметры дня AR-103) — тоже школьный
   SchoolState: 'workspaceId',
+  // ─── Schoolium 1.2.0: карточки родителей и связи с детьми (AR-155) ───
+  GuardianCard: 'workspaceId',
+  GuardianLink: 'workspaceId',
   // ─── Schoolium 1.1.1: контур доступа (правило изоляции AR-99) ───
   // Под guard: карточки персонала и все токены, выпущенные внутри школы.
   StaffCard: 'workspaceId',

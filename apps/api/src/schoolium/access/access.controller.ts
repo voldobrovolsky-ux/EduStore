@@ -80,6 +80,20 @@ export class SchoolAuthController {
     );
   }
 
+  /** `S-05′` (AR-156): вход по юзернейму и паролю — фолбэк слетевшей сессии. */
+  @Public()
+  @Post('login')
+  async login(@Req() req: Request, @Body() body: { username?: string; password?: string }, @Res({ passthrough: true }) res: Response) {
+    const { session, roles } = await this.access.loginWithPassword(
+      String(body?.username ?? ''),
+      String(body?.password ?? ''),
+      deviceHint(req),
+    );
+    this.setCookie(res, session.token);
+    const access = await this.authz.resolveForRoles(roles);
+    return { ok: true, startScreen: startScreenFor(access.permissions) };
+  }
+
   /** §11 строка 36 · `S-05`: вход по коду от модератора (аноним). */
   @Public()
   @Post('login-code/verify')

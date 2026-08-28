@@ -36,24 +36,24 @@ async function main(): Promise<void> {
 
   // ─── клетка 1: регистрация со СВОЕГО устройства → сессия 90 дней ───
   const own = await inSchool(school.workspaceId, async () => {
-    const card = await staff.addCard('teacher');
+    const { card } = await staff.addCard({ role: 'teacher', lastName: 'Иванова', firstName: 'Мария',
+      username: `maria_${Math.floor(Math.random() * 10_000_000)}` });
     const t = await staff.createActivationToken(card.id);
-    return staff.join(t.token, { lastName: 'Иванова', firstName: 'Мария', phone: `+7911${Math.floor(Math.random() * 10_000_000)}` },
-      { openedByOtherSession: false, deviceHint: 'телефон сотрудника' });
+    return staff.activate(t.token, { openedByOtherSession: false, deviceHint: 'телефон сотрудника' });
   });
   await drain();
-  check(own.sessionToken !== null, 'своё устройство: регистрация выдаёт сессию — телефон становится якорным (AR-91)');
+  check(own.sessionToken !== null, 'своё устройство: активация одним сканом выдаёт сессию — телефон становится якорным (AR-91, AR-161)');
 
   // ─── клетка 2: регистрацию заполнили с устройства МОДЕРАТОРА → сессии нет ───
   const foreign = await inSchool(school.workspaceId, async () => {
-    const card = await staff.addCard('teacher');
+    const { card } = await staff.addCard({ role: 'teacher', lastName: 'Сидоров', firstName: 'Олег',
+      username: `oleg_${Math.floor(Math.random() * 10_000_000)}` });
     const t = await staff.createActivationToken(card.id);
-    return staff.join(t.token, { lastName: 'Сидоров', firstName: 'Олег', phone: `+7912${Math.floor(Math.random() * 10_000_000)}` },
-      { openedByOtherSession: true, deviceHint: 'ноутбук модератора' });
+    return staff.activate(t.token, { openedByOtherSession: true, deviceHint: 'ноутбук модератора' });
   });
   await drain();
   check(foreign.sessionToken === null,
-    'устройство модератора: сессия сотруднику НЕ создаётся — чужое устройство не становится его кабинетом (AR-91)');
+    'устройство модератора: сессия человеку НЕ создаётся — чужое устройство не становится его кабинетом (AR-91)');
 
   // ─── клетка 3: новое устройство при живом телефоне → привязка по QR ───
   const link = await access.createDeviceLinkToken('/journal');

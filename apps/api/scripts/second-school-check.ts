@@ -36,61 +36,44 @@ async function main(): Promise<void> {
   const c = await bootstrapSchool(b, 'Вторая школа');
   check(a.workspaceId !== c.workspaceId, 'две школы — два разных workspace, заведённых одной и той же операцией (AR-98)');
 
-  // ─── три ветки регистрации ───
-  const phone = `+7921${Math.floor(Math.random() * 10_000_000)}`;
-  const timings: number[] = [];
+  // ─── учётки двух школ (AR-154; вытесняет три телефонные ветки AR-106) ───
+  const uname = `anna_${Math.floor(Math.random() * 10_000_000)}`;
 
-  // ветка 3: телефона нет вовсе
-  const t0 = Date.now();
   const first = await inSchool(a.workspaceId, async () => {
-    const card = await staff.addCard('teacher');
+    const { card } = await staff.addCard({ role: 'teacher', lastName: 'Соколова', firstName: 'Анна', username: uname });
     const t = await staff.createActivationToken(card.id);
-    return staff.join(t.token, { lastName: 'Соколова', firstName: 'Анна', phone },
-      { openedByOtherSession: false, deviceHint: 'телефон' });
+    return staff.activate(t.token, { openedByOtherSession: false, deviceHint: 'телефон' });
   });
-  timings.push(Date.now() - t0);
   await drain();
-  check(first.sessionToken !== null, 'ветка «телефона нет»: созданы User и Membership, выдана сессия');
+  check(first.sessionToken !== null, 'первая школа: учётка заведена модератором, активация одним сканом выдала сессию');
 
-  // ветка 2: телефон есть, членства в ЭТОЙ школе нет → второе членство
-  const t1 = Date.now();
-  const second = await inSchool(c.workspaceId, async () => {
-    const card = await staff.addCard('teacher');
-    const t = await staff.createActivationToken(card.id);
-    return staff.join(t.token, { lastName: 'Соколова', firstName: 'Анна', phone },
-      { openedByOtherSession: false, deviceHint: 'телефон' });
+  // тот же юзернейм во ВТОРОЙ школе → USERNAME_TAKEN: уникальность глобальна
+  // (AR-154). Привязка СУЩЕСТВУЮЩЕЙ учётки ко второй школе — отложенное
+  // (specs/school-launch/00-scope.md §4); отказ видит модератор на форме КПЦ,
+  // а не аноним — канал утечки AR-47 закрыт правом staff.manage.
+  await inSchool(c.workspaceId, async () => {
+    await refuses(
+      () => staff.addCard({ role: 'teacher', lastName: 'Соколова', firstName: 'Анна', username: uname }),
+      'USERNAME_TAKEN',
+      'вторая школа, тот же юзернейм → USERNAME_TAKEN: область уникальности — инсталляция',
+    );
   });
-  timings.push(Date.now() - t1);
+
+  // вторая школа ведёт СВОЮ учётку — предзаполнение разводит занятость суффиксом
+  const second = await inSchool(c.workspaceId, async () => {
+    const { card } = await staff.addCard({ role: 'teacher', lastName: 'Соколова', firstName: 'Анна' });
+    const t = await staff.createActivationToken(card.id);
+    return staff.activate(t.token, { openedByOtherSession: false, deviceHint: 'телефон' });
+  });
   await drain();
-  check(second.userId === first.userId,
-    'ветка «телефон из другой школы»: членство создано к СУЩЕСТВУЮЩЕМУ User — педагог из двух школ не получает отказа (AR-106)');
+  check(second.userId !== first.userId, 'школы не блокируют друг друга: вторая завела собственную учётку');
   const memberships = await TenantContext.runAsSystem(() =>
     b.prisma.membership.findMany({ where: { userId: first.userId } }),
   );
-  check(memberships.length === 2, `членств у человека: ${memberships.length} — по одному на школу`);
-  check(new Set(memberships.map((m) => m.workspaceId)).size === 2, 'членства указывают на разные школы');
+  check(memberships.length === 1, `членств у первой учётки: ${memberships.length} — вторая школа её не трогала`);
 
-  // ветка 1: членство в ЭТОЙ школе уже есть → PHONE_TAKEN_IN_SCHOOL
-  const t2 = Date.now();
-  await inSchool(c.workspaceId, async () => {
-    const card = await staff.addCard('teacher');
-    const t = await staff.createActivationToken(card.id);
-    await refuses(
-      () => staff.join(t.token, { lastName: 'Соколова', firstName: 'Анна', phone },
-        { openedByOtherSession: false, deviceHint: 'телефон' }),
-      'PHONE_TAKEN_IN_SCHOOL',
-      'ветка «членство в этой школе есть»: отказ назван ПО ШКОЛЕ, а не по инсталляции',
-    );
-  });
-  timings.push(Date.now() - t2);
-
-  const spread = Math.max(...timings) - Math.min(...timings);
-  check(spread < 1000,
-    `три ветки отвечают сопоставимо по времени (разброс ${spread} мс) — различить их снаружи по задержке нельзя (AR-47)`);
-
-  // ─── ФИО применяются к членству, а не переписывают глобальную запись ───
-  const user = await TenantContext.runAsSystem(() => b.prisma.user.findUnique({ where: { phone } }));
-  check(user?.displayName === 'Соколова Анна', `глобальная запись не переписана второй регистрацией: ${user?.displayName}`);
+  const user = await TenantContext.runAsSystem(() => b.prisma.user.findUnique({ where: { username: uname } }));
+  check(user?.displayName === 'Соколова Анна', `глобальная запись первой школы не переписана: ${user?.displayName}`);
 
   // ─── изоляция при двух школах в одной базе ───
   await inSchool(a.workspaceId, () =>

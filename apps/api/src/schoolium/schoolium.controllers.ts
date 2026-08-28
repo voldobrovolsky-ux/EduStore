@@ -6,9 +6,10 @@ import type {
   BindTeacherDto,
   ConfirmScheduleDto,
   CreateClassesDto,
+  CreateStaffCardDto,
   CreateSubjectDto,
   DayParamsDto,
-  JoinStaffDto,
+  FillStaffCardDto,
   MarkValue,
   SchoolRole,
   SetLoadDto,
@@ -220,16 +221,18 @@ export class StaffController {
   }
 
   /**
-   * §11 строка 5 · `S-03`: регистрация по QR. Аноним с одноразовым токеном —
-   * доверие даёт живая сессия модератора и физическое присутствие (AR-76).
-   * Сессия выдаётся, только если страницу открыл сам сотрудник (AR-91).
+   * §11 строка 5 · активация одним сканом (AR-161): учётка заведена модератором
+   * целиком, человек не вводит ничего — скан именного QR и есть «я — это я».
+   * Аноним с одноразовым токеном; доверие даёт живая сессия модератора и
+   * физическое присутствие (AR-76). Сессия выдаётся, только если страницу
+   * открыл сам человек (AR-91).
    */
   @Public()
   @Post('join/:token')
-  async join(@Req() req: Req0, @Param('token') token: string, @Body() body: JoinStaffDto) {
+  async join(@Req() req: Req0, @Param('token') token: string) {
     const openedByOtherSession = Boolean(req.cookies?.[SCHOOL_COOKIE]);
     const ua = String(req.headers['user-agent'] ?? '');
-    const r = await this.svc.join(token, body, { openedByOtherSession, deviceHint: ua.slice(0, 80) });
+    const r = await this.svc.activate(token, { openedByOtherSession, deviceHint: ua.slice(0, 80) });
     if (r.sessionToken) {
       (req.res as import('express').Response).cookie(SCHOOL_COOKIE, r.sessionToken, {
         ...schoolCookieOptions(),
@@ -253,6 +256,13 @@ export class StaffController {
     return this.svc.clearAvatar(actorOf(req).userId);
   }
 
+  /** Живая проверка занятости юзернейма. Стоит ДО `:id` — иначе перехватится им. */
+  @RequirePermission('staff.manage')
+  @Get('username-free')
+  usernameFree(@Query('u') u: string) {
+    return this.svc.usernameFree(String(u ?? ''));
+  }
+
   @RequirePermission('staff.read')
   @Get(':id')
   get(@Param('id') id: string) {
@@ -266,12 +276,38 @@ export class StaffController {
     return this.svc.activationStatus(id);
   }
 
-  /** `S-30.btn.addFounder` / `S-30.btn.addTeacher`: только множественные роли. */
+  /**
+   * `S-30.btn.addFounder` / `S-30.btn.addTeacher`: карточка + учётка сразу
+   * (AR-154): ФИО, юзернейм (пустой — транслитерация), пароль (пустой —
+   * генерация). Пароль в ответе — открытым текстом, ОДИН раз.
+   */
   @RequirePermission('staff.manage')
   @Post('cards')
-  addCard(@Body() body: { role: SchoolRole }) {
-    return this.svc.addCard(body.role);
+  addCard(@Body() body: CreateStaffCardDto) {
+    return this.svc.addCard(body);
   }
+
+  /** Заполнение пустой карточки-слота (синглтоны из bootstrap). */
+  @RequirePermission('staff.manage')
+  @Post(':id/fill')
+  fillCard(@Param('id') id: string, @Body() body: FillStaffCardDto) {
+    return this.svc.fillCard(id, body);
+  }
+
+  /** `S-31.btn.reissuePassword`: новый пароль, показан один раз. */
+  @RequirePermission('staff.manage')
+  @Post(':id/credentials')
+  regenerateCredentials(@Param('id') id: string) {
+    return this.svc.regenerateCredentials(id);
+  }
+
+  /** `S-31.btn.revokeActivation` (AR-153): «просканировал не тот». */
+  @RequirePermission('staff.manage')
+  @Post(':id/revoke-activation')
+  revokeActivation(@Req() req: Req0, @Param('id') id: string) {
+    return this.svc.revokeActivation(id, actorOf(req));
+  }
+
 
   /** §11 строка 4 · `S-31.qr`. */
   @RequirePermission('staff.manage')
