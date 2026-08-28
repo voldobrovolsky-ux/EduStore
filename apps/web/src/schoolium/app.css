@@ -763,6 +763,8 @@
   padding: var(--sp-8) var(--sp-12);
   font-size: var(--fs-sm);
   cursor: pointer;
+  /* тап-мишень ≥44px (G-55) — правило одно на обе раскладки */
+  min-height: 44px;
 }
 .sch-chip--active {
   border-color: var(--c-brand-violet-700);

@@ -381,9 +381,15 @@ export function JoinScreen({ token }: { token: string }) {
     let cancelled = false;
     api
       .join(token)
-      .then((r) => {
+      .then(async (r) => {
         if (cancelled) return;
-        if (r.hasSession) navigate(`/join/${token}/photo`);
+        if (r.hasSession) {
+          // персонал идёт через фото профиля; ученик и родитель — сразу в
+          // дневник: аватарки у их ролей нет (S-04 держится на staff.self.write)
+          const me = await api.me().catch(() => null);
+          if (me && !me.permissions.includes("staff.self.write")) window.location.assign(me.startScreen);
+          else navigate(`/join/${token}/photo`);
+        }
         // QR открыт под чужой живой сессией (устройство модератора, AR-91):
         // якорь не выдан — человек входит кодом с карточки со своего устройства
         else setNoSession(true);
@@ -452,7 +458,14 @@ export function PhotoScreen() {
           Прикрепить фото
         </Button>
         {/* Пропуск фото — ПОЛНОЦЕННЫЙ путь, а не «отложить на потом». */}
-        <Button kind="primary" testId="S-04.btn.skip" onClick={() => window.location.assign("/classes")}>
+        <Button
+          kind="primary"
+          testId="S-04.btn.skip"
+          onClick={async () => {
+            const me = await api.me().catch(() => null);
+            window.location.assign(me?.startScreen ?? "/classes");
+          }}
+        >
           Продолжить
         </Button>
       </div>

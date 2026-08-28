@@ -513,20 +513,36 @@ async function main() {
     await hasAll(page, ['S-30.section.level1', 'S-30.section.level2', 'S-30.section.level3', 'S-30.btn.addTeacher']);
     await shot(page, 'S-30-staff');
 
-    // ── S-31 · карточка сотрудника и QR активации ──
+    // ── S-31 · карточка сотрудника и именной QR (1.2.0, AR-154/AR-161) ──
     console.log('▶ S-31 · карточка педагога');
     await click(page, 'S-30.btn.addTeacher');
-    // «Добавить» заводит ПУСТУЮ карточку (§10) — открывает её отдельный клик.
+    // «Добавить» открывает форму заведения учётки: ФИО + юзернейм + пароль.
+    await page.waitForSelector('[data-testid="M-16"]', { timeout: 20_000 });
+    await modalOpen(page, 'M-16');
+    await hasAll(page, ['M-16.input.lastName', 'M-16.input.firstName', 'M-16.input.username', 'M-16.input.password']);
+    await fill(page, 'M-16.input.lastName', 'Смирнов');
+    await fill(page, 'M-16.input.firstName', 'Олег');
+    await shot(page, 'M-16-new-account');
+    await click(page, 'M-16.btn.submit');
+    // Креды показываются ОДИН раз (AR-156) — модалка M-17.
+    await page.waitForSelector('[data-testid="credentials.box"]', { timeout: 20_000 });
+    modalsOpened.add('M-16'); modalsClosed.add('M-16');
+    modalsOpened.add('M-17');
+    await hasAll(page, ['credentials.username', 'credentials.password']);
+    await shot(page, 'M-17-credentials');
+    await page.keyboard.press('Escape');
+    modalsClosed.add('M-17');
     const teacherCards = page.locator('[data-testid="S-30.section.level3"] [data-testid="S-30.card.person"]');
     await teacherCards.first().waitFor({ timeout: 20_000 });
     await has(page, 'S-30.card.person');
     await teacherCards.last().click();
     await page.waitForSelector('[data-testid="M-06"]', { timeout: 20_000 });
     await modalOpen(page, 'M-06');
-    // На ПУСТОЙ карточке есть только QR и статус: кода входа не существует,
-    // пока карточку никто не активировал, а бейджа «деактивирован» — пока
-    // некого деактивировать. Оба появляются ниже по потоку.
-    await hasAll(page, ['S-31.qr', 'S-31.status', 'S-31.btn.close']);
+    // Учётка заведена, входа не было: именной QR — над кодом ФИО (AR-161).
+    await hasAll(page, ['S-31.qr.fullName', 'S-31.qr', 'S-31.status', 'S-31.btn.close']);
+    const qrName = (await page.locator('[data-testid="S-31.qr.fullName"]').innerText()).trim();
+    if (qrName === 'Смирнов Олег') console.log(`    ✅ над QR — ФИО владельца карточки: «${qrName}»`);
+    else { console.error(`    ❌ подпись над QR: «${qrName}», ждали «Смирнов Олег»`); failures++; }
     await shot(page, 'S-31-staff-card');
 
     // ── ТЕЛЕФОННАЯ половина: регистрация педагога и скан QR предмета ──
@@ -535,7 +551,7 @@ async function main() {
     // Это СТЕНДОВОЕ устройство, а не поведение продукта.
     console.log('▶ телефон педагога (контрактом): активация карточки и привязка');
     const cards = await api(page, 'GET', '/api/v1/staff');
-    const card = cards.find((c) => c.roles.includes('teacher') && !c.userId) ?? cards.find((c) => c.roles.includes('teacher'));
+    const card = cards.find((c) => c.roles.includes('teacher') && !c.registered) ?? cards.find((c) => c.roles.includes('teacher'));
     const act = await api(page, 'POST', `/api/v1/staff/${card.id}/activation-token`);
     // Стендовый телефон педагога ведётся в ТОЙ ЖЕ раскладке, что и прогон:
     // иначе «телефон» в мобильном прогоне открывался бы десктопом, и оболочка
@@ -550,14 +566,10 @@ async function main() {
     });
     const phone = await phoneCtx.newPage();
     await phone.goto(`${WEB}/join/${act.token}`);
-    await phone.waitForSelector('[data-testid="S-03.input.lastName"]');
-    await hasAll(phone, ['S-03.header.role', 'S-03.input.lastName', 'S-03.input.firstName', 'S-03.input.middleName', 'S-03.input.phone', 'S-03.btn.submit']);
-    await fill(phone, 'S-03.input.lastName', 'Смирнов');
-    await fill(phone, 'S-03.input.firstName', 'Олег');
-    await fill(phone, 'S-03.input.phone', '+79995558877');
-    await shot(phone, 'S-03-join');
-    await click(phone, 'S-03.btn.submit');
-    await phone.waitForSelector('[data-testid="S-04.btn.skip"]', { timeout: 20_000 });
+    // 1.2.0 (AR-161): формы нет — скан именного QR открывает кабинет сразу,
+    // человек не вводит ничего; страница показывает только прогресс.
+    await phone.waitForSelector('[data-testid="S-04.btn.skip"]', { timeout: 30_000 });
+    await shot(phone, 'S-03-activated');
     await hasAll(phone, ['S-04.avatar', 'S-04.btn.attach', 'S-04.btn.skip']);
     await shot(phone, 'S-04-photo');
 
@@ -907,6 +919,39 @@ async function main() {
       await page.keyboard.press('Escape');
       await modalClosed(page, 'M-11');
       console.log(`    ✅ Esc закрывает слой темы урока (§0, ${MOBILE ? 'нижний лист' : 'поповер'})`);
+
+      // ── S-90/S-91 · дневник ученика (1.2.0, AR-155/AR-158/AR-159) ──
+      // Критерий готовности 3 спеки запуска: отметка, поставленная педагогом,
+      // видна в дневнике и в средних по предмету. Доступ заводит модератор,
+      // активация — тем же именным QR, что у персонала; ученик не вводит ничего.
+      console.log('▶ S-90 · дневник ученика');
+      const pupils = await api(page, 'GET', `/api/v1/classes/${slotToday.classId}/students`);
+      const pupil = pupils[0];
+      await api(page, 'POST', `/api/v1/students/${pupil.id}/access`, {});
+      const pact = await api(page, 'POST', `/api/v1/students/${pupil.id}/activation-token`);
+      const pupilCtx = await browser.newContext({
+        locale: 'ru-RU',
+        viewport: VIEWPORT,
+        isMobile: MOBILE,
+        hasTouch: MOBILE,
+        deviceScaleFactor: MOBILE ? 3 : 1,
+      });
+      const pupilPage = await pupilCtx.newPage();
+      await pupilPage.goto(`${WEB}/join/${pact.token}`);
+      // ученик минует фото профиля и попадает сразу в дневник (стартовый экран роли)
+      await pupilPage.waitForSelector('[data-testid="S-90.header"]', { timeout: 30_000 });
+      await pupilPage.waitForSelector('[data-testid="S-90.day"]', { timeout: 30_000 });
+      const markInDiary = await pupilPage.locator('[data-testid="S-90.day"] .sch-mark').count();
+      if (markInDiary > 0) console.log('    ✅ отметка педагога видна в дневнике ученика');
+      else { console.error('    ❌ в дневнике нет ни одной отметки, педагог её ставил'); failures++; }
+      await shot(pupilPage, 'S-90-diary');
+      await pupilPage.locator('[data-testid="S-91.tab.averages"]').click();
+      await pupilPage.waitForSelector('[data-testid="S-91.table"]', { timeout: 20_000 });
+      const avgRow = (await pupilPage.locator('[data-testid="S-91.table"]').innerText()).replace(/\s+/g, ' ');
+      if (avgRow.includes('5')) console.log('    ✅ S-91: средний по предмету пересчитан из отметки');
+      else { console.error(`    ❌ S-91 без среднего: «${avgRow.slice(0, 120)}»`); failures++; }
+      await shot(pupilPage, 'S-91-averages');
+      await pupilCtx.close();
 
       // ── S-52.btn.clear · снятие отметки — единственный способ её стереть ──
       console.log('▶ S-52.btn.clear · снятие отметки');
