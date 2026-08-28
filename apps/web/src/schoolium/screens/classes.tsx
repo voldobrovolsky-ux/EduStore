@@ -12,13 +12,15 @@
  *   · `M-13` называет ДЕЙСТВИТЕЛЬНЫЙ объём потери — заполненные профили отдельно
  *     от пустых (AR-105), и кнопка подтверждения при этом `B-danger`.
  */
-import { useState } from "react";
-import type { ClassDto, StudentDto } from "@edustore/shared";
+import { useEffect, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import { ACCESS_PARAMS, type ClassDto, type CredentialsDto, type StudentAccessDto, type StudentDto } from "@edustore/shared";
 import { api, SchoolApiError } from "../api";
-import { useAsync, useIsMobile } from "../hooks";
+import { useAsync, useIsMobile, usePolling } from "../hooks";
 import { Badge, Button, EmptyState, ErrorState, Field, Modal, NumberField, Skeletons, useToast, Toast } from "../ui";
 import { useSession } from "../session";
 import { navigate } from "../router";
+import { CredentialsBox } from "./account-form";
 
 const LETTERS = ["А", "Б", "В", "Г", "Д"];
 
@@ -751,7 +753,133 @@ function StudentModal({
           {error}
         </p>
       ) : null}
+      {/* Доступ ученика 1.2.0 (AR-155): вход опционален — записи, журнал и
+          дневник через устройство родителя работают и без него. */}
+      {student ? <StudentAccessBlock student={student} /> : null}
     </Modal>
+  );
+}
+
+// ─────────────── S-13 · доступ ученика (AR-155, AR-161) ───────────────
+
+function StudentAccessBlock({ student }: { student: StudentDto }) {
+  const { can } = useSession();
+  const [access, setAccess] = useState<StudentAccessDto | null>(null);
+  const [creds, setCreds] = useState<CredentialsDto | null>(null);
+  const [qr, setQr] = useState<{ token: string; fullName: string | null } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const mayManage = can("contingent.write");
+
+  useEffect(() => {
+    api
+      .studentAccess(student.id)
+      .then(setAccess)
+      .catch(() => setAccess(null));
+  }, [student.id]);
+
+  usePolling(
+    async () => {
+      const r = await api.studentActivationStatus(student.id).catch(() => null);
+      if (r?.registeredName) {
+        setQr(null);
+        setAccess(await api.studentAccess(student.id).catch(() => access));
+      }
+    },
+    ACCESS_PARAMS.pollIntervalMs,
+    Boolean(qr),
+  );
+
+  if (!mayManage || access === null) return null;
+
+  const run = async (fn: () => Promise<void>) => {
+    setErr(null);
+    try {
+      await fn();
+    } catch (e) {
+      setErr(e instanceof SchoolApiError ? e.message : "Не получилось");
+    }
+  };
+
+  return (
+    <div className="sch-stack" data-testid="S-13.access" style={{ marginTop: "var(--sp-16)" }}>
+      <h3 style={{ marginBottom: 0 }}>Доступ ученика</h3>
+      {!access.hasAccount ? (
+        <div className="sch-actions sch-actions--start">
+          <Button
+            kind="secondary"
+            testId="S-13.btn.createAccess"
+            onClick={() =>
+              run(async () => {
+                const r = await api.createStudentAccess(student.id, {});
+                setAccess(r.access);
+                setCreds(r.credentials);
+              })
+            }
+          >
+            Завести доступ
+          </Button>
+          <span className="sch-muted">юзернейм и пароль создадутся сами</span>
+        </div>
+      ) : (
+        <>
+          <p style={{ margin: 0 }} data-testid="S-13.access.status">
+            @{access.username} · {access.activated ? "авторизован" : "не авторизован"}
+          </p>
+          <div className="sch-actions sch-actions--start">
+            {!access.activated ? (
+              <Button
+                kind="primary"
+                testId="S-13.btn.qr"
+                onClick={() =>
+                  run(async () => {
+                    const t = await api.studentActivationToken(student.id);
+                    setQr({ token: t.token, fullName: t.fullName ?? null });
+                  })
+                }
+              >
+                QR для входа
+              </Button>
+            ) : (
+              <Button
+                kind="danger"
+                testId="S-13.btn.revokeActivation"
+                onClick={() =>
+                  run(async () => {
+                    setAccess(await api.revokeStudentActivation(student.id));
+                    setQr(null);
+                  })
+                }
+              >
+                Отозвать активацию
+              </Button>
+            )}
+            <Button
+              kind="ghost"
+              testId="S-13.btn.reissuePassword"
+              onClick={() => run(async () => setCreds(await api.studentCredentials(student.id)))}
+            >
+              Перевыпустить пароль
+            </Button>
+          </div>
+        </>
+      )}
+      {qr ? (
+        <div className="sch-qr" data-testid="S-13.qr">
+          {/* Именной QR (AR-161): над кодом — ФИО, сканирует названный ученик. */}
+          <h3 style={{ margin: 0 }}>{qr.fullName}</h3>
+          <div className="sch-qr-frame">
+            <QRCodeSVG value={`${window.location.origin}/join/${qr.token}`} size={200} />
+          </div>
+          <p className="sch-muted">Код живёт {ACCESS_PARAMS.activationTtlMinutes} минут</p>
+        </div>
+      ) : null}
+      {creds ? <CredentialsBox credentials={creds} /> : null}
+      {err ? (
+        <p className="sch-danger-text" role="alert">
+          {err}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

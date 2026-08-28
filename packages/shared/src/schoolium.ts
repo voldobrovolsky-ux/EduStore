@@ -486,7 +486,7 @@ export interface CreateGuardianDto {
 /** «Не авторизованные» (`S-32`): рабочий экран модератора на событии. */
 export interface PendingActivationsDto {
   staff: { cardId: string; name: string; roles: SchoolRole[] }[];
-  students: { classLabel: string; items: { studentId: string; name: string; hasAccount: boolean }[] }[];
+  students: { classId: string; classLabel: string; items: { studentId: string; name: string; hasAccount: boolean }[] }[];
   guardians: { cardId: string; name: string }[];
 }
 

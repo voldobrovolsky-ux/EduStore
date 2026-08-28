@@ -23,6 +23,7 @@ export function SubjectsScreen({ openId }: { openId?: string }) {
     return { subjects, classes: classes.classes };
   });
   const [creating, setCreating] = useState(false);
+  const { toast, showToast } = useToast();
   const mayWrite = can("subject.write");
 
   if (state.status === "loading") return <Skeletons count={6} />;
@@ -35,10 +36,30 @@ export function SubjectsScreen({ openId }: { openId?: string }) {
     <>
       <div className="sch-page-head">
         <h1>Предметы</h1>
-        {mayWrite && subjects.length > 0 ? (
-          <Button kind="primary" testId="S-20.btn.newSubject" onClick={() => setCreating(true)}>
-            Создать предмет
-          </Button>
+        {mayWrite ? (
+          <div className="sch-actions">
+            {/* S-23 · пресет (AR-160): типовые предметы × классы, идемпотентно. */}
+            <Button
+              kind="secondary"
+              testId="S-23.btn.preset"
+              onClick={async () => {
+                try {
+                  const r = await api.subjectsPreset();
+                  showToast(r.created > 0 ? `Создано карточек: ${r.created}` : "Все типовые предметы уже заведены");
+                  reload();
+                } catch (e) {
+                  showToast(e instanceof SchoolApiError ? e.message : "Не получилось");
+                }
+              }}
+            >
+              Типовые предметы
+            </Button>
+            {subjects.length > 0 ? (
+              <Button kind="primary" testId="S-20.btn.newSubject" onClick={() => setCreating(true)}>
+                Создать предмет
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -75,6 +96,7 @@ export function SubjectsScreen({ openId }: { openId?: string }) {
       ) : null}
 
       {open ? <SubjectCardModal subject={open} onClose={() => navigate("/subjects")} onChanged={reload} /> : null}
+      {toast ? <Toast text={toast} /> : null}
     </>
   );
 }

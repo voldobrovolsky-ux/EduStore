@@ -274,10 +274,10 @@ export class AccountsService {
       .filter((c) => !activated.has(c.userId!))
       .map((c) => ({ cardId: c.id, name: nameOf.get(c.userId!) ?? '', roles: c.plannedRoles as SchoolRole[] }));
 
-    const byClass = new Map<string, { classLabel: string; items: { studentId: string; name: string; hasAccount: boolean }[] }>();
+    const byClass = new Map<string, { classId: string; classLabel: string; items: { studentId: string; name: string; hasAccount: boolean }[] }>();
     for (const s of students) {
       if (s.userId && activated.has(s.userId)) continue;
-      const g = byClass.get(s.classId) ?? { classLabel: s.class.label, items: [] };
+      const g = byClass.get(s.classId) ?? { classId: s.classId, classLabel: s.class.label, items: [] };
       g.items.push({
         studentId: s.id,
         name: [s.lastName, s.firstName].filter(Boolean).join(' ') || `ученик №${s.seq + 1}`,

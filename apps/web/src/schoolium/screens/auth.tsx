@@ -112,6 +112,7 @@ export function LoginScreen({ next }: { next: string | null }) {
           <Button kind="primary" testId="S-01.link.byCode" onClick={() => navigate("/login/code")}>
             Войти по коду от модератора
           </Button>
+          <PasswordLoginBlock next={next} />
           <p className="sch-muted" data-testid="S-01.note.help">
             Первый раз здесь? Доступ выдаёт модератор школы — обратитесь к нему
           </p>
@@ -151,6 +152,7 @@ export function LoginScreen({ next }: { next: string | null }) {
             <Button kind="ghost" testId="S-01.link.byCode" onClick={() => navigate("/login/code")}>
               Нет телефона под рукой? Войти по коду от модератора
             </Button>
+            <PasswordLoginBlock next={next} />
             <p className="sch-muted" data-testid="S-01.note.help">
               Первый раз здесь? Доступ выдаёт модератор школы — обратитесь к нему
             </p>
@@ -158,6 +160,71 @@ export function LoginScreen({ next }: { next: string | null }) {
         )}
       </div>
     </AuthFrame>
+  );
+}
+
+
+// ─────────────── S-05′ · вход по юзернейму и паролю (AR-156) ───────────────
+
+/**
+ * Фолбэк слетевшей сессии: креды выдал модератор вместе с учёткой. Основной
+ * вход — QR; форма спрятана за ссылкой, чтобы не конкурировать с ним.
+ */
+function PasswordLoginBlock({ next }: { next: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ username: "", password: "" });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  if (!open) {
+    return (
+      <Button kind="ghost" testId="S-05p.link.open" onClick={() => setOpen(true)}>
+        Вход по юзернейму и паролю
+      </Button>
+    );
+  }
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.login(form.username.trim().toLowerCase(), form.password);
+      window.location.assign(safeNext(next, r.startScreen));
+    } catch (e) {
+      setError(e instanceof SchoolApiError ? e.message : "Войти не удалось");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="sch-stack" style={{ width: "100%" }}>
+      <Field
+        label="Юзернейм"
+        testId="S-05p.input.username"
+        value={form.username}
+        autoCapitalize="none"
+        autoComplete="username"
+        onChange={(e) => setForm({ ...form, username: e.target.value })}
+      />
+      <Field
+        label="Пароль"
+        testId="S-05p.input.password"
+        type="password"
+        value={form.password}
+        autoComplete="current-password"
+        onChange={(e) => setForm({ ...form, password: e.target.value })}
+        error={error}
+      />
+      <Button
+        kind="primary"
+        testId="S-05p.btn.submit"
+        disabled={!form.username.trim() || !form.password}
+        loading={busy}
+        onClick={submit}
+      >
+        Войти
+      </Button>
+    </div>
   );
 }
 

@@ -20,7 +20,7 @@ export interface Route {
  * `/login?next=…` и возвращается сюда после входа — а не упирается в белый
  * экран с непонятной ошибкой.
  */
-export const APP_PREFIXES = ["/classes", "/subjects", "/staff", "/schedule", "/journal", "/admin", "/scan", "/settings", "/link", "/bind"];
+export const APP_PREFIXES = ["/classes", "/subjects", "/staff", "/guardians", "/schedule", "/journal", "/diary", "/admin", "/scan", "/settings", "/link", "/bind"];
 
 /** Публичные маршруты контура входа — показываются БЕЗ оболочки (§2.3). */
 export const PUBLIC_PATHS = ["/", "/login", "/login/code", "/join", "/bootstrap"];
@@ -77,6 +77,11 @@ export function parse(pathname: string, search: string): Route {
   if (staff) {
     params.personId = staff[1];
     path = "/staff/:personId";
+  }
+  const guardian = path.match(/^\/guardians\/([^/]+)$/);
+  if (guardian) {
+    params.guardianId = guardian[1];
+    path = "/guardians/:guardianId";
   }
   return { path, params, query };
 }

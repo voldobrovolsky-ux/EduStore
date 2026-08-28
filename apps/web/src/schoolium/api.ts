@@ -10,6 +10,16 @@
 import type {
   ActivationTokenDto,
   AdminCabinetDto,
+  CreateGuardianDto,
+  CreateStaffCardDto,
+  CredentialsDto,
+  DiaryChildDto,
+  DiaryWeekDto,
+  FillStaffCardDto,
+  GuardianCardDto,
+  PendingActivationsDto,
+  StudentAccessDto,
+  SubjectAverageDto,
   BindTeacherDto,
   ClassDto,
   ConfirmScheduleDto,
@@ -93,6 +103,9 @@ export const api = {
     call<{ ok: boolean; nextPath: string | null }>("POST", `${V1}/auth/device-link/approve`, { token }),
   verifyLoginCode: (code: string) =>
     call<{ ok: boolean; startScreen: string }>("POST", `${V1}/auth/login-code/verify`, { code }),
+  // `S-05′` (AR-156): фолбэк слетевшей сессии — креды выданы модератором.
+  login: (username: string, password: string) =>
+    call<{ ok: boolean; startScreen: string }>("POST", `${V1}/auth/login`, { username, password }),
   consumeBootstrap: (token: string) =>
     call<{ ok: boolean; startScreen: string }>("POST", `${V1}/auth/bootstrap/consume`, { token }),
   sessions: () => call<SessionDto[]>("GET", `${V1}/auth/sessions`),
@@ -133,7 +146,14 @@ export const api = {
   // ─── персонал ───
   staff: () => call<StaffCardDto[]>("GET", `${V1}/staff`),
   staffCard: (id: string) => call<StaffCardDto>("GET", `${V1}/staff/${id}`),
-  addStaffCard: (role: SchoolRole) => call<StaffCardDto>("POST", `${V1}/staff/cards`, { role }),
+  // Учётку целиком заводит модератор (AR-154): пароль в ответе — один раз.
+  addStaffCard: (dto: CreateStaffCardDto) =>
+    call<{ card: StaffCardDto; credentials: CredentialsDto }>("POST", `${V1}/staff/cards`, dto),
+  fillStaffCard: (id: string, dto: FillStaffCardDto) =>
+    call<{ card: StaffCardDto; credentials: CredentialsDto }>("POST", `${V1}/staff/${id}/fill`, dto),
+  staffCredentials: (id: string) => call<CredentialsDto>("POST", `${V1}/staff/${id}/credentials`),
+  revokeStaffActivation: (id: string) => call<StaffCardDto>("POST", `${V1}/staff/${id}/revoke-activation`),
+  usernameFree: (u: string) => call<{ free: boolean }>("GET", `${V1}/staff/username-free?u=${encodeURIComponent(u)}`),
   activationToken: (id: string) => call<ActivationTokenDto>("POST", `${V1}/staff/${id}/activation-token`),
   activationStatus: (id: string) => call<ActivationTokenDto>("GET", `${V1}/staff/${id}/activation-token`),
   closeCard: (id: string) => call<{ ok: boolean }>("POST", `${V1}/staff/${id}/close`),
@@ -149,6 +169,42 @@ export const api = {
     call<{ ok: boolean; hasSession: boolean }>("POST", `${V1}/staff/join/${token}`, {}),
   setAvatar: (url: string) => call<{ ok: boolean }>("POST", `${V1}/staff/me/avatar`, { url }),
   clearAvatar: () => call<{ ok: boolean }>("DELETE", `${V1}/staff/me/avatar`),
+
+  // ─── доступ ученика (AR-155) ───
+  studentAccess: (id: string) => call<StudentAccessDto>("GET", `${V1}/students/${id}/access`),
+  createStudentAccess: (id: string, dto: { username?: string | null; password?: string | null }) =>
+    call<{ access: StudentAccessDto; credentials: CredentialsDto }>("POST", `${V1}/students/${id}/access`, dto),
+  studentActivationToken: (id: string) => call<ActivationTokenDto>("POST", `${V1}/students/${id}/activation-token`),
+  studentActivationStatus: (id: string) => call<ActivationTokenDto>("GET", `${V1}/students/${id}/activation-token`),
+  revokeStudentActivation: (id: string) => call<StudentAccessDto>("POST", `${V1}/students/${id}/revoke-activation`),
+  studentCredentials: (id: string) => call<CredentialsDto>("POST", `${V1}/students/${id}/credentials`),
+
+  // ─── родители (S-14, AR-155) ───
+  guardians: () => call<GuardianCardDto[]>("GET", `${V1}/guardians`),
+  createGuardian: (dto: CreateGuardianDto) =>
+    call<{ card: GuardianCardDto; credentials: CredentialsDto }>("POST", `${V1}/guardians`, dto),
+  guardian: (id: string) => call<GuardianCardDto>("GET", `${V1}/guardians/${id}`),
+  deleteGuardian: (id: string) => call<{ ok: boolean }>("DELETE", `${V1}/guardians/${id}`),
+  addGuardianLink: (id: string, studentId: string) =>
+    call<GuardianCardDto>("POST", `${V1}/guardians/${id}/links`, { studentId }),
+  removeGuardianLink: (id: string, studentId: string) =>
+    call<GuardianCardDto>("DELETE", `${V1}/guardians/${id}/links/${studentId}`),
+  guardianActivationToken: (id: string) => call<ActivationTokenDto>("POST", `${V1}/guardians/${id}/activation-token`),
+  guardianActivationStatus: (id: string) => call<ActivationTokenDto>("GET", `${V1}/guardians/${id}/activation-token`),
+  revokeGuardianActivation: (id: string) => call<GuardianCardDto>("POST", `${V1}/guardians/${id}/revoke-activation`),
+  guardianCredentials: (id: string) => call<CredentialsDto>("POST", `${V1}/guardians/${id}/credentials`),
+
+  // ─── «Не авторизованные» (S-32) и дневник (S-90, S-91) ───
+  pendingActivations: () => call<PendingActivationsDto>("GET", `${V1}/access/pending`),
+  diaryChildren: () => call<DiaryChildDto[]>("GET", `${V1}/diary/children`),
+  diaryWeek: (child?: string | null, week?: string | null) =>
+    call<DiaryWeekDto>(
+      "GET",
+      `${V1}/diary?${child ? `child=${encodeURIComponent(child)}&` : ""}${week ? `week=${encodeURIComponent(week)}` : ""}`,
+    ),
+  diaryAverages: (child?: string | null) =>
+    call<SubjectAverageDto[]>("GET", `${V1}/diary/averages${child ? `?child=${encodeURIComponent(child)}` : ""}`),
+  subjectsPreset: () => call<{ created: number; skipped: number }>("POST", `${V1}/subjects/preset`),
 
   // ─── календарь и расписание ───
   terms: () => call<TermDto[]>("GET", `${V1}/calendar/terms`),

@@ -753,3 +753,22 @@
 /* Второй пол не вводится — он разность, и показывать его полем значило бы
    предложить ввести число, которое всё равно будет пересчитано. */
 .sch-headcount-rest { font-size: var(--fs-sm); color: var(--c-ink-secondary); text-align: right; }
+
+/* ─── 1.2.0: дневник (S-90/S-91) — переключатели-чипы ─── */
+.sch-chip {
+  border: 1px solid var(--c-border-default);
+  background: var(--c-surface-card);
+  color: var(--c-ink-primary);
+  border-radius: var(--r-lg);
+  padding: var(--sp-8) var(--sp-12);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.sch-chip--active {
+  border-color: var(--c-brand-violet-700);
+  background: var(--c-brand-violet-050);
+  font-weight: var(--fw-medium);
+}
+/* строки дневника — не кликабельные, курсор наследуется */
+[data-testid="S-90.day"] .sch-table tbody tr,
+[data-testid="S-91.table"] .sch-table tbody tr { cursor: default; }

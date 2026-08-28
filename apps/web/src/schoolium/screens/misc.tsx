@@ -45,6 +45,7 @@ const SECTIONS: { to: string; label: string; hint: string }[] = [
   { to: "/classes", label: "Классы", hint: "контингент и профили учеников" },
   { to: "/subjects", label: "Предметы", hint: "карточки «предмет × класс» и привязки педагогов" },
   { to: "/staff", label: "Персонал", hint: "карточки сотрудников, роли, доступ" },
+  { to: "/guardians", label: "Родители", hint: "учётки родителей и связи с детьми" },
   { to: "/schedule", label: "Расписание", hint: "сетка недели и её пересборка" },
 ];
 
@@ -72,6 +73,10 @@ export function AdminScreen() {
         ))}
       </div>
 
+      {/* S-32 · «Не авторизованные» (AR-161): рабочий экран события 30.08 —
+          заведено, но не активировано; активация убирает строку сама. */}
+      <PendingBlock />
+
       <h2 className="sch-section-title" style={{ marginTop: "var(--sp-32)" }}>
         Мои действия
       </h2>
@@ -80,6 +85,78 @@ export function AdminScreen() {
           1.1.1 нет намеренно. */}
       <AuditList entries={state.data.audit} />
     </>
+  );
+}
+
+
+// ─────────────────── S-32 · «Не авторизованные» (AR-161) ───────────────────
+
+function PendingBlock() {
+  const [state, reload] = useAsync(() => api.pendingActivations());
+  if (state.status === "loading") return <Skeletons count={2} kind="row" />;
+  if (state.status === "error") return <ErrorState message={state.message} onRetry={reload} />;
+  const p = state.data;
+  const total = p.staff.length + p.students.reduce((n, g) => n + g.items.length, 0) + p.guardians.length;
+
+  return (
+    <section data-testid="S-32.pending" style={{ marginTop: "var(--sp-32)" }}>
+      <div className="sch-row sch-row--between">
+        <h2 className="sch-section-title">Не авторизованные</h2>
+        <Button kind="ghost" testId="S-32.btn.refresh" onClick={reload}>
+          Обновить
+        </Button>
+      </div>
+      {total === 0 ? (
+        <EmptyState title="Все авторизованы" hint="Заведённые учётки активированы — новых ожидающих нет" />
+      ) : (
+        <div className="sch-stack">
+          {p.staff.length > 0 ? (
+            <div className="sch-card">
+              <strong>Персонал ({p.staff.length})</strong>
+              <div className="sch-chips" style={{ marginTop: "var(--sp-8)" }}>
+                {p.staff.map((x) => (
+                  <button key={x.cardId} className="sch-chip" data-testid="S-32.item.staff" onClick={() => navigate(`/staff/${x.cardId}`)}>
+                    {x.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {p.students.map((g) => (
+            <div key={g.classLabel} className="sch-card">
+              <strong>
+                {g.classLabel} класс ({g.items.length})
+              </strong>
+              <div className="sch-chips" style={{ marginTop: "var(--sp-8)" }}>
+                {g.items.map((x) => (
+                  <button
+                    key={x.studentId}
+                    className="sch-chip"
+                    data-testid="S-32.item.student"
+                    onClick={() => navigate(`/classes/${g.classId}/student/${x.studentId}`)}
+                  >
+                    {x.name}
+                    {!x.hasAccount ? " · без доступа" : ""}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          {p.guardians.length > 0 ? (
+            <div className="sch-card">
+              <strong>Родители ({p.guardians.length})</strong>
+              <div className="sch-chips" style={{ marginTop: "var(--sp-8)" }}>
+                {p.guardians.map((x) => (
+                  <button key={x.cardId} className="sch-chip" data-testid="S-32.item.guardian" onClick={() => navigate(`/guardians/${x.cardId}`)}>
+                    {x.name || "учётка не заведена"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 }
 

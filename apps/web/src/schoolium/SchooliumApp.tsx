@@ -21,6 +21,8 @@ import { StaffScreen } from "./screens/staff";
 import { ScheduleScreen } from "./screens/schedule";
 import { JournalScreen } from "./screens/journal";
 import { AdminScreen, BindScreen, DevicesScreen, ScanScreen } from "./screens/misc";
+import { GuardiansScreen } from "./screens/family";
+import { DiaryScreen } from "./screens/diary";
 
 export function SchooliumApp() {
   return (
@@ -124,6 +126,22 @@ function AppScreen({
       return (
         <Shell active="subjects" title="Предметы" breadcrumb={{ label: "Предметы", to: "/subjects", current: "карточка" }}>
           <SubjectsScreen openId={params.subjectId} />
+        </Shell>
+      );
+    case "/diary":
+      // Кабинет ученика и родителя (AR-158): своя раскладка без пятивкладочной
+      // оболочки — те вкладки ведут в 403, а не в его работу.
+      return <DiaryScreen />;
+    case "/guardians":
+      return (
+        <Shell active="staff" title="Родители">
+          <GuardiansScreen />
+        </Shell>
+      );
+    case "/guardians/:guardianId":
+      return (
+        <Shell active="staff" title="Родители">
+          <GuardiansScreen openId={params.guardianId} />
         </Shell>
       );
     case "/staff":

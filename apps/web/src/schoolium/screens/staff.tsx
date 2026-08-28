@@ -13,9 +13,11 @@ import {
   ACCESS_PARAMS,
   ROLE_LABELS,
   STAFF_SECTIONS,
+  type CredentialsDto,
   type SchoolRole,
   type StaffCardDto,
 } from "@edustore/shared";
+import { AccountForm, CredentialsBox } from "./account-form";
 import { api, SchoolApiError } from "../api";
 import { useAsync, useIsMobile, usePolling } from "../hooks";
 import { Avatar, Badge, Button, EmptyState, ErrorState, Modal, PopoverOrSheet, Skeletons, Toast, useToast } from "../ui";
@@ -23,12 +25,15 @@ import { useSession } from "../session";
 import { navigate } from "../router";
 
 /** Роли, которые можно ДОБАВИТЬ карточке зарегистрированного сотрудника (AR-102). */
-const ADDABLE_ROLES: SchoolRole[] = ["founder", "director", "deputy_academic", "deputy_upbringing", "teacher", "moderator"];
+const ADDABLE_ROLES: SchoolRole[] = ["founder", "director", "deputy_academic", "deputy_upbringing", "teacher", "moderator", "admin"];
 
 export function StaffScreen({ openId }: { openId?: string }) {
   const { can } = useSession();
   const [state, reload] = useAsync(() => api.staff());
   const [expanded, setExpanded] = useState(false);
+  /** M-16: форма заведения учётки (AR-154) — роль добавляемой карточки. */
+  const [adding, setAdding] = useState<SchoolRole | null>(null);
+  const [created, setCreated] = useState<CredentialsDto | null>(null);
   /** Свёрнутые секции мобайла (§6). По умолчанию раскрыты все три. */
   const [collapsed, setCollapsed] = useState<Set<number>>(() => new Set());
   const { toast, showToast } = useToast();
@@ -41,15 +46,6 @@ export function StaffScreen({ openId }: { openId?: string }) {
   const cards = state.data;
   const open = openId ? cards.find((c) => c.id === openId) ?? null : null;
   const shown = expanded || cards.length > 0;
-
-  const addCard = async (role: SchoolRole) => {
-    try {
-      await api.addStaffCard(role);
-      reload();
-    } catch (e) {
-      showToast(e instanceof SchoolApiError ? e.message : "Не получилось");
-    }
-  };
 
   return (
     <>
@@ -111,7 +107,7 @@ export function StaffScreen({ openId }: { openId?: string }) {
                   <Button
                     kind="secondary"
                     testId={sec.addable === "founder" ? "S-30.btn.addFounder" : "S-30.btn.addTeacher"}
-                    onClick={() => addCard(sec.addable as SchoolRole)}
+                    onClick={() => setAdding(sec.addable as SchoolRole)}
                   >
                     Добавить
                   </Button>
@@ -132,6 +128,27 @@ export function StaffScreen({ openId }: { openId?: string }) {
       )}
 
       {open ? <StaffCardModal card={open} onClose={() => navigate("/staff")} onChanged={reload} /> : null}
+
+      {/* M-16 — заведение учётки: ФИО + юзернейм + пароль (AR-154). */}
+      {adding ? (
+        <Modal title={`Новая учётка: ${ROLE_LABELS[adding]}`} width={440} onClose={() => setAdding(null)} testId="M-16" mobile="fullscreen">
+          <AccountForm
+            submitLabel="Завести учётку"
+            testPrefix="M-16"
+            onSubmit={async (dto) => {
+              const r = await api.addStaffCard({ role: adding, ...dto });
+              setAdding(null);
+              setCreated(r.credentials);
+              reload();
+            }}
+          />
+        </Modal>
+      ) : null}
+      {created ? (
+        <Modal title="Учётка заведена" width={440} onClose={() => setCreated(null)} testId="M-17" mobile="sheet">
+          <CredentialsBox credentials={created} />
+        </Modal>
+      ) : null}
       {toast ? <Toast text={toast} /> : null}
     </>
   );
@@ -146,9 +163,9 @@ function PersonCard({ card }: { card: StaffCardDto }) {
       onClick={() => navigate(`/staff/${card.id}`)}
     >
       <div className="sch-row">
-        {card.registered ? <Avatar name={card.name} url={card.avatarUrl} /> : <span aria-hidden="true">🔒</span>}
+        {card.filled ? <Avatar name={card.name} url={card.avatarUrl} /> : <span aria-hidden="true">🔒</span>}
         <span>
-          <span className="sch-card-title">{card.name ?? "Не активирован"}</span>
+          <span className="sch-card-title">{card.name ?? "Учётка не заведена"}</span>
           <br />
           <span className="sch-card-sub">{card.roles.map((r) => ROLE_LABELS[r]).join(", ")}</span>
         </span>
@@ -156,6 +173,10 @@ function PersonCard({ card }: { card: StaffCardDto }) {
       {card.deactivated ? (
         <div style={{ marginTop: "var(--sp-12)" }}>
           <Badge muted>доступ закрыт</Badge>
+        </div>
+      ) : card.filled && !card.registered ? (
+        <div style={{ marginTop: "var(--sp-12)" }}>
+          <Badge muted>не авторизован</Badge>
         </div>
       ) : null}
     </button>
@@ -177,14 +198,21 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
   const mayManage = can("staff.manage");
   const qrSize = useIsMobile() ? 200 : 240;
 
-  // QR активации выпускается при открытии карточки; закрытие карточки его гасит.
+  const [fullName, setFullName] = useState<string | null>(null);
+  const [creds, setCreds] = useState<CredentialsDto | null>(null);
+
+  // QR активации выпускается при открытии ЗАПОЛНЕННОЙ карточки (AR-161);
+  // закрытие карточки его гасит. У карточки без учётки QR не существует.
   useEffect(() => {
-    if (cur.registered || !mayManage) return;
+    if (cur.registered || !cur.filled || !mayManage) return;
     api
       .activationToken(cur.id)
-      .then((t) => setToken(t.token))
+      .then((t) => {
+        setToken(t.token);
+        setFullName(t.fullName ?? null);
+      })
       .catch(() => undefined);
-  }, [cur.id, cur.registered, mayManage]);
+  }, [cur.id, cur.registered, cur.filled, mayManage]);
 
   usePolling(
     async () => {
@@ -199,13 +227,21 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
       }
     },
     ACCESS_PARAMS.pollIntervalMs,
-    !cur.registered && mayManage && status === "waiting",
+    cur.filled && !cur.registered && mayManage && status === "waiting",
   );
 
   const close = () => {
     // `S-31.btn.close` гасит QR: код не переживает встречу (AR-76).
-    if (!cur.registered && mayManage) void api.closeCard(cur.id).catch(() => undefined);
+    if (cur.filled && !cur.registered && mayManage) void api.closeCard(cur.id).catch(() => undefined);
     onClose();
+  };
+
+  const reissuePassword = async () => {
+    try {
+      setCreds(await api.staffCredentials(cur.id));
+    } catch (e) {
+      showToast(e instanceof SchoolApiError ? e.message : "Не получилось");
+    }
   };
 
   const act = async (fn: () => Promise<StaffCardDto | { ok: boolean }>) => {
@@ -234,8 +270,27 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
           </div>
         }
       >
-        {!cur.registered ? (
+        {!cur.filled ? (
+          /* Карточка-слот без учётки (синглтоны из bootstrap): сначала ФИО и креды. */
+          <div className="sch-stack">
+            <AccountForm
+              submitLabel="Завести учётку"
+              testPrefix="S-31.fill"
+              onSubmit={async (dto) => {
+                const r = await api.fillStaffCard(cur.id, dto);
+                setCur(r.card);
+                setCreds(r.credentials);
+                onChanged();
+              }}
+            />
+            {creds ? <CredentialsBox credentials={creds} /> : null}
+          </div>
+        ) : !cur.registered ? (
           <div className="sch-qr">
+            {/* Именной QR (AR-161): над кодом — ФИО, сканирует названный человек. */}
+            <h3 data-testid="S-31.qr.fullName" style={{ margin: 0 }}>
+              {fullName ?? cur.name}
+            </h3>
             <div className="sch-qr-frame" data-testid="S-31.qr">
               {token ? (
                 /* На мобайле QR 200px (§6): 240 не оставляют места подписи и
@@ -246,11 +301,19 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
               )}
             </div>
             <p data-testid="S-31.status">
-              {registeredName ? `Зарегистрирован: ${registeredName}` : "Ожидание регистрации"}
+              {registeredName ? `Зарегистрирован: ${registeredName}` : "Сканирует со своего телефона — и сразу в кабинете"}
             </p>
             <p className="sch-muted">
-              Код живёт {ACCESS_PARAMS.activationTtlMinutes} минут либо до закрытия карточки
+              @{cur.username} · код живёт {ACCESS_PARAMS.activationTtlMinutes} минут либо до закрытия карточки
             </p>
+            {mayManage ? (
+              <div className="sch-actions">
+                <Button kind="ghost" testId="S-31.btn.reissuePassword" onClick={reissuePassword}>
+                  Перевыпустить пароль
+                </Button>
+              </div>
+            ) : null}
+            {creds ? <CredentialsBox credentials={creds} /> : null}
           </div>
         ) : (
           <div className="sch-stack">
@@ -265,7 +328,10 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
                 ) : null}
               </span>
             </div>
-            <p data-testid="S-31.status">Зарегистрирован: {cur.name}</p>
+            <p data-testid="S-31.status">
+              Зарегистрирован: {cur.name}
+              {cur.username ? <span className="sch-muted"> · @{cur.username}</span> : null}
+            </p>
 
             <div className="sch-chips">
               {cur.roles.map((r) => (
@@ -337,7 +403,20 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
                   >
                     Закрыть активные сессии
                   </Button>
+                  {/* «Просканировал не тот» (AR-153): сессии чужого устройства
+                      закрываются, карточка возвращается в «Не авторизованные». */}
+                  <Button
+                    kind="danger"
+                    testId="S-31.btn.revokeActivation"
+                    onClick={() => act(() => api.revokeStaffActivation(cur.id))}
+                  >
+                    Отозвать активацию
+                  </Button>
+                  <Button kind="ghost" testId="S-31.btn.reissuePassword" onClick={reissuePassword}>
+                    Перевыпустить пароль
+                  </Button>
                 </div>
+                {creds ? <CredentialsBox credentials={creds} /> : null}
               </>
             ) : null}
           </div>
