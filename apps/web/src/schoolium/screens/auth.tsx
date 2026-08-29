@@ -11,10 +11,53 @@ import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { ACCESS_PARAMS, safeNext } from "@edustore/shared";
 import { api, SchoolApiError } from "../api";
-import { Button, Field } from "../ui";
+import { Button, Field, Modal } from "../ui";
 import { CameraDenied, hasCamera, parseQr, QrCamera } from "../qr";
 import { useIsMobile, usePolling } from "../hooks";
 import { navigate } from "../router";
+
+/**
+ * Токен привязки устройства (`S-01.qr`/`M-21.qr`): выпуск, поллинг раз в 2 с
+ * (AR-87), истёкший QR перевыпускается сам — человек видит новый код, а не
+ * ошибку. Один контур входа, две точки показа (экран и модалка) — логика одна.
+ */
+function useDeviceLink(active: boolean, next: string | null) {
+  const [token, setToken] = useState<{ id: string; token: string } | null>(null);
+  const [status, setStatus] = useState<"waiting" | "used" | "expired">("waiting");
+  const [error, setError] = useState<string | null>(null);
+
+  const issue = () => {
+    setError(null);
+    api
+      .deviceLinkToken(next ?? undefined)
+      .then((t) => {
+        setToken({ id: t.id, token: t.token });
+        setStatus("waiting");
+      })
+      .catch((e: unknown) => setError(e instanceof SchoolApiError ? e.message : "Не удалось получить код"));
+  };
+
+  useEffect(() => {
+    if (active) issue();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
+  usePolling(
+    async () => {
+      if (!token) return;
+      const r = await api.deviceLinkStatus(token.id).catch(() => null);
+      if (!r) return;
+      if (r.status === "used") {
+        setStatus("used");
+        window.location.assign(safeNext(r.nextPath ?? null, "/classes"));
+      } else if (r.status === "expired") issue();
+    },
+    ACCESS_PARAMS.pollIntervalMs,
+    active && status === "waiting",
+  );
+
+  return { token, status, error, issue };
+}
 
 function AuthFrame({ children }: { children: React.ReactNode }) {
   return (
@@ -30,29 +73,175 @@ function AuthFrame({ children }: { children: React.ReactNode }) {
 // ─────────────────────────── S-00 · лендинг ───────────────────────────
 
 export function LandingScreen({ authed, startScreen }: { authed: boolean; startScreen: string }) {
+  const [loginOpen, setLoginOpen] = useState(false);
   return (
-    <div className="sch sch-auth">
-      <div className="sch-hero">
-        <div className="sch-logo" data-testid="S-00.logo" style={{ fontSize: "var(--fs-h1)", justifyContent: "center" }}>
+    <div className="sch sch-landing">
+      <header className="sch-landing-top">
+        <div className="sch-logo" data-testid="S-00.logo">
           Schoolium
         </div>
-        <div data-testid="S-00.hero">
-          <h1>ERP для школы</h1>
-          <p>
-            Классы, предметы, персонал, расписание и журнал — в одном месте. Пустая школа превращается в работающую за
-            один вечер.
-          </p>
+        {/* Кнопки регистрации нет и не будет (AR-95) — агент её не добавляет «для полноты». */}
+        <Button kind="primary" testId="S-00.btn.login" onClick={() => (authed ? navigate(startScreen) : setLoginOpen(true))}>
+          Войти
+        </Button>
+      </header>
+
+      <div className="sch-hero" data-testid="S-00.hero">
+        <h1>Школа — в одном месте</h1>
+        <p>
+          Дневник, журнал, расписание и оценки. Родители видят детей, педагоги ведут журнал, школа управляет всем —
+          с телефона или компьютера.
+        </p>
+      </div>
+
+      <div className="sch-landing-cards" data-testid="S-00.cards">
+        <div className="sch-card">
+          <h3>Родителю и ученику</h3>
+          <p className="sch-muted">Дневник с расписанием дня, оценки и средние баллы по каждому предмету — сразу после входа.</p>
+        </div>
+        <div className="sch-card">
+          <h3>Педагогу</h3>
+          <p className="sch-muted">Журнал своих предметов: отметка ставится в два касания, темы уроков — тут же.</p>
+        </div>
+        <div className="sch-card">
+          <h3>Школе</h3>
+          <p className="sch-muted">Классы, персонал, предметы и расписание с проверкой норм — панель управления вместо стопки таблиц.</p>
         </div>
       </div>
-      {/* Кнопки регистрации нет и не будет (AR-95) — агент её не добавляет «для полноты». */}
-      <Button
-        kind="primary"
-        testId="S-00.btn.login"
-        onClick={() => navigate(authed ? startScreen : "/login")}
-      >
-        Вход
-      </Button>
+
+      <p className="sch-muted sch-landing-note" data-testid="S-00.note.access">
+        Доступ выдаёт школа: учётки заводит модератор, самостоятельной регистрации нет
+      </p>
+
+      {loginOpen ? <LoginModal onClose={() => setLoginOpen(false)} /> : null}
     </div>
+  );
+}
+
+// ─────────────────────────── M-21 · модалка входа ───────────────────────────
+
+/**
+ * Вход с лендинга (правка владельца 2026-08-30): QR, под ним «Войти по коду» —
+ * нажатие меняет QR на окошки кода, а кнопку на «Войти по QR». На телефоне
+ * окошки первыми: телефон не сканирует сам себя (§6 `75-adaptive.md`).
+ * Контур входа тот же, что `S-01`/`S-05`, — модалка не вводит ни новых
+ * маршрутов, ни новых кодов ошибок.
+ */
+function LoginModal({ onClose }: { onClose: () => void }) {
+  const mobile = useIsMobile();
+  const [mode, setMode] = useState<"qr" | "code">(mobile ? "code" : "qr");
+  const link = useDeviceLink(mode === "qr" && !mobile, null);
+
+  return (
+    <Modal title="Вход" width={420} onClose={onClose} testId="M-21" mobile="sheet">
+      <div className="sch-stack" style={{ alignItems: "center", textAlign: "center" }}>
+        {mode === "qr" ? (
+          mobile ? (
+            <p className="sch-muted" data-testid="M-21.status">
+              Первый вход — по именному QR у модератора: он открывает вашу карточку, вы наводите камеру. Кабинет уже
+              был? Введите код или пароль ниже.
+            </p>
+          ) : link.error ? (
+            <>
+              <p className="sch-danger-text" role="alert">
+                {link.error}
+              </p>
+              <Button kind="secondary" onClick={link.issue}>
+                Повторить
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="sch-qr-frame" data-testid="M-21.qr">
+                {link.token ? (
+                  <QRCodeSVG value={`${window.location.origin}/link/${link.token.token}`} size={200} />
+                ) : (
+                  <div className="sch-skeleton sch-skeleton--qr" />
+                )}
+              </div>
+              <p className="sch-muted">
+                Откройте Schoolium на телефоне, где кабинет уже открыт: Настройки → Подключить устройство — и наведите
+                камеру
+              </p>
+              <p data-testid="M-21.status">{link.status === "used" ? "Устройство подключено" : "Ожидание сканирования…"}</p>
+            </>
+          )
+        ) : (
+          <ModalCodeEntry />
+        )}
+        <Button kind="secondary" testId="M-21.btn.mode" onClick={() => setMode(mode === "qr" ? "code" : "qr")}>
+          {mode === "qr" ? "Войти по коду" : "Войти по QR"}
+        </Button>
+        <PasswordLoginBlock next={null} />
+        <p className="sch-muted" data-testid="M-21.note.help">
+          Первый вход — по именному QR у модератора школы
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+/** Окошки кода в модалке — тот же контракт, что `S-05.code`, без сканера. */
+function ModalCodeEntry() {
+  const [digits, setDigits] = useState<string[]>(Array(ACCESS_PARAMS.loginCodeDigits).fill(""));
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const refs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const submit = async (code: string) => {
+    setBusy(true);
+    try {
+      const r = await api.verifyLoginCode(code);
+      window.location.assign(r.startScreen);
+    } catch (e) {
+      setError(e instanceof SchoolApiError ? e.message : "Неверный код");
+      setDigits(Array(ACCESS_PARAMS.loginCodeDigits).fill(""));
+      refs.current[0]?.focus();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setAt = (i: number, v: string) => {
+    const d = v.replace(/\D/g, "").slice(-1);
+    const next = [...digits];
+    next[i] = d;
+    setDigits(next);
+    setError(null);
+    if (d && i < digits.length - 1) refs.current[i + 1]?.focus();
+    const code = next.join("");
+    if (code.length === ACCESS_PARAMS.loginCodeDigits && !next.includes("")) void submit(code);
+  };
+
+  return (
+    <>
+      <div className={error ? "sch-code-cells sch-shake" : "sch-code-cells"} data-testid="M-21.code">
+        {digits.map((d, i) => (
+          <input
+            key={i}
+            ref={(el) => (refs.current[i] = el)}
+            className="sch-code-cell"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={1}
+            value={d}
+            disabled={busy}
+            aria-label={`Цифра ${i + 1}`}
+            autoFocus={i === 0}
+            onChange={(e) => setAt(i, e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Backspace" && !digits[i] && i > 0) refs.current[i - 1]?.focus();
+            }}
+          />
+        ))}
+      </div>
+      {error ? (
+        <p className="sch-danger-text" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <p className="sch-muted">Код покажет модератор с вашей карточки — шесть цифр</p>
+    </>
   );
 }
 
@@ -60,39 +249,7 @@ export function LandingScreen({ authed, startScreen }: { authed: boolean; startS
 
 export function LoginScreen({ next }: { next: string | null }) {
   const mobile = useIsMobile();
-  const [token, setToken] = useState<{ id: string; token: string } | null>(null);
-  const [status, setStatus] = useState<"waiting" | "used" | "expired">("waiting");
-  const [error, setError] = useState<string | null>(null);
-
-  const issue = () => {
-    api
-      .deviceLinkToken(next ?? undefined)
-      .then((t) => {
-        setToken({ id: t.id, token: t.token });
-        setStatus("waiting");
-      })
-      .catch((e: unknown) => setError(e instanceof SchoolApiError ? e.message : "Не удалось получить код"));
-  };
-
-  useEffect(issue, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Поллинг статуса раз в 2 секунды (AR-87). Просроченный QR страница
-  // перевыпускает САМА — человек видит новый код, а не ошибку (`S-01` error).
-  usePolling(
-    async () => {
-      if (!token) return;
-      const r = await api.deviceLinkStatus(token.id).catch(() => null);
-      if (!r) return;
-      if (r.status === "used") {
-        setStatus("used");
-        window.location.assign(safeNext(r.nextPath ?? null, "/classes"));
-      } else if (r.status === "expired") {
-        issue();
-      }
-    },
-    ACCESS_PARAMS.pollIntervalMs,
-    status === "waiting",
-  );
+  const { token, status, error, issue } = useDeviceLink(true, next);
 
   /*
    * `S-01` на мобайле НЕ показывает QR (§6): телефон не сканирует сам себя, и

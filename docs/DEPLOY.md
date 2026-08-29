@@ -31,6 +31,25 @@ docker compose -f docker-compose.prod.yml exec api \
 автогенерация → журнал. Экран «не авторизованные» (S-32) показывает, кто ещё
 не отсканировал свой QR.
 
+### Предзаполнение данными школы (`school:import`)
+
+Разовая заливка вместо ручного ввода с экранов: классы с учениками, учётки,
+родители со связями, персонал, предметы с привязками, четверти. Данные —
+`school-data.json` из конвертера (в git не лежит: ПДн; санминимум АР-155 —
+только ФИО, класс, связи, телефоны).
+
+```bash
+scp school-data.json user@сервер:~/schoolium/
+docker compose -f docker-compose.prod.yml cp school-data.json api:/tmp/school-data.json
+docker compose -f docker-compose.prod.yml exec api \
+  npm run school:import -- --workspace=<id из school:bootstrap> --data=/tmp/school-data.json
+docker compose -f docker-compose.prod.yml cp api:/tmp/school-import-creds.txt ./  # креды всех учёток, один раз
+```
+
+`--dry-run` показывает объём без записи; спорные строки исходника скрипт
+пропускает и перечисляет (добавляются `--include-disputed` или с экранов).
+Файл кредов после передачи владельцу удалить с сервера.
+
 ### Три места, где деплой ломается молча
 
 | Что | Симптом | Как не наступить |

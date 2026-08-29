@@ -324,12 +324,34 @@ async function main() {
     console.log('▶ S-00 · лендинг');
     await page.goto(`${WEB}/`);
     await page.waitForSelector('[data-testid="S-00.hero"]');
-    await hasAll(page, ['S-00.logo', 'S-00.hero', 'S-00.btn.login']);
+    await hasAll(page, ['S-00.logo', 'S-00.hero', 'S-00.btn.login', 'S-00.cards', 'S-00.note.access']);
     await shot(page, 'S-00-landing');
+
+    // ── M-21 · модалка входа с лендинга (правка владельца 2026-08-30) ──
+    // Десктоп открывается QR-ом привязки, телефон — окошками кода (сам себя
+    // не сканирует); кнопка переключает содержимое и меняет подпись.
+    console.log('▶ M-21 · модалка входа');
+    await click(page, 'S-00.btn.login');
+    await page.waitForSelector('[data-testid="M-21"]');
+    await modalOpen(page, 'M-21');
+    await hasAll(page, MOBILE ? ['M-21.code', 'M-21.btn.mode', 'M-21.note.help'] : ['M-21.qr', 'M-21.status', 'M-21.btn.mode', 'M-21.note.help']);
+    await shot(page, 'M-21-login-modal');
+    await click(page, 'M-21.btn.mode');
+    // содержимое сменилось: QR ⇄ окошки кода
+    await page.waitForSelector(MOBILE ? '[data-testid="M-21.status"]' : '[data-testid="M-21.code"]');
+    if (!MOBILE) {
+      const qrLeft = await page.locator('[data-testid="M-21.qr"]').count();
+      if (qrLeft === 0) console.log('    ✅ «Войти по коду» сменил QR на окошки кода');
+      else { console.error('    ❌ QR остался на экране вместе с окошками кода'); failures++; }
+    }
+    await shot(page, 'M-21-login-modal-code');
+    if (MOBILE) await tapTargets(page, 'M-21');
+    await page.keyboard.press('Escape');
+    await modalClosed(page, 'M-21');
 
     // ── S-01 · вход по QR (аноним): страница выдаёт код и ждёт скан ──
     console.log('▶ S-01 · вход');
-    await click(page, 'S-00.btn.login');
+    await page.goto(`${WEB}/login`);
     // На мобайле `S-01` НЕ показывает QR (§6): телефон не сканирует сам себя,
     // и вместо кода здесь объяснение плюс ссылка на `S-05`. Это ветвление
     // объявлено реестром, а не «не поместилось».

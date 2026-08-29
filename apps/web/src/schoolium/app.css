@@ -774,3 +774,17 @@
 /* строки дневника — не кликабельные, курсор наследуется */
 [data-testid="S-90.day"] .sch-table tbody tr,
 [data-testid="S-91.table"] .sch-table tbody tr { cursor: default; }
+
+/* ─── S-00 · лендинг (правка владельца 2026-08-30: лендинг + модалка входа) ─── */
+.sch-landing { min-height: 100vh; display: flex; flex-direction: column; align-items: center; gap: var(--sp-40); padding: var(--sp-24); background: var(--c-surface-page); }
+.sch-landing-top { width: 100%; max-width: 1200px; display: flex; align-items: center; justify-content: space-between; }
+.sch-landing .sch-hero { margin-top: var(--sp-40); }
+.sch-landing .sch-hero h1 { font-size: var(--fs-h1); }
+.sch-landing-cards { width: 100%; max-width: 1200px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-24); }
+.sch-landing-cards h3 { margin: 0 0 var(--sp-8); }
+.sch-landing-note { margin-top: auto; padding-bottom: var(--sp-24); text-align: center; }
+@media (max-width: 720px) {
+  .sch-landing { gap: var(--sp-24); }
+  .sch-landing-cards { grid-template-columns: 1fr; gap: var(--sp-12); }
+  .sch-landing .sch-hero { margin-top: var(--sp-12); }
+}
