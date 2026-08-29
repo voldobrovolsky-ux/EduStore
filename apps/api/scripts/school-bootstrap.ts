@@ -16,10 +16,15 @@
  *
  *   npm --workspace apps/api run school:bootstrap -- --phone=+79990000000 --school="Школа №1" --name="Иванова Мария"
  *   npm --workspace apps/api run school:bootstrap -- --phone=+79990000000 --relink
+ *
+ * 1.2.0 (AR-154/AR-156): оператору заводятся и КРЕДЫ — юзернейм (--username или
+ * транслитерация имени) и пароль (--password или генерация). Печатаются один
+ * раз: это резервный вход при слетевшей сессии, основной вход — ссылка/QR.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { ACCESS_PARAMS } from '@edustore/shared';
+import { generatePassword, hashPassword, resolveUsername } from '../src/schoolium/staff/credentials';
 
 const prisma = new PrismaClient();
 
@@ -89,17 +94,29 @@ async function main(): Promise<void> {
 
   const existing = await prisma.user.findUnique({ where: { phone } });
   const [lastName, firstName] = displayName.split(/\s+/);
-  const user =
-    existing ??
-    (await prisma.user.create({
+  // 1.2.0: креды оператора — резервный вход (AR-156); у существующей учётки
+  // не трогаются (перевыпуск — с карточки в кабинете)
+  let credentialsNote = 'креды прежние — перевыпуск пароля доступен с карточки';
+  let user = existing;
+  if (!user) {
+    const username = await resolveUsername(prisma, arg('username'), {
+      lastName: lastName ?? displayName,
+      firstName: firstName ?? '',
+    });
+    const password = arg('password') || generatePassword();
+    user = await prisma.user.create({
       data: {
         id: `u-${randomUUID()}`,
         phone,
         lastName: lastName ?? displayName,
         firstName: firstName ?? '',
         displayName,
+        username,
+        passwordHash: hashPassword(password),
       },
-    }));
+    });
+    credentialsNote = `юзернейм ${username} · пароль ${password} (показан один раз — резервный вход)`;
+  }
 
   await prisma.membership.create({
     data: {
@@ -121,6 +138,7 @@ async function main(): Promise<void> {
     [
       `Школа создана: ${schoolName} (workspace ${workspace.id})`,
       `Модератор: ${displayName}, телефон ${phone}`,
+      `Креды: ${credentialsNote}`,
       `Одноразовая ссылка входа (${ACCESS_PARAMS.bootstrapLinkTtlHours} ч) — передайте директору лично:`,
       url,
     ].join('\n'),
