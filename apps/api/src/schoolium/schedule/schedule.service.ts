@@ -100,7 +100,15 @@ export class ScheduleService implements OnModuleInit {
   private async markStale(e: DomainEvent): Promise<void> {
     await TenantContext.runAsSystem(async () => {
       const r = await this.prisma.scheduleTemplate.updateMany({
-        where: { workspaceId: e.workspaceId, status: { in: ['confirmed', 'draft'] } },
+        // Устаревают только сетки, собранные ДО события: плашка говорит «данные
+        // изменились после генерации», а событие доезжает через outbox с лагом —
+        // сетка, собранная позже него, эти данные уже видела и устареть от них
+        // не может (АР-85).
+        where: {
+          workspaceId: e.workspaceId,
+          status: { in: ['confirmed', 'draft'] },
+          generatedAt: { lt: new Date(e.occurredAt) },
+        },
         data: { status: 'stale' },
       });
       if (r.count) this.log.log(`сетка → stale по ${e.type}`);

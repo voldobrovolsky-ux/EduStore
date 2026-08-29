@@ -15,6 +15,7 @@
  * Запуск: npm --workspace apps/api run regen:check
  */
 import { TenantContext } from '../src/common/tenant/tenant-context';
+import { CalendarContractService, CalendarService } from '../src/schoolium/calendar/calendar.service';
 import { ContingentService } from '../src/schoolium/contingent/contingent.service';
 import { JournalService } from '../src/schoolium/journal/journal.service';
 import { ScheduleService } from '../src/schoolium/schedule/schedule.service';
@@ -118,6 +119,30 @@ async function main(): Promise<void> {
     await contingent.deactivateStudent(added.id, s.moderator);
     await drain();
     check((await state.resolve()) === 'ready', 'деактивация ученика тоже оставляет школу в ready');
+
+    // ─── гонка доставки: событие СТАРШЕ сетки её не роняет (AR-85) ───
+    // Плашка говорит «данные изменились ПОСЛЕ генерации». Событие из outbox
+    // может доехать до подписчика после confirm свежей сетки — но случилось
+    // оно до генерации, и сетка эти данные уже видела. Ловилось живым смоком
+    // как мигающая плашка «устарело» сразу после подтверждения.
+    const calendar = b.get(CalendarService);
+    const stored = await b.get(CalendarContractService).terms();
+    const terms = stored.map((t) => ({
+      termNo: t.termNo as 1 | 2 | 3 | 4,
+      dateFrom: t.dateFrom.toISOString().slice(0, 10),
+      dateTo: t.dateTo.toISOString().slice(0, 10),
+    }));
+    await calendar.setTerms(terms, s.moderator); // termSet в outbox, НЕ дрейним
+    const fresh2 = await schedule.generate(s.moderator);
+    const reg3 = await state.register();
+    await schedule.confirm({ templateId: fresh2.templateId, version: reg3.scheduleVersion }, s.moderator);
+    await drain(); // termSet доезжает ПОСЛЕ confirm — сетка собрана позже него
+    check((await state.resolve()) === 'ready',
+      'событие, случившееся ДО генерации, доехало после confirm — свежая сетка НЕ устарела');
+    await calendar.setTerms(terms, s.moderator);
+    await drain();
+    check((await state.resolve()) === 'stale',
+      'то же событие ПОСЛЕ генерации по-прежнему роняет сетку в stale (AR-85)');
   });
 
   await b.close();
