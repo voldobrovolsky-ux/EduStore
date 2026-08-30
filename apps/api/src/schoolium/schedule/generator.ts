@@ -54,6 +54,8 @@ export interface GenDayParams {
   breakMin: number;
   bigBreakAfter: number;
   bigBreakMin: number;
+  /** Начало первого урока (минуты от полуночи) — перебором не используется, едет в шаблон для времён на экранах. */
+  dayStartMin?: number;
 }
 
 export interface GenInput {

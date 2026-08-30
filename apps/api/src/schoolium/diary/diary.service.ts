@@ -115,11 +115,18 @@ export class DiaryService {
       days.set(day, bucket);
     }
 
+    // Временная сетка подтверждённого расписания — времена уроков и перемен
+    // считаются на клиенте из неё (slotTimes, AR-36), а не хранятся на уроке.
+    const tpl = await this.prisma.scheduleTemplate.findFirst({
+      where: { workspaceId: s.workspaceId, status: 'confirmed' },
+      select: { dayStartMin: true, lessonMin: true, breakMin: true, bigBreakAfter: true, bigBreakMin: true },
+    });
     return {
       studentId: s.id,
       studentName: [s.lastName, s.firstName].filter(Boolean).join(' '),
       classLabel: s.class.label,
       monday: mon,
+      grid: tpl ?? null,
       days: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)),
       weeks,
     };

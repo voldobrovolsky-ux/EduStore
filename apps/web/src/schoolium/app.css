@@ -820,3 +820,11 @@
 .sch-lesson-body { flex: 1; min-width: 0; }
 .sch-lesson-body b { display: block; font-size: var(--fs-md); }
 .sch-lesson-body span { color: var(--c-ink-muted); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; display: block; white-space: nowrap; }
+
+/* времена уроков и перемены (правка владельца 2026-08-30: как в референсе) */
+.sch-lesson-time { flex: none; width: 52px; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.sch-lesson-time b { font-size: var(--fs-md); }
+.sch-lesson-time span { color: var(--c-ink-muted); font-size: var(--fs-sm); }
+.sch-weekbar { display: flex; align-items: center; justify-content: space-between; }
+.sch-weekrange { font-weight: var(--fw-semibold); }
+.sch-break { text-align: center; color: var(--c-ink-muted); font-size: var(--fs-xs); padding: var(--sp-4) 0; }

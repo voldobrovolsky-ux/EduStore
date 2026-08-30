@@ -319,6 +319,8 @@ async function main(): Promise<void> {
           breakMin: tt.breakMin,
           bigBreakAfter: tt.bigBreakAfter,
           bigBreakMin: tt.bigBreakMin,
+          dayStartMin: 540, // 9:00 — реальное начало уроков школы
+
           slots: { create: rows.map((r) => ({ ...r, workspaceId, groupNo: 0 })) },
         },
       });

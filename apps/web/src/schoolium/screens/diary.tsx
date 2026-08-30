@@ -7,7 +7,7 @@
  * Колонки ДЗ нет вовсе — появится инкрементом №2, пустая колонка не рисуется.
  */
 import { useEffect, useState } from "react";
-import type { DiaryChildDto, DiaryWeekDto, SubjectAverageDto } from "@edustore/shared";
+import { slotTimes, type DiaryChildDto, type DiaryWeekDto, type SubjectAverageDto } from "@edustore/shared";
 import { api, SchoolApiError } from "../api";
 import { useAsync } from "../hooks";
 import { Badge, Button, EmptyState, ErrorState, MarkChip, Skeletons } from "../ui";
@@ -136,6 +136,12 @@ export function DiaryScreen() {
  */
 const DAY_SHORT = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 const dayShort = (isoDay: string): string => DAY_SHORT[(new Date(`${isoDay}T00:00:00.000Z`).getUTCDay() + 6) % 7];
+const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+const dayMonth = (isoDay: string): string => `${Number(isoDay.slice(8))} ${MONTHS[Number(isoDay.slice(5, 7)) - 1]}`;
+
+/** «1 — 5 сентября» либо «29 сентября — 3 октября» — индикатор недели. */
+export const weekRange = (from: string, to: string): string =>
+  from.slice(5, 7) === to.slice(5, 7) ? `${Number(from.slice(8))} — ${dayMonth(to)}` : `${dayMonth(from)} — ${dayMonth(to)}`;
 
 function WeekView({ data, onWeek }: { data: DiaryWeekDto; onWeek: (m: string) => void }) {
   const idx = data.weeks.findIndex((w) => w.monday === data.monday);
@@ -144,6 +150,8 @@ function WeekView({ data, onWeek }: { data: DiaryWeekDto; onWeek: (m: string) =>
   const todayIso = new Date().toISOString().slice(0, 10);
   const [selected, setSelected] = useState<string | null>(null);
   const day = data.days.find((d) => d.date === selected) ?? data.days.find((d) => d.date === todayIso) ?? data.days[0] ?? null;
+  const first = data.days[0]?.date ?? data.monday;
+  const last = data.days[data.days.length - 1]?.date ?? data.monday;
 
   return (
     <div className="sch-stack" data-testid="S-90.week">
@@ -151,7 +159,7 @@ function WeekView({ data, onWeek }: { data: DiaryWeekDto; onWeek: (m: string) =>
         <EmptyState testId="S-90.emptyWeek" title="Уроков на этой неделе нет" />
       ) : (
         <>
-          <div className="sch-daystrip" data-testid="S-90.daystrip">
+          <div className="sch-weekbar">
             <button
               className="sch-weeknav"
               data-testid="S-90.btn.prevWeek"
@@ -161,16 +169,9 @@ function WeekView({ data, onWeek }: { data: DiaryWeekDto; onWeek: (m: string) =>
             >
               ‹
             </button>
-            {data.days.map((d) => (
-              <button
-                key={d.date}
-                className={day?.date === d.date ? "sch-daychip sch-daychip--active" : "sch-daychip"}
-                onClick={() => setSelected(d.date)}
-              >
-                <small>{dayShort(d.date)}</small>
-                <span>{Number(d.date.slice(8))}</span>
-              </button>
-            ))}
+            <span className="sch-weekrange" data-testid="S-90.weekRange">
+              {weekRange(first, last)}
+            </span>
             <button
               className="sch-weeknav"
               data-testid="S-90.btn.nextWeek"
@@ -182,18 +183,51 @@ function WeekView({ data, onWeek }: { data: DiaryWeekDto; onWeek: (m: string) =>
             </button>
           </div>
 
+          <div className="sch-daystrip" data-testid="S-90.daystrip">
+            {data.days.map((d) => (
+              <button
+                key={d.date}
+                className={day?.date === d.date ? "sch-daychip sch-daychip--active" : "sch-daychip"}
+                onClick={() => setSelected(d.date)}
+              >
+                <small>{dayShort(d.date)}</small>
+                <span>{Number(d.date.slice(8))}</span>
+              </button>
+            ))}
+          </div>
+
           {day ? (
             <section className="sch-stack" data-testid="S-90.day" aria-label={`${dayName(day.date)} ${fmtDay(day.date)}`}>
-              {day.lessons.map((l) => (
-                <div key={l.lessonId} className="sch-lesson">
-                  <div className="sch-lesson-no">{l.slotNo}</div>
-                  <div className="sch-lesson-body">
-                    <b>{l.subjectName}</b>
-                    {l.topic ? <span>{l.topic}</span> : null}
+              {day.lessons.map((l, i) => {
+                const t = data.grid ? slotTimes(data.grid, l.slotNo) : null;
+                const nextLesson = day.lessons[i + 1];
+                return (
+                  <div key={l.lessonId} className="sch-stack" style={{ gap: 0 }}>
+                    <div className="sch-lesson">
+                      {t ? (
+                        <div className="sch-lesson-time">
+                          <b>{t.start}</b>
+                          <span>{t.end}</span>
+                        </div>
+                      ) : (
+                        <div className="sch-lesson-no">{l.slotNo}</div>
+                      )}
+                      <div className="sch-lesson-body">
+                        <b>{l.subjectName}</b>
+                        {l.topic ? <span>{l.topic}</span> : null}
+                      </div>
+                      {l.mark ? <MarkChip value={l.mark} /> : null}
+                    </div>
+                    {t && nextLesson ? (
+                      <div className="sch-break">
+                        {nextLesson.slotNo === l.slotNo + 1
+                          ? `перемена ${t.breakAfterMin} мин`
+                          : "окно"}
+                      </div>
+                    ) : null}
                   </div>
-                  {l.mark ? <MarkChip value={l.mark} /> : null}
-                </div>
-              ))}
+                );
+              })}
             </section>
           ) : null}
         </>

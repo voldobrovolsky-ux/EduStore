@@ -1362,6 +1362,7 @@ model ScheduleTemplate {
   breakMin      Int
   bigBreakAfter Int
   bigBreakMin   Int
+  dayStartMin   Int            @default(540)
   attempts      Int            @default(0) // в аудит вместе с зерном (AR-107)
   durationMs    Int            @default(0)
   generatedAt   DateTime       @default(now())
@@ -1506,6 +1507,7 @@ model SchoolState {
   breakMin          Int      @default(10)
   bigBreakAfter     Int      @default(2)
   bigBreakMin       Int      @default(20)
+  dayStartMin       Int      @default(540) // 9:00 — начало первого урока (правка владельца 2026-08-30: времена в дневнике)
   dayParamsSet      Boolean  @default(false)
   prioritiesSet     Boolean  @default(false)
   lastEditorId      String?

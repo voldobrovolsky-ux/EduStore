@@ -8,7 +8,7 @@
  * материализация запускается только из `S-42.btn.confirm`.
  */
 import { useEffect, useState } from "react";
-import { DAY_MINUTES_CAP, recommendedTerms, type SchedulePreviewDto, type TermDto } from "@edustore/shared";
+import { DAY_MINUTES_CAP, recommendedTerms, slotTimes, type SchedulePreviewDto, type TermDto } from "@edustore/shared";
 import { api, SchoolApiError, type LoadEntry } from "../api";
 import { useAsync, useIsMobile } from "../hooks";
 import { Button, EmptyState, ErrorState, Field, Modal, NumberField, Skeletons, Toast, useToast } from "../ui";
@@ -228,20 +228,28 @@ function WeekGridMobile({
           const cell = preview.slots.filter((x) => x.classId === current && x.dayNo === day && x.slotNo === s + 1);
           if (cell.length === 0) return null;
           const paired = cell.length > 1;
+          const t = slotTimes(preview.grid, s + 1);
+          const hasNext = preview.slots.some((x) => x.classId === current && x.dayNo === day && x.slotNo === s + 2);
           return (
-            <div key={s} className="sch-lesson" data-testid={paired ? "S-40.cell.paired" : undefined}>
-              <div className="sch-lesson-no">{s + 1}</div>
-              <div className="sch-lesson-body">
-                {cell.map((x, i) => (
-                  <span className="sch-slot" key={i}>
-                    <b>
-                      {x.subjectName}
-                      {x.groupNo ? ` · гр. ${x.groupNo}` : ""}
-                    </b>
-                    <span>{x.teacherName}</span>
-                  </span>
-                ))}
+            <div key={s} className="sch-stack" style={{ gap: 0 }}>
+              <div className="sch-lesson" data-testid={paired ? "S-40.cell.paired" : undefined}>
+                <div className="sch-lesson-time">
+                  <b>{t.start}</b>
+                  <span>{t.end}</span>
+                </div>
+                <div className="sch-lesson-body">
+                  {cell.map((x, i) => (
+                    <span className="sch-slot" key={i}>
+                      <b>
+                        {x.subjectName}
+                        {x.groupNo ? ` · гр. ${x.groupNo}` : ""}
+                      </b>
+                      <span>{x.teacherName}</span>
+                    </span>
+                  ))}
+                </div>
               </div>
+              {hasNext ? <div className="sch-break">{`перемена ${t.breakAfterMin} мин`}</div> : null}
             </div>
           );
         })}
@@ -268,7 +276,7 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
   const [load, setLoad] = useState<{ entries: LoadEntry[]; version: number } | null>(null);
   const [priorities, setPriorities] = useState<string[]>([]);
   const [noPriority, setNoPriority] = useState(false);
-  const [day, setDay] = useState({ slotsPerDay: "", lessonMin: "45", breakMin: "10", days: 5, bigBreakAfter: 2, bigBreakMin: "20" });
+  const [day, setDay] = useState({ slotsPerDay: "", lessonMin: "45", breakMin: "10", days: 5, bigBreakAfter: 2, bigBreakMin: "20", dayStart: "09:00" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -433,6 +441,7 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
                       days: day.days as 5 | 6,
                       bigBreakAfter: day.bigBreakAfter,
                       bigBreakMin: Number(day.bigBreakMin),
+                      dayStartMin: Number(day.dayStart.slice(0, 2)) * 60 + Number(day.dayStart.slice(3, 5)),
                       version: fresh.version,
                     });
                     setBusy(false);
@@ -614,6 +623,16 @@ export function ScheduleWizard({ onClose, onGenerated }: { onClose: () => void; 
               onValue={(v) => setDay({ ...day, breakMin: v })}
               error={Number(day.breakMin) < 10 ? "Не менее 10 минут — СанПиН 1.2.3685-21" : null}
             />
+            <div className="sch-field">
+              <span className="sch-field-label">Начало первого урока</span>
+              <input
+                className="sch-input"
+                type="time"
+                data-testid="S-41.input.dayStart"
+                value={day.dayStart}
+                onChange={(e) => setDay({ ...day, dayStart: e.target.value || "09:00" })}
+              />
+            </div>
             <div className="sch-field">
               <span className="sch-field-label">Учебных дней в неделю</span>
               <div className="sch-chips" data-testid="S-41.input.days">

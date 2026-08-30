@@ -510,6 +510,8 @@ export interface DiaryWeekDto {
   studentName: string;
   classLabel: string;
   monday: string;
+  /** Сетка времён подтверждённого расписания; null — расписания ещё нет. */
+  grid: DayGridDto | null;
   days: DiaryDayDto[];
   /** Недели журнала для навигации — как календарь `S-50`. */
   weeks: { monday: string; hasLessons: boolean }[];
@@ -652,7 +654,33 @@ export interface DayParamsDto {
   days: 5 | 6;
   bigBreakAfter: number;
   bigBreakMin: number;
+  /** Начало первого урока, минуты от полуночи (540 = 9:00). Отсутствует у старых клиентов — сервер берёт 540. */
+  dayStartMin?: number;
   version: number;
+}
+
+/** Временная сетка дня — из подтверждённого шаблона: времена уроков и перемен считаются из неё, а не хранятся. */
+export interface DayGridDto {
+  dayStartMin: number;
+  lessonMin: number;
+  breakMin: number;
+  bigBreakAfter: number;
+  bigBreakMin: number;
+}
+
+const fmtMin = (m: number): string => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+
+/** Время урока № slotNo (1-based) и длина перемены ПОСЛЕ него. */
+export function slotTimes(g: DayGridDto, slotNo: number): { start: string; end: string; breakAfterMin: number } {
+  let start = g.dayStartMin;
+  for (let i = 1; i < slotNo; i += 1) {
+    start += g.lessonMin + (i === g.bigBreakAfter ? g.bigBreakMin : g.breakMin);
+  }
+  return {
+    start: fmtMin(start),
+    end: fmtMin(start + g.lessonMin),
+    breakAfterMin: slotNo === g.bigBreakAfter ? g.bigBreakMin : g.breakMin,
+  };
 }
 
 export interface TemplateSlotDto {
@@ -671,6 +699,8 @@ export interface SchedulePreviewDto {
   templateId: string;
   seed: number;
   status: 'draft' | 'confirmed' | 'stale';
+  /** Временная сетка шаблона — для времён уроков на экранах. */
+  grid: DayGridDto;
   slots: TemplateSlotDto[];
   /** Мягкие предупреждения приоритетов — не блокируют (ограничение 6). */
   priorityWarnings: string[];
