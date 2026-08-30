@@ -239,8 +239,9 @@
 
 .sch-overlay {
   position: fixed; inset: 0; z-index: 40;
+  /* Сплошное затемнение без блюра (правка владельца 2026-08-30: «заблюрено
+     ужасно, всё просвечивается») — контент под слоем не читается. */
   background: var(--c-surface-overlay-blur);
-  backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   padding: var(--sp-24);
   animation: sch-fade 150ms ease-out;
@@ -788,3 +789,34 @@
   .sch-landing-cards { grid-template-columns: 1fr; gap: var(--sp-12); }
   .sch-landing .sch-hero { margin-top: var(--sp-12); }
 }
+
+/* ─── Премиальный минимум лендинга и дневника (правка владельца 2026-08-30) ─── */
+.sch-landing { justify-content: flex-start; background: linear-gradient(160deg, var(--c-brand-violet-050) 0%, #FFFFFF 45%, var(--c-brand-pink-050) 100%); }
+.sch-landing .sch-hero { margin: auto 0; display: flex; flex-direction: column; align-items: center; gap: var(--sp-20); }
+.sch-landing .sch-hero h1 { font-family: var(--font-display); font-size: clamp(44px, 8vw, 72px); line-height: 1.04; margin: 0; letter-spacing: -0.02em; }
+.sch-hero-accent { background: linear-gradient(90deg, var(--c-brand-violet-600), var(--c-brand-pink-500)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.sch-landing .sch-hero p { margin: 0; font-size: var(--fs-lg); color: var(--c-ink-secondary); letter-spacing: 0.04em; }
+.sch-landing .sch-hero .sch-btn { min-width: 220px; min-height: 52px; font-size: var(--fs-lg); border-radius: var(--r-pill); box-shadow: 0 8px 24px rgba(123,58,237,0.35); }
+
+.sch-daystrip { display: flex; gap: var(--sp-8); align-items: center; overflow-x: auto; padding-bottom: var(--sp-4); }
+.sch-daychip {
+  min-width: 52px; min-height: 60px; border-radius: var(--r-lg);
+  border: 1px solid var(--c-border-default); background: var(--c-surface-card);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  font: inherit; cursor: pointer; color: var(--c-ink-primary);
+}
+.sch-daychip small { color: var(--c-ink-muted); font-size: var(--fs-xs); text-transform: capitalize; }
+.sch-daychip--active { background: var(--c-brand-violet-600); border-color: var(--c-brand-violet-600); color: var(--c-ink-on-violet); box-shadow: 0 6px 16px rgba(123,58,237,0.30); }
+.sch-daychip--active small { color: rgba(255,255,255,0.75); }
+.sch-weeknav { min-width: var(--tap-min); min-height: 60px; border-radius: var(--r-lg); border: none; background: transparent; color: var(--c-ink-muted); font-size: var(--fs-xl); cursor: pointer; }
+.sch-weeknav:disabled { opacity: 0.3; cursor: default; }
+
+.sch-lesson { display: flex; align-items: center; gap: var(--sp-16); padding: var(--sp-16); border-radius: var(--r-card); background: var(--c-surface-card); box-shadow: var(--sh-card); }
+.sch-lesson-no {
+  width: 44px; height: 44px; border-radius: var(--r-md); flex: none;
+  background: var(--c-brand-violet-050); color: var(--c-brand-violet-700);
+  display: flex; align-items: center; justify-content: center; font-weight: var(--fw-bold); font-size: var(--fs-lg);
+}
+.sch-lesson-body { flex: 1; min-width: 0; }
+.sch-lesson-body b { display: block; font-size: var(--fs-md); }
+.sch-lesson-body span { color: var(--c-ink-muted); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; display: block; white-space: nowrap; }

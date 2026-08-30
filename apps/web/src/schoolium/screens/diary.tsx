@@ -133,60 +133,74 @@ export function DiaryScreen() {
   );
 }
 
+/**
+ * Раскладка — лента дней + уроки выбранного дня (правка владельца 2026-08-30,
+ * по референсам): чипы дней недели со стрелками недель по краям, выбранный
+ * день заполнен фирменным цветом, уроки — карточками с номером слева.
+ */
+const DAY_SHORT = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+const dayShort = (isoDay: string): string => DAY_SHORT[(new Date(`${isoDay}T00:00:00.000Z`).getUTCDay() + 6) % 7];
+
 function WeekView({ data, onWeek }: { data: DiaryWeekDto; onWeek: (m: string) => void }) {
   const idx = data.weeks.findIndex((w) => w.monday === data.monday);
   const prev = idx > 0 ? data.weeks[idx - 1] : null;
   const next = idx >= 0 && idx < data.weeks.length - 1 ? data.weeks[idx + 1] : null;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [selected, setSelected] = useState<string | null>(null);
+  const day = data.days.find((d) => d.date === selected) ?? data.days.find((d) => d.date === todayIso) ?? data.days[0] ?? null;
 
   return (
     <div className="sch-stack" data-testid="S-90.week">
-      <div className="sch-row sch-row--between">
-        <Button kind="ghost" testId="S-90.btn.prevWeek" disabled={!prev} onClick={() => prev && onWeek(prev.monday)}>
-          ← Неделя
-        </Button>
-        <strong>
-          {data.classLabel} · с {fmtDay(data.monday)}
-        </strong>
-        <Button kind="ghost" testId="S-90.btn.nextWeek" disabled={!next} onClick={() => next && onWeek(next.monday)}>
-          Неделя →
-        </Button>
-      </div>
-
       {data.days.length === 0 ? (
-        <EmptyState
-          testId="S-90.emptyWeek"
-          title="Расписание ещё не составлено"
-          hint="Уроки появятся, когда школа подтвердит расписание — загляни позже"
-        />
+        <EmptyState testId="S-90.emptyWeek" title="Уроков на этой неделе нет" />
       ) : (
-        data.days.map((day) => (
-          <section key={day.date} className="sch-card" data-testid="S-90.day">
-            <h3 style={{ marginTop: 0 }}>
-              {dayName(day.date)} <span className="sch-muted">{fmtDay(day.date)}</span>
-            </h3>
-            <table className="sch-table" style={{ width: "100%" }}>
-              <tbody>
-                {day.lessons.map((l) => (
-                  <tr key={l.lessonId}>
-                    <td style={{ width: 28 }} className="sch-muted">
-                      {l.slotNo}
-                    </td>
-                    <td>
-                      <strong>{l.subjectName}</strong>
-                      {l.topic ? (
-                        <>
-                          <br />
-                          <span className="sch-muted">{l.topic}</span>
-                        </>
-                      ) : null}
-                    </td>
-                    <td style={{ width: 44, textAlign: "right" }}>{l.mark ? <MarkChip value={l.mark} /> : null}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        ))
+        <>
+          <div className="sch-daystrip" data-testid="S-90.daystrip">
+            <button
+              className="sch-weeknav"
+              data-testid="S-90.btn.prevWeek"
+              disabled={!prev}
+              aria-label="Предыдущая неделя"
+              onClick={() => prev && onWeek(prev.monday)}
+            >
+              ‹
+            </button>
+            {data.days.map((d) => (
+              <button
+                key={d.date}
+                className={day?.date === d.date ? "sch-daychip sch-daychip--active" : "sch-daychip"}
+                onClick={() => setSelected(d.date)}
+              >
+                <small>{dayShort(d.date)}</small>
+                <span>{Number(d.date.slice(8))}</span>
+              </button>
+            ))}
+            <button
+              className="sch-weeknav"
+              data-testid="S-90.btn.nextWeek"
+              disabled={!next}
+              aria-label="Следующая неделя"
+              onClick={() => next && onWeek(next.monday)}
+            >
+              ›
+            </button>
+          </div>
+
+          {day ? (
+            <section className="sch-stack" data-testid="S-90.day" aria-label={`${dayName(day.date)} ${fmtDay(day.date)}`}>
+              {day.lessons.map((l) => (
+                <div key={l.lessonId} className="sch-lesson">
+                  <div className="sch-lesson-no">{l.slotNo}</div>
+                  <div className="sch-lesson-body">
+                    <b>{l.subjectName}</b>
+                    {l.topic ? <span>{l.topic}</span> : null}
+                  </div>
+                  {l.mark ? <MarkChip value={l.mark} /> : null}
+                </div>
+              ))}
+            </section>
+          ) : null}
+        </>
       )}
     </div>
   );

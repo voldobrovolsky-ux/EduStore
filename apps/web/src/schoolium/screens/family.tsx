@@ -41,7 +41,7 @@ export function GuardiansScreen({ openId }: { openId?: string }) {
         <EmptyState
           testId="S-14.empty"
           title="Родителей пока нет"
-          hint={mayManage ? "Заведите учётку родителя и свяжите её с детьми" : "Родители появятся, когда их заведёт модератор"}
+          hint={mayManage ? "Заведите учётку и свяжите её с детьми" : ""}
         />
       ) : (
         <div className="sch-cards--3">
@@ -154,9 +154,7 @@ function GuardianModal({ card, onClose, onChanged }: { card: GuardianCardDto; on
                   <div className="sch-skeleton sch-skeleton--qr" />
                 )}
               </div>
-              <p className="sch-muted">
-                @{cur.username} · сканирует со своего телефона — и сразу в дневниках детей
-              </p>
+              <p className="sch-muted">@{cur.username}</p>
             </div>
           ) : (
             <p data-testid="S-14.status">
@@ -167,7 +165,7 @@ function GuardianModal({ card, onClose, onChanged }: { card: GuardianCardDto; on
           <h3 style={{ marginBottom: 0 }}>Дети</h3>
           {cur.children.length === 0 ? (
             <p className="sch-muted" data-testid="S-14.children.empty">
-              Дети не привязаны — родитель увидит пустой дневник
+              Дети не привязаны
             </p>
           ) : (
             <div className="sch-stack" data-testid="S-14.children">

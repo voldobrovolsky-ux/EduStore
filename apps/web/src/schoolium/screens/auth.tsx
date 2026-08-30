@@ -80,38 +80,21 @@ export function LandingScreen({ authed, startScreen }: { authed: boolean; startS
         <div className="sch-logo" data-testid="S-00.logo">
           Schoolium
         </div>
-        {/* Кнопки регистрации нет и не будет (AR-95) — агент её не добавляет «для полноты». */}
+      </header>
+
+      {/* Премиальный минимум (правка владельца 2026-08-30): заголовок, одна
+          строка, одна кнопка. Кнопки регистрации нет и не будет (AR-95). */}
+      <div className="sch-hero" data-testid="S-00.hero">
+        <h1>
+          Школа
+          <br />
+          <span className="sch-hero-accent">в одном месте</span>
+        </h1>
+        <p>Дневник · Журнал · Расписание</p>
         <Button kind="primary" testId="S-00.btn.login" onClick={() => (authed ? navigate(startScreen) : setLoginOpen(true))}>
           Войти
         </Button>
-      </header>
-
-      <div className="sch-hero" data-testid="S-00.hero">
-        <h1>Школа — в одном месте</h1>
-        <p>
-          Дневник, журнал, расписание и оценки. Родители видят детей, педагоги ведут журнал, школа управляет всем —
-          с телефона или компьютера.
-        </p>
       </div>
-
-      <div className="sch-landing-cards" data-testid="S-00.cards">
-        <div className="sch-card">
-          <h3>Родителю и ученику</h3>
-          <p className="sch-muted">Дневник с расписанием дня, оценки и средние баллы по каждому предмету — сразу после входа.</p>
-        </div>
-        <div className="sch-card">
-          <h3>Педагогу</h3>
-          <p className="sch-muted">Журнал своих предметов: отметка ставится в два касания, темы уроков — тут же.</p>
-        </div>
-        <div className="sch-card">
-          <h3>Школе</h3>
-          <p className="sch-muted">Классы, персонал, предметы и расписание с проверкой норм — панель управления вместо стопки таблиц.</p>
-        </div>
-      </div>
-
-      <p className="sch-muted sch-landing-note" data-testid="S-00.note.access">
-        Доступ выдаёт школа: учётки заводит модератор, самостоятельной регистрации нет
-      </p>
 
       {loginOpen ? <LoginModal onClose={() => setLoginOpen(false)} /> : null}
     </div>
@@ -121,27 +104,21 @@ export function LandingScreen({ authed, startScreen }: { authed: boolean; startS
 // ─────────────────────────── M-21 · модалка входа ───────────────────────────
 
 /**
- * Вход с лендинга (правка владельца 2026-08-30): QR, под ним «Войти по коду» —
- * нажатие меняет QR на окошки кода, а кнопку на «Войти по QR». На телефоне
- * окошки первыми: телефон не сканирует сам себя (§6 `75-adaptive.md`).
- * Контур входа тот же, что `S-01`/`S-05`, — модалка не вводит ни новых
- * маршрутов, ни новых кодов ошибок.
+ * Вход с лендинга (правка владельца 2026-08-30, дословно): «модалка посередине
+ * экрана, там либо QR, либо окошки для цифр» — и НИЧЕГО больше: без подсказок,
+ * статусов и пароля (пароль остаётся на `/login`). Кнопка одна, меняет
+ * содержимое и свою подпись. Дефолт: десктоп — QR, телефон — окошки.
  */
 function LoginModal({ onClose }: { onClose: () => void }) {
   const mobile = useIsMobile();
   const [mode, setMode] = useState<"qr" | "code">(mobile ? "code" : "qr");
-  const link = useDeviceLink(mode === "qr" && !mobile, null);
+  const link = useDeviceLink(mode === "qr", null);
 
   return (
-    <Modal title="Вход" width={420} onClose={onClose} testId="M-21" mobile="sheet">
+    <Modal title="Вход" width={380} onClose={onClose} testId="M-21" mobile="sheet">
       <div className="sch-stack" style={{ alignItems: "center", textAlign: "center" }}>
         {mode === "qr" ? (
-          mobile ? (
-            <p className="sch-muted" data-testid="M-21.status">
-              Первый вход — по именному QR у модератора: он открывает вашу карточку, вы наводите камеру. Кабинет уже
-              был? Введите код или пароль ниже.
-            </p>
-          ) : link.error ? (
+          link.error ? (
             <>
               <p className="sch-danger-text" role="alert">
                 {link.error}
@@ -151,20 +128,13 @@ function LoginModal({ onClose }: { onClose: () => void }) {
               </Button>
             </>
           ) : (
-            <>
-              <div className="sch-qr-frame" data-testid="M-21.qr">
-                {link.token ? (
-                  <QRCodeSVG value={`${window.location.origin}/link/${link.token.token}`} size={200} />
-                ) : (
-                  <div className="sch-skeleton sch-skeleton--qr" />
-                )}
-              </div>
-              <p className="sch-muted">
-                Откройте Schoolium на телефоне, где кабинет уже открыт: Настройки → Подключить устройство — и наведите
-                камеру
-              </p>
-              <p data-testid="M-21.status">{link.status === "used" ? "Устройство подключено" : "Ожидание сканирования…"}</p>
-            </>
+            <div className="sch-qr-frame" data-testid="M-21.qr">
+              {link.token ? (
+                <QRCodeSVG value={`${window.location.origin}/link/${link.token.token}`} size={220} />
+              ) : (
+                <div className="sch-skeleton sch-skeleton--qr" />
+              )}
+            </div>
           )
         ) : (
           <ModalCodeEntry />
@@ -172,10 +142,6 @@ function LoginModal({ onClose }: { onClose: () => void }) {
         <Button kind="secondary" testId="M-21.btn.mode" onClick={() => setMode(mode === "qr" ? "code" : "qr")}>
           {mode === "qr" ? "Войти по коду" : "Войти по QR"}
         </Button>
-        <PasswordLoginBlock next={null} />
-        <p className="sch-muted" data-testid="M-21.note.help">
-          Первый вход — по именному QR у модератора школы
-        </p>
       </div>
     </Modal>
   );
@@ -240,7 +206,6 @@ function ModalCodeEntry() {
           {error}
         </p>
       ) : null}
-      <p className="sch-muted">Код покажет модератор с вашей карточки — шесть цифр</p>
     </>
   );
 }
@@ -263,16 +228,13 @@ export function LoginScreen({ next }: { next: string | null }) {
       <AuthFrame>
         <div className="sch-card sch-auth-card sch-stack">
           <p data-testid="S-01.caption">
-            Вход по QR от модератора: попросите модератора открыть вашу карточку и наведите камеру на его экран
+            Наведите камеру на QR из вашей карточки
           </p>
           <p data-testid="S-01.status">{status === "used" ? "Устройство подключено" : "Ожидание сканирования…"}</p>
           <Button kind="primary" testId="S-01.link.byCode" onClick={() => navigate("/login/code")}>
             Войти по коду от модератора
           </Button>
           <PasswordLoginBlock next={next} />
-          <p className="sch-muted" data-testid="S-01.note.help">
-            Первый раз здесь? Доступ выдаёт модератор школы — обратитесь к нему
-          </p>
         </div>
       </AuthFrame>
     );
@@ -303,16 +265,13 @@ export function LoginScreen({ next }: { next: string | null }) {
               )}
             </div>
             <p data-testid="S-01.caption" className="sch-muted">
-              Откройте Schoolium на телефоне: Настройки → Подключить устройство — и наведите камеру
+              Наведите камеру телефона, в котором уже открыт кабинет
             </p>
             <p data-testid="S-01.status">{status === "used" ? "Устройство подключено" : "Ожидание сканирования…"}</p>
             <Button kind="ghost" testId="S-01.link.byCode" onClick={() => navigate("/login/code")}>
               Нет телефона под рукой? Войти по коду от модератора
             </Button>
             <PasswordLoginBlock next={next} />
-            <p className="sch-muted" data-testid="S-01.note.help">
-              Первый раз здесь? Доступ выдаёт модератор школы — обратитесь к нему
-            </p>
           </>
         )}
       </div>
@@ -508,7 +467,7 @@ export function LoginCodeScreen({ code }: { code?: string }) {
           </p>
         ) : null}
         <p className="sch-muted" data-testid="S-05.hint">
-          Модератор откроет вашу карточку и покажет код — шесть цифр или QR
+          Шесть цифр с вашей карточки
         </p>
         {/* Кнопка сканера скрыта, если камеры нет (§6). */}
         {hasCamera() ? (

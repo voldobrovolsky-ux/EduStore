@@ -301,7 +301,7 @@ function StaffCardModal({ card, onClose, onChanged }: { card: StaffCardDto; onCl
               )}
             </div>
             <p data-testid="S-31.status">
-              {registeredName ? `Зарегистрирован: ${registeredName}` : "Сканирует со своего телефона — и сразу в кабинете"}
+              {registeredName ? `Зарегистрирован: ${registeredName}` : "Ожидание сканирования"}
             </p>
             <p className="sch-muted">
               @{cur.username} · код живёт {ACCESS_PARAMS.activationTtlMinutes} минут либо до закрытия карточки

@@ -575,7 +575,7 @@ export function EmptyState({
   glyph = "◇",
 }: {
   title: string;
-  hint: string;
+  hint?: string;
   action?: ReactNode;
   testId?: string;
   glyph?: string;
@@ -586,7 +586,7 @@ export function EmptyState({
         {glyph}
       </div>
       <h2>{title}</h2>
-      <p className="sch-muted">{hint}</p>
+      {hint ? <p className="sch-muted">{hint}</p> : null}
       {action}
     </div>
   );

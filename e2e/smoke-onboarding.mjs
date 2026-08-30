@@ -324,7 +324,7 @@ async function main() {
     console.log('▶ S-00 · лендинг');
     await page.goto(`${WEB}/`);
     await page.waitForSelector('[data-testid="S-00.hero"]');
-    await hasAll(page, ['S-00.logo', 'S-00.hero', 'S-00.btn.login', 'S-00.cards', 'S-00.note.access']);
+    await hasAll(page, ['S-00.logo', 'S-00.hero', 'S-00.btn.login']);
     await shot(page, 'S-00-landing');
 
     // ── M-21 · модалка входа с лендинга (правка владельца 2026-08-30) ──
@@ -334,16 +334,14 @@ async function main() {
     await click(page, 'S-00.btn.login');
     await page.waitForSelector('[data-testid="M-21"]');
     await modalOpen(page, 'M-21');
-    await hasAll(page, MOBILE ? ['M-21.code', 'M-21.btn.mode', 'M-21.note.help'] : ['M-21.qr', 'M-21.status', 'M-21.btn.mode', 'M-21.note.help']);
+    await hasAll(page, MOBILE ? ['M-21.code', 'M-21.btn.mode'] : ['M-21.qr', 'M-21.btn.mode']);
     await shot(page, 'M-21-login-modal');
     await click(page, 'M-21.btn.mode');
-    // содержимое сменилось: QR ⇄ окошки кода
-    await page.waitForSelector(MOBILE ? '[data-testid="M-21.status"]' : '[data-testid="M-21.code"]');
-    if (!MOBILE) {
-      const qrLeft = await page.locator('[data-testid="M-21.qr"]').count();
-      if (qrLeft === 0) console.log('    ✅ «Войти по коду» сменил QR на окошки кода');
-      else { console.error('    ❌ QR остался на экране вместе с окошками кода'); failures++; }
-    }
+    // содержимое сменилось: QR ⇄ окошки кода — «либо QR, либо окошки»
+    await page.waitForSelector(MOBILE ? '[data-testid="M-21.qr"]' : '[data-testid="M-21.code"]');
+    const other = await page.locator(MOBILE ? '[data-testid="M-21.code"]' : '[data-testid="M-21.qr"]').count();
+    if (other === 0) console.log('    ✅ кнопка сменила содержимое целиком — либо QR, либо окошки');
+    else { console.error('    ❌ в модалке одновременно и QR, и окошки'); failures++; }
     await shot(page, 'M-21-login-modal-code');
     if (MOBILE) await tapTargets(page, 'M-21');
     await page.keyboard.press('Escape');
@@ -357,8 +355,8 @@ async function main() {
     // объявлено реестром, а не «не поместилось».
     await page.waitForSelector(MOBILE ? '[data-testid="S-01.caption"]' : '[data-testid="S-01.qr"]');
     await hasAll(page, MOBILE
-      ? ['S-01.caption', 'S-01.status', 'S-01.link.byCode', 'S-01.note.help']
-      : ['S-01.qr', 'S-01.caption', 'S-01.status', 'S-01.link.byCode', 'S-01.note.help']);
+      ? ['S-01.caption', 'S-01.status', 'S-01.link.byCode']
+      : ['S-01.qr', 'S-01.caption', 'S-01.status', 'S-01.link.byCode']);
     if (MOBILE) {
       const qr = await page.locator('[data-testid="S-01.qr"]').count();
       if (qr === 0) console.log('    ✅ QR на телефоне не показывается — сканировать его нечем (§6)');
