@@ -190,6 +190,7 @@ function WeekGridMobile({
   days: number;
 }) {
   const [classId, setClassId] = useState(classes[0]?.[0] ?? "");
+  const [day, setDay] = useState(0);
   const current = classes.some(([id]) => id === classId) ? classId : (classes[0]?.[0] ?? "");
 
   return (
@@ -207,50 +208,43 @@ function WeekGridMobile({
         </select>
       </div>
 
-      <div className="sch-week" data-testid={testId}>
-        <table>
-          <thead>
-            <tr>
-              <th className="sch-week-time">Урок</th>
-              {Array.from({ length: days }, (_, d) => (
-                <th key={d}>{DAY_NAMES[d]}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: maxSlot }, (_, s) => (
-              <tr key={s}>
-                <th className="sch-week-time" scope="row">
-                  {s + 1}
-                </th>
-                {Array.from({ length: days }, (_, d) => {
-                  const cell = preview.slots.filter(
-                    (x) => x.classId === current && x.dayNo === d && x.slotNo === s + 1,
-                  );
-                  const paired = cell.length > 1;
-                  return (
-                    <td
-                      key={d}
-                      className={paired ? "sch-cell--paired" : undefined}
-                      data-testid={paired ? "S-40.cell.paired" : undefined}
-                    >
-                      {cell.map((x, i) => (
-                        <span className="sch-slot" key={i}>
-                          <span className="sch-slot-subject">
-                            {x.subjectName}
-                            {x.groupNo ? ` · гр. ${x.groupNo}` : ""}
-                          </span>
-                          <br />
-                          <span className="sch-slot-teacher">{x.teacherName}</span>
-                        </span>
-                      ))}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Лента дней + уроки карточками (правка владельца 2026-08-30, по
+          референсам) — тот же паттерн, что дневник `S-90`: таблица
+          «день × урок» на 390px оставалась нечитаемой при любом скролле. */}
+      <div className="sch-daystrip">
+        {Array.from({ length: days }, (_, d) => (
+          <button
+            key={d}
+            className={d === day ? "sch-daychip sch-daychip--active" : "sch-daychip"}
+            onClick={() => setDay(d)}
+          >
+            <small>{DAY_NAMES[d]}</small>
+          </button>
+        ))}
+      </div>
+
+      <div className="sch-stack" data-testid={testId}>
+        {Array.from({ length: maxSlot }, (_, s) => {
+          const cell = preview.slots.filter((x) => x.classId === current && x.dayNo === day && x.slotNo === s + 1);
+          if (cell.length === 0) return null;
+          const paired = cell.length > 1;
+          return (
+            <div key={s} className="sch-lesson" data-testid={paired ? "S-40.cell.paired" : undefined}>
+              <div className="sch-lesson-no">{s + 1}</div>
+              <div className="sch-lesson-body">
+                {cell.map((x, i) => (
+                  <span className="sch-slot" key={i}>
+                    <b>
+                      {x.subjectName}
+                      {x.groupNo ? ` · гр. ${x.groupNo}` : ""}
+                    </b>
+                    <span>{x.teacherName}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </>
   );

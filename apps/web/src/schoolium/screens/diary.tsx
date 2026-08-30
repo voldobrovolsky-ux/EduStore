@@ -11,7 +11,6 @@ import type { DiaryChildDto, DiaryWeekDto, SubjectAverageDto } from "@edustore/s
 import { api, SchoolApiError } from "../api";
 import { useAsync } from "../hooks";
 import { Badge, Button, EmptyState, ErrorState, MarkChip, Skeletons } from "../ui";
-import { useSession } from "../session";
 import { navigate } from "../router";
 
 const DAY_NAMES = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"];
@@ -22,7 +21,6 @@ const fmtDay = (isoDay: string): string => {
 };
 
 export function DiaryScreen() {
-  const { state } = useSession();
   const [children, setChildren] = useState<DiaryChildDto[] | null>(null);
   const [child, setChild] = useState<string | null>(null);
   const [week, setWeek] = useState<string | null>(null);
@@ -54,8 +52,6 @@ export function DiaryScreen() {
       .catch(() => undefined);
   }, [child, week]);
 
-  const me = state.status === "authed" ? state.me : null;
-
   return (
     <div className="sch" style={{ maxWidth: 720, margin: "0 auto", padding: "var(--sp-16)" }}>
       <div className="sch-page-head">
@@ -69,7 +65,7 @@ export function DiaryScreen() {
             window.location.reload();
           }}
         >
-          Выйти{me ? ` (${me.name})` : ""}
+          Выйти
         </Button>
       </div>
 
